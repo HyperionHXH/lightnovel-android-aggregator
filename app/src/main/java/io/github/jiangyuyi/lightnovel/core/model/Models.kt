@@ -127,12 +127,18 @@ enum class ReaderTheme(val label: String) {
     DARK("深色"),
 }
 
+enum class ReaderMode(val label: String) {
+    PAGED("左右翻页"),
+    SCROLL("上下滚动"),
+}
+
 data class ReaderPreferences(
     val font: ReaderFont = ReaderFont.SERIF,
     val fontSize: Float = 19f,
     val lineHeight: Float = 1.7f,
     val horizontalPadding: Int = 22,
     val theme: ReaderTheme = ReaderTheme.SEPIA,
+    val mode: ReaderMode = ReaderMode.PAGED,
 )
 
 data class LocalReadingProgress(

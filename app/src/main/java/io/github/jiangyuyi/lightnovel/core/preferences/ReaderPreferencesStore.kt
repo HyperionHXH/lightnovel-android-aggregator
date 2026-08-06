@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.jiangyuyi.lightnovel.core.model.LocalReadingProgress
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
+import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import kotlinx.coroutines.flow.Flow
@@ -23,6 +24,7 @@ class ReaderPreferencesStore(private val context: Context) {
             lineHeight = (values[LINE_HEIGHT] ?: 1.7f).coerceIn(1.2f, 2.2f),
             horizontalPadding = (values[PADDING] ?: 22).coerceIn(12, 40),
             theme = enumValueOrDefault(values[THEME], ReaderTheme.SEPIA),
+            mode = enumValueOrDefault(values[MODE], ReaderMode.PAGED),
         )
     }
 
@@ -33,6 +35,7 @@ class ReaderPreferencesStore(private val context: Context) {
             values[LINE_HEIGHT] = value.lineHeight.coerceIn(1.2f, 2.2f)
             values[PADDING] = value.horizontalPadding.coerceIn(12, 40)
             values[THEME] = value.theme.name
+            values[MODE] = value.mode.name
         }
     }
 
@@ -62,6 +65,6 @@ class ReaderPreferencesStore(private val context: Context) {
         val LINE_HEIGHT = floatPreferencesKey("line_height")
         val PADDING = intPreferencesKey("horizontal_padding")
         val THEME = stringPreferencesKey("theme")
+        val MODE = stringPreferencesKey("reader_mode")
     }
 }
-

@@ -286,7 +286,7 @@ class LightNovelRepository(
                 "font_size" to preferences.fontSize.roundToInt(),
                 "line_height" to preferences.lineHeight,
                 "theme" to preferences.theme.name.lowercase(),
-                "page_mode" to preferences.horizontalPadding,
+                "page_mode" to if (preferences.mode.name == "PAGED") "page" else "scroll",
                 "traditional_chinese" to 0,
                 "updated_at" to System.currentTimeMillis() / 1000,
             ),

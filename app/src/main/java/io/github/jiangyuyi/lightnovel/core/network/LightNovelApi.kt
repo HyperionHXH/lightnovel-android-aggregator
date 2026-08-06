@@ -18,6 +18,12 @@ class LightNovelApi internal constructor(
     private val transport: HttpTransport = CronetHttpTransport(context),
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
 ) {
+    internal suspend fun getBytes(url: String): ByteArray {
+        val response = transport.getBytes(url)
+        if (response.code !in 200..299) throw ApiException("图片服务器返回 ${response.code}", response.code)
+        return response.body
+    }
+
     suspend fun post(path: String, body: JsonObject, commentApi: Boolean = false): JsonObject =
         run {
             val base = if (commentApi) COMMENT_BASE_URL else WEB_BFF_BASE_URL

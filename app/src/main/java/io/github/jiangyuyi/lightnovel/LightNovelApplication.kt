@@ -1,17 +1,26 @@
 package io.github.jiangyuyi.lightnovel
 
 import android.app.Application
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import io.github.jiangyuyi.lightnovel.core.data.LightNovelRepository
+import io.github.jiangyuyi.lightnovel.core.network.CronetImageFetcher
 import io.github.jiangyuyi.lightnovel.core.network.LightNovelApi
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesStore
 import io.github.jiangyuyi.lightnovel.core.session.SessionStore
 
-class LightNovelApplication : Application() {
+class LightNovelApplication : Application(), ImageLoaderFactory {
     val container: AppContainer by lazy { AppContainer(this) }
+
+    override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
+        .crossfade(true)
+        .components { add(CronetImageFetcher.Factory(container.api)) }
+        .build()
 }
 
 class AppContainer(application: Application) {
     val sessionStore = SessionStore(application)
     val readerPreferences = ReaderPreferencesStore(application)
-    val repository = LightNovelRepository(LightNovelApi(application), sessionStore)
+    val api = LightNovelApi(application)
+    val repository = LightNovelRepository(api, sessionStore)
 }
