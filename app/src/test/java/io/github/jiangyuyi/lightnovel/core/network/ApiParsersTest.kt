@@ -4,6 +4,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -93,6 +94,45 @@ class ApiParsersTest {
     }
 
     @Test
+    fun `chapter parser accepts live object navigation and direct ids`() {
+        val liveObject = ApiParsers.chapterDetail(
+            obj(
+                """
+                {
+                  "chapter_id": 317743,
+                  "book_id": 11950,
+                  "volume_id": 13121,
+                  "title": "序章",
+                  "navigation": {
+                    "prev_chapter": [],
+                    "next_chapter": {"chapter_id": 316297}
+                  }
+                }
+                """.trimIndent(),
+            ),
+        )
+        val directIds = ApiParsers.chapterDetail(
+            obj(
+                """
+                {
+                  "chapter_id": 20,
+                  "book_id": 1,
+                  "volume_id": 2,
+                  "title": "第二章",
+                  "prev_chapter_id": "19",
+                  "next_chapter_id": 21
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        assertNull(liveObject.previousChapterId)
+        assertEquals(316297L, liveObject.nextChapterId)
+        assertEquals(19L, directIds.previousChapterId)
+        assertEquals(21L, directIds.nextChapterId)
+    }
+
+    @Test
     fun `taxonomy parser keeps channels and nested tags`() {
         val source = obj(
             """
@@ -119,4 +159,3 @@ class ApiParsersTest {
 
     private fun obj(raw: String): JsonObject = json.parseToJsonElement(raw) as JsonObject
 }
-
