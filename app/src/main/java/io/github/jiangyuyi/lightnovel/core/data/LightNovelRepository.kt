@@ -220,7 +220,52 @@ class LightNovelRepository(
             "api/new-content-read/get-chapter-detail",
             withOptionalSession("book_id" to bookId, "chapter_id" to chapterId),
         )
-        return ApiParsers.chapterDetail(data)
+        val detail = ApiParsers.chapterDetail(data)
+        if (detail.previousChapterId != null && detail.nextChapterId != null) return detail
+        return runCatching { completeChapterNavigation(bookId, detail) }.getOrDefault(detail)
+    }
+
+    private suspend fun completeChapterNavigation(bookId: Long, detail: ChapterDetail): ChapterDetail {
+        val volumeId = detail.chapter.volumeId.takeIf { it > 0 } ?: return detail
+        val volumeChapters = allChapters(bookId, volumeId)
+        val neighbors = resolveChapterNeighbors(volumeChapters, detail.chapter.id) ?: return detail
+        var previousId = detail.previousChapterId ?: neighbors.previousChapterId
+        var nextId = detail.nextChapterId ?: neighbors.nextChapterId
+
+        if (previousId == null || nextId == null) {
+            val bookVolumes = allVolumes(bookId)
+            val volumeIndex = bookVolumes.indexOfFirst { it.id == volumeId }
+            if (previousId == null && volumeIndex > 0) {
+                val previousVolume = bookVolumes[volumeIndex - 1]
+                previousId = previousVolume.lastChapterId
+                    ?: allChapters(bookId, previousVolume.id).lastOrNull()?.id
+            }
+            if (nextId == null && volumeIndex >= 0 && volumeIndex < bookVolumes.lastIndex) {
+                val nextVolume = bookVolumes[volumeIndex + 1]
+                nextId = nextVolume.firstChapterId
+                    ?: allChapters(bookId, nextVolume.id).firstOrNull()?.id
+            }
+        }
+
+        return detail.copy(previousChapterId = previousId, nextChapterId = nextId)
+    }
+
+    private suspend fun allVolumes(bookId: Long): List<Volume> = buildList {
+        var page = 1
+        do {
+            val result = volumes(bookId, page = page, pageSize = 50)
+            addAll(result.items)
+            page += 1
+        } while (result.hasMore)
+    }
+
+    private suspend fun allChapters(bookId: Long, volumeId: Long): List<ChapterSummary> = buildList {
+        var page = 1
+        do {
+            val result = chapters(bookId, volumeId, page = page, pageSize = 50)
+            addAll(result.items)
+            page += 1
+        } while (result.hasMore)
     }
 
     suspend fun bookshelf(): List<BookSummary> {

@@ -19,7 +19,7 @@ data class ReaderState(
     val chapter: ChapterDetail? = null,
     val preferences: ReaderPreferences = ReaderPreferences(),
     val restoredParagraph: Int = 0,
-    val controlsVisible: Boolean = true,
+    val controlsVisible: Boolean = false,
     val settingsVisible: Boolean = false,
     val loading: Boolean = true,
     val error: String? = null,
@@ -34,6 +34,7 @@ class ReaderViewModel(
     private val _state = MutableStateFlow(ReaderState())
     val state: StateFlow<ReaderState> = _state.asStateFlow()
     private var currentChapterId = initialChapterId
+    private var chapterLoadJob: Job? = null
     private var progressJob: Job? = null
     private var settingsSyncJob: Job? = null
 
@@ -48,19 +49,29 @@ class ReaderViewModel(
 
     fun loadChapter(chapterId: Long) {
         if (chapterId <= 0) return
+        chapterLoadJob?.cancel()
+        progressJob?.cancel()
         currentChapterId = chapterId
-        _state.value = _state.value.copy(loading = true, error = null, settingsVisible = false)
-        viewModelScope.launch {
+        _state.value = _state.value.copy(
+            loading = true,
+            error = null,
+            settingsVisible = false,
+            controlsVisible = false,
+        )
+        chapterLoadJob = viewModelScope.launch {
             val progress = preferenceStore.progress(bookId).first()
             runCatching { repository.chapter(bookId, chapterId) }
                 .onSuccess { chapter ->
+                    if (currentChapterId != chapterId) return@onSuccess
                     _state.value = _state.value.copy(
                         chapter = chapter,
                         restoredParagraph = progress?.takeIf { it.chapterId == chapterId }?.paragraphIndex ?: 0,
                         loading = false,
+                        controlsVisible = false,
                     )
                 }
                 .onFailure {
+                    if (currentChapterId != chapterId) return@onFailure
                     _state.value = _state.value.copy(loading = false, error = it.message ?: "章节加载失败")
                 }
         }

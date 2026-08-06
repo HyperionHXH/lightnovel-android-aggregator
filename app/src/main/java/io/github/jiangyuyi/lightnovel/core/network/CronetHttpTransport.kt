@@ -1,7 +1,11 @@
 package io.github.jiangyuyi.lightnovel.core.network
 
 import android.content.Context
+import android.net.Uri
+import android.util.Log
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import org.chromium.net.CronetEngine
 import org.chromium.net.CronetException
 import org.chromium.net.ExperimentalCronetEngine
@@ -39,30 +43,32 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
         Thread(runnable, "lightnovel-cronet").apply { isDaemon = true }
     }
 
-    @Volatile
-    private var routeIndex = 0
+    private val engines = mutableMapOf<NetworkRoute, CronetEngine>()
 
-    @Volatile
-    private var engine: CronetEngine = createEngine(CLOUDFLARE_ROUTES[routeIndex])
-
-    private fun createEngine(route: String): CronetEngine =
+    private fun createEngine(route: NetworkRoute): CronetEngine =
         ExperimentalCronetEngine.Builder(applicationContext).run {
         enableQuic(true)
         enableHttp2(true)
         enableBrotli(true)
-        // The mainland route resets TCP connections to these hosts on some networks.
-        // Both hosts serve HTTP/3, so try QUIC immediately instead of waiting for Alt-Svc.
+        // Mainland TCP routes to these hosts are unreliable on some networks. Try
+        // QUIC immediately, but let system DNS follow the site's current CDN first.
         addQuicHint("www.lightnovel.fun", 443, 443)
         addQuicHint("api.lightnovel.fun", 443, 443)
         addQuicHint("res.lightnovel.fun", 443, 443)
-        // Some mainland resolvers return a TCP-only compatibility CDN that resets
-        // non-browser clients. Map API and image hosts to their public
-        // Cloudflare anycast edge; the QUIC hints above preserve SNI and TLS checks.
-        setExperimentalOptions(
-            """{"HostResolverRules":{"host_resolver_rules":"MAP www.lightnovel.fun $route, MAP api.lightnovel.fun $route, MAP res.lightnovel.fun $route"}}""",
-        )
+        // These legacy Cloudflare routes are fallbacks only. The site currently
+        // resolves through another CDN, so forcing them for every request causes
+        // image TLS handshakes to be reset while the same URL works in a browser.
+        route.address?.let { address ->
+            setExperimentalOptions(
+                """{"HostResolverRules":{"host_resolver_rules":"MAP www.lightnovel.fun $address, MAP api.lightnovel.fun $address, MAP res.lightnovel.fun $address"}}""",
+            )
+        }
         build()
     }
+
+    @Synchronized
+    private fun engineFor(route: NetworkRoute): CronetEngine =
+        engines.getOrPut(route) { createEngine(route) }
 
     override suspend fun postJson(url: String, body: String): HttpResponse {
         val response = request(url, "POST", body.toByteArray(Charsets.UTF_8))
@@ -73,24 +79,39 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
 
     private suspend fun request(url: String, method: String, upload: ByteArray?): HttpBytesResponse {
         var lastFailure: IOException? = null
-        repeat(CLOUDFLARE_ROUTES.size + 1) { attempt ->
+        NETWORK_ROUTES.forEachIndexed { index, route ->
             try {
-                return executeOnce(engine, url, method, upload)
+                return executeWithTimeout(engineFor(route), url, method, upload).also {
+                    if (index > 0) {
+                        Log.i(TAG, "${Uri.parse(url).host} connected through ${route.label}")
+                    }
+                }
             } catch (failure: IOException) {
                 lastFailure = failure
-                if (attempt == CLOUDFLARE_ROUTES.size || !failure.isRetryableConnectionFailure()) {
+                if (index == NETWORK_ROUTES.lastIndex || !failure.isRetryableConnectionFailure()) {
                     throw failure
                 }
-                rebuildEngine()
+                Log.w(
+                    TAG,
+                    "${Uri.parse(url).host} failed through ${route.label}; trying fallback",
+                    failure,
+                )
             }
         }
         throw lastFailure ?: IOException("网络连接失败")
     }
 
-    @Synchronized
-    private fun rebuildEngine() {
-        routeIndex = (routeIndex + 1) % CLOUDFLARE_ROUTES.size
-        engine = createEngine(CLOUDFLARE_ROUTES[routeIndex])
+    private suspend fun executeWithTimeout(
+        requestEngine: CronetEngine,
+        url: String,
+        method: String,
+        upload: ByteArray?,
+    ): HttpBytesResponse = try {
+        withTimeout(ROUTE_TIMEOUT_MS) {
+            executeOnce(requestEngine, url, method, upload)
+        }
+    } catch (failure: TimeoutCancellationException) {
+        throw RouteTimeoutException(failure)
     }
 
     private suspend fun executeOnce(
@@ -175,12 +196,36 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
         }
 
     private fun IOException.isRetryableConnectionFailure(): Boolean {
+        if (this is RouteTimeoutException) return true
         val cronetError = cause as? CronetException ?: return false
-        return cronetError.message.orEmpty().contains("ERR_CONNECTION_RESET") ||
-            cronetError.message.orEmpty().contains("ERR_QUIC_PROTOCOL_ERROR")
+        return RETRYABLE_NETWORK_ERRORS.any(cronetError.message.orEmpty()::contains)
     }
 
     private companion object {
-        val CLOUDFLARE_ROUTES = arrayOf("104.26.6.43", "104.26.7.43", "172.67.73.171")
+        const val TAG = "LightNovelNetwork"
+        const val ROUTE_TIMEOUT_MS = 12_000L
+
+        val NETWORK_ROUTES = listOf(
+            NetworkRoute("system DNS"),
+            NetworkRoute("legacy Cloudflare 1", "104.26.6.43"),
+            NetworkRoute("legacy Cloudflare 2", "104.26.7.43"),
+            NetworkRoute("legacy Cloudflare 3", "172.67.73.171"),
+        )
+
+        val RETRYABLE_NETWORK_ERRORS = listOf(
+            "ERR_CONNECTION_RESET",
+            "ERR_QUIC_PROTOCOL_ERROR",
+            "ERR_TIMED_OUT",
+            "ERR_NAME_NOT_RESOLVED",
+            "ERR_ADDRESS_UNREACHABLE",
+            "ERR_NETWORK_CHANGED",
+        )
     }
 }
+
+private data class NetworkRoute(
+    val label: String,
+    val address: String? = null,
+)
+
+private class RouteTimeoutException(cause: Throwable) : IOException("网络请求超时", cause)

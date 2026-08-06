@@ -143,26 +143,31 @@ object ApiParsers {
 
     fun chapterDetail(source: JsonObject): ChapterDetail {
         val body = source.obj("body_snapshot", "body", "content")
-        val navigation = source.obj("navigation")
+        val navigation = source.obj("navigation", "chapter_navigation", "nav")
         return ChapterDetail(
             chapter = chapter(source),
             bookTitle = source.string("book_title"),
             volumeTitle = source.string("volume_title", "origin_volume_title"),
             bodyText = body?.string("body_text", "text", "content_text").orEmpty(),
             bodyHtml = body?.string("body_html", "html", "content_html").orEmpty(),
-            previousChapterId = navigation?.navigationId("prev_chapter", "previous_chapter"),
-            nextChapterId = navigation?.navigationId("next_chapter"),
+            previousChapterId = navigation?.navigationId("prev_chapter", "previous_chapter", "prev")
+                ?: source.navigationId("prev_chapter", "previous_chapter", "prev_chapter_id"),
+            nextChapterId = navigation?.navigationId("next_chapter", "next")
+                ?: source.navigationId("next_chapter", "next_chapter_id"),
         )
     }
 
     private fun JsonObject.navigationId(vararg keys: String): Long? {
         val element = element(*keys) ?: return null
-        val candidate = when (element) {
-            is JsonObject -> element
-            is JsonArray -> element.firstOrNull() as? JsonObject
-            else -> null
-        } ?: return null
-        return candidate.long("chapter_id", "id").takeIf { it > 0 }
+        return element.navigationId()
+    }
+
+    private fun JsonElement.navigationId(): Long? = when (this) {
+        is JsonPrimitive -> (longOrNull ?: contentOrNull?.toLongOrNull())?.takeIf { it > 0 }
+        is JsonObject -> long("chapter_id", "id", "chapterId").takeIf { it > 0 }
+            ?: element("chapter", "value")?.navigationId()
+        is JsonArray -> firstNotNullOfOrNull { it.navigationId() }
+        else -> null
     }
 
     fun comment(source: JsonObject): Comment {

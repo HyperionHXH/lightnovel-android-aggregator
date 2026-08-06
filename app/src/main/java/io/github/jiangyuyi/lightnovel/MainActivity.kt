@@ -3,6 +3,7 @@ package io.github.jiangyuyi.lightnovel
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -12,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -98,7 +100,7 @@ private fun LightNovelApp() {
         NavHost(
             navController = navController,
             startDestination = Routes.DISCOVER,
-            modifier = Modifier.padding(padding),
+            modifier = Modifier.padding(if (currentRoute == Routes.READER) PaddingValues(0.dp) else padding),
         ) {
             composable(Routes.DISCOVER) {
                 val vm: DiscoverViewModel = viewModel(factory = viewModelFactory { DiscoverViewModel(container.repository) })
@@ -177,4 +179,3 @@ private fun NavHostController.openRoot(route: String) {
         restoreState = true
     }
 }
-
