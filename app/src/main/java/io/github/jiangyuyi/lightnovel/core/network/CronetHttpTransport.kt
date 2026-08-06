@@ -22,8 +22,15 @@ internal data class HttpResponse(
     val protocol: String,
 )
 
+internal data class HttpBytesResponse(
+    val code: Int,
+    val body: ByteArray,
+    val protocol: String,
+)
+
 internal interface HttpTransport {
     suspend fun postJson(url: String, body: String): HttpResponse
+    suspend fun getBytes(url: String): HttpBytesResponse
 }
 
 internal class CronetHttpTransport(context: Context) : HttpTransport {
@@ -47,20 +54,28 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
         // Both hosts serve HTTP/3, so try QUIC immediately instead of waiting for Alt-Svc.
         addQuicHint("www.lightnovel.fun", 443, 443)
         addQuicHint("api.lightnovel.fun", 443, 443)
+        addQuicHint("res.lightnovel.fun", 443, 443)
         // Some mainland resolvers return a TCP-only compatibility CDN that resets
-        // non-browser clients. Map only the two API hosts to their public
+        // non-browser clients. Map API and image hosts to their public
         // Cloudflare anycast edge; the QUIC hints above preserve SNI and TLS checks.
         setExperimentalOptions(
-            """{"HostResolverRules":{"host_resolver_rules":"MAP www.lightnovel.fun $route, MAP api.lightnovel.fun $route"}}""",
+            """{"HostResolverRules":{"host_resolver_rules":"MAP www.lightnovel.fun $route, MAP api.lightnovel.fun $route, MAP res.lightnovel.fun $route"}}""",
         )
         build()
     }
 
     override suspend fun postJson(url: String, body: String): HttpResponse {
+        val response = request(url, "POST", body.toByteArray(Charsets.UTF_8))
+        return HttpResponse(response.code, response.body.toString(Charsets.UTF_8), response.protocol)
+    }
+
+    override suspend fun getBytes(url: String): HttpBytesResponse = request(url, "GET", null)
+
+    private suspend fun request(url: String, method: String, upload: ByteArray?): HttpBytesResponse {
         var lastFailure: IOException? = null
         repeat(CLOUDFLARE_ROUTES.size + 1) { attempt ->
             try {
-                return executeOnce(engine, url, body)
+                return executeOnce(engine, url, method, upload)
             } catch (failure: IOException) {
                 lastFailure = failure
                 if (attempt == CLOUDFLARE_ROUTES.size || !failure.isRetryableConnectionFailure()) {
@@ -81,8 +96,9 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
     private suspend fun executeOnce(
         requestEngine: CronetEngine,
         url: String,
-        body: String,
-    ): HttpResponse =
+        method: String,
+        upload: ByteArray?,
+    ): HttpBytesResponse =
         suspendCancellableCoroutine { continuation ->
             val responseBytes = ByteArrayOutputStream()
             val readBuffer = ByteBuffer.allocateDirect(32 * 1024)
@@ -114,9 +130,9 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
                 override fun onSucceeded(request: UrlRequest, info: UrlResponseInfo) {
                     if (continuation.isActive) {
                         continuation.resume(
-                            HttpResponse(
+                            HttpBytesResponse(
                                 code = info.httpStatusCode,
-                                body = responseBytes.toString(Charsets.UTF_8.name()),
+                                body = responseBytes.toByteArray(),
                                 protocol = info.negotiatedProtocol,
                             ),
                         )
@@ -142,18 +158,17 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
                 }
             }
 
-            val request = requestEngine.newUrlRequestBuilder(url, callback, executor)
-                .setHttpMethod("POST")
-                .addHeader("Accept", "application/json")
-                .addHeader("Content-Type", "application/json; charset=utf-8")
+            val builder = requestEngine.newUrlRequestBuilder(url, callback, executor)
+                .setHttpMethod(method)
+                .addHeader("Accept", if (method == "GET") "image/*,*/*;q=0.8" else "application/json")
                 .addHeader("Origin", "https://www.lightnovel.fun")
                 .addHeader("Referer", "https://www.lightnovel.fun/")
                 .addHeader("Accept-Language", "zh-CN,zh;q=0.9")
-                .setUploadDataProvider(
-                    UploadDataProviders.create(body.toByteArray(Charsets.UTF_8)),
-                    executor,
-                )
-                .build()
+            if (upload != null) {
+                builder.addHeader("Content-Type", "application/json; charset=utf-8")
+                    .setUploadDataProvider(UploadDataProviders.create(upload), executor)
+            }
+            val request = builder.build()
 
             continuation.invokeOnCancellation { request.cancel() }
             request.start()
@@ -166,6 +181,6 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
     }
 
     private companion object {
-        val CLOUDFLARE_ROUTES = arrayOf("104.26.6.43", "104.26.7.43")
+        val CLOUDFLARE_ROUTES = arrayOf("104.26.6.43", "104.26.7.43", "172.67.73.171")
     }
 }
