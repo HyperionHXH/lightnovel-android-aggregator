@@ -1,6 +1,12 @@
+<p align="center">
+  <img src="docs/app-icon.svg" width="112" alt="LightNovel LK 图标">
+</p>
+
 # LightNovel Android
 
 轻之国度（`lightnovel.fun`）的非官方 Android 客户端。项目基于 2026-08-06 实测的站点 Web BFF/API 实现，使用 Kotlin、Jetpack Compose 和 Material 3。
+
+[下载最新 Release APK](https://github.com/jiangyuyi/lightnovel-android/releases/latest)
 
 > 本项目仅用于学习与个人使用，不隶属于轻之国度。请遵守站点规则和内容版权要求，不要批量抓取、分发或商业使用站点内容。
 
@@ -21,6 +27,14 @@
 网站的独立“合集”分区目前标记为维护中。本客户端按实际可用的数据实现“书籍 → 分卷 → 章节”三级目录，并展示 `alternate_versions`；合集页会显示维护说明，不调用猜测接口。
 
 完整的 API 调研、合集/评论评估、架构与验收计划见 [实施计划](docs/IMPLEMENTATION_PLAN.md)。
+
+## 截图
+
+<p align="center">
+  <img src="docs/screenshots/discover.png" width="250" alt="发现页">
+  <img src="docs/screenshots/reader-illustration.png" width="250" alt="分页阅读与正文插图">
+  <img src="docs/screenshots/reader-scroll.png" width="250" alt="上下滚动与护眼背景">
+</p>
 
 ## 构建
 
@@ -54,11 +68,45 @@ Debug APK 生成于：
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
+### Release 签名
+
+Release 构建强制要求签名，避免误发布未签名 APK。Windows 首次配置时运行：
+
+```powershell
+./scripts/setup-release-signing.ps1
+```
+
+脚本会在本机安全提示中读取签名密码，生成 `.signing/lightnovel-release.jks` 和 `signing.properties`，并通过已登录的 GitHub CLI 写入仓库 Actions Secrets。密码、私钥和本地签名配置均被 `.gitignore` 排除，不会提交到 Git。
+
+请把 `.signing/lightnovel-release.jks` 与 `signing.properties` 离线备份；丢失签名密钥后将无法用相同应用 ID 发布可覆盖安装的更新。配置完成后可构建：
+
+```powershell
+./gradlew.bat testDebugUnitTest lintDebug assembleRelease
+```
+
+已签名 APK 生成于：
+
+```text
+app/build/outputs/apk/release/app-release.apk
+```
+
+### GitHub Release
+
+`.github/workflows/release.yml` 会在推送 `v*` 标签时执行测试、Lint、签名构建、`apksigner` 验证，并发布 APK 与 SHA-256 校验文件：
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+也可以在 GitHub Actions 页面手动运行 `Android Release` 并填写版本标签。
+
 ## 当前验证结果
 
 - `testDebugUnitTest`：11 个测试通过，0 失败，包含认证错误提示映射和正文插图解析。
 - `lintDebug`：通过。
 - `assembleDebug`：通过。
+- `assembleRelease`：使用独立 Release 密钥签名，并通过 `apksigner verify`。
 - 小米 Android 16 真机已验证：首页/分区、图片加载、书籍详情、分卷章节、分页正文、点击/滑动翻页、上下滚动兼容模式、字体字号与背景设置、用户手动登录、进程重启后的会话恢复、书架加载及加入/移出同步。
 - 密码由用户在手机上手动输入；测试过程未读取、记录或保存密码。临时加入的测试书籍已移出，书架恢复原状。
 
@@ -101,3 +149,7 @@ app/src/main/java/io/github/jiangyuyi/lightnovel/
 - 评论为只读，发布、回复、点赞、图片上传和举报未实现。
 - EPUB 频道可以浏览；为避免批量下载与版权风险，首版不实现整本导出。
 - 未接入动态、私信、发帖和作者工作台，这些不属于阅读客户端的核心范围。
+
+## 许可证
+
+客户端源代码使用 [MIT License](LICENSE)。站点内容、书籍正文、插图及轻之国度相关商标不因本许可证而改变其原有权利归属。
