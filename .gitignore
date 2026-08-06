@@ -11,3 +11,5 @@ app/build/
 artifacts/
 *.apk
 *.aab
+.signing/
+signing.properties

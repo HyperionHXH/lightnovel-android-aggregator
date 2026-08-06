@@ -1,0 +1,6 @@
+# Copy to signing.properties only if you configure signing manually.
+# Prefer running scripts/setup-release-signing.ps1 on Windows.
+storeFile=.signing/lightnovel-release.jks
+storePassword=replace-with-a-secret
+keyAlias=lightnovel-release
+keyPassword=replace-with-a-secret
