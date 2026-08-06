@@ -124,6 +124,17 @@ class LightNovelRepository(
         page: Int = 1,
         pageSize: Int = 20,
     ): Page<BookSummary> {
+        if (query.isBlank() && primaryTag.isBlank() && workType.isNotBlank()) {
+            // The site's search BFF currently returns HTTP 500 for every non-empty
+            // channel/work_type filter. Keep category browsing usable through the
+            // equivalent, stable discovery endpoints until that branch recovers.
+            return when (workType) {
+                "original" -> discover(DiscoverChannel.ORIGINAL, page, pageSize)
+                "fanfic" -> discover(DiscoverChannel.FANFIC, page, pageSize)
+                "epub" -> discover(DiscoverChannel.EPUB, page, pageSize)
+                else -> rank("weekly_hot", page, pageSize)
+            }
+        }
         val data = api.post(
             "api/bff/apk-search-result-v1",
             jsonBody(
@@ -131,8 +142,8 @@ class LightNovelRepository(
                 "scope" to "",
                 "source" to "",
                 "primary_tag" to primaryTag,
-                "channel_code" to "",
-                "work_type" to workType,
+                "channel_code" to workType,
+                "work_type" to "",
                 "preset" to if (query.isBlank() && workType.isBlank() && primaryTag.isBlank()) "default" else "",
                 "source_type" to "",
                 "filters" to buildJsonObject { },
@@ -184,15 +195,16 @@ class LightNovelRepository(
         return Page(list, page, total, page * pageSize < total)
     }
 
-    suspend fun chapters(bookId: Long, volumeId: Long, page: Int = 1, pageSize: Int = 100): Page<ChapterSummary> {
+    suspend fun chapters(bookId: Long, volumeId: Long, page: Int = 1, pageSize: Int = 50): Page<ChapterSummary> {
+        val acceptedPageSize = pageSize.coerceIn(1, 50)
         val data = api.post(
             "api/new-content-read/get-volume-chapters",
             jsonBody(
                 "book_id" to bookId,
                 "volume_id" to volumeId,
                 "page" to page,
-                "page_size" to pageSize,
-                "pageSize" to pageSize,
+                "page_size" to acceptedPageSize,
+                "pageSize" to acceptedPageSize,
             ),
         )
         val list = data.array("list", "chapters")
@@ -200,7 +212,7 @@ class LightNovelRepository(
             .filter { it.id > 0 }
         val pagination = data.obj("pagination", "page_info")
         val total = pagination?.int("total", "count") ?: list.size
-        return Page(list, page, total, page * pageSize < total)
+        return Page(list, page, total, page * acceptedPageSize < total)
     }
 
     suspend fun chapter(bookId: Long, chapterId: Long): ChapterDetail {

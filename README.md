@@ -54,10 +54,11 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ## 当前验证结果
 
-- `testDebugUnitTest`：4 个测试通过，0 失败。
-- `lintDebug`：通过；依赖中的旧版 Navigation 自定义 Lint 检查会产生兼容性警告，不影响构建。
+- `testDebugUnitTest`：8 个测试通过，0 失败，包含认证错误提示映射。
+- `lintDebug`：通过。
 - `assembleDebug`：通过。
-- 本机未执行真实账号自动化测试，避免保存或传输用户密码、验证码与会话令牌。登录、注册验证码和书架写操作请在 App 内由用户主动触发。
+- 小米 Android 16 真机已验证：首页/分区、书籍详情、分卷章节、正文阅读、字体字号与背景设置、用户手动登录、进程重启后的会话恢复、书架加载及加入/移出同步。
+- 密码由用户在手机上手动输入；测试过程未读取、记录或保存密码。临时加入的测试书籍已移出，书架恢复原状。
 
 ## API 与隐私
 
@@ -66,7 +67,7 @@ app/build/outputs/apk/debug/app-debug.apk
 - Web BFF：`https://www.lightnovel.fun/api/pc-proxy/`
 - 评论读取：`https://api.lightnovel.fun/pc-comment-proxy/`
 
-站点没有为本项目提供稳定 SDK，因此 API 可能变化。网络层集中处理响应信封、历史字段兼容和错误映射。Debug/Release 均不会记录密码、验证码或 `security_key`。
+站点没有为本项目提供稳定 SDK，因此 API 可能变化。网络层使用嵌入式 Cronet 优先建立 HTTP/3/QUIC 连接；遇到大陆网络上的可重试连接重置时会重建引擎并轮换备用 CDN 边缘地址。网络层同时集中处理响应信封、历史字段兼容和错误映射。Debug/Release 均不会记录密码、验证码或 `security_key`。
 
 正文只用于当前阅读页面，不随 Git 提交，也不提供整本离线导出。游客阅读设置和位置保存在 DataStore；登录用户的书架、阅读进度和阅读设置会按站点 API 同步。
 
@@ -77,7 +78,7 @@ app/src/main/java/io/github/jiangyuyi/lightnovel/
 ├─ core/
 │  ├─ data/          Repository
 │  ├─ model/         书籍、分卷、章节、评论与阅读设置
-│  ├─ network/       OkHttp、API 解包与兼容解析
+│  ├─ network/       Cronet/QUIC、API 解包与兼容解析
 │  ├─ preferences/   阅读偏好和本地进度
 │  ├─ session/       Keystore 加密会话
 │  └─ ui/            主题与通用组件
@@ -98,4 +99,3 @@ app/src/main/java/io/github/jiangyuyi/lightnovel/
 - 评论为只读，发布、回复、点赞、图片上传和举报未实现。
 - EPUB 频道可以浏览；为避免批量下载与版权风险，首版不实现整本导出。
 - 未接入动态、私信、发帖和作者工作台，这些不属于阅读客户端的核心范围。
-

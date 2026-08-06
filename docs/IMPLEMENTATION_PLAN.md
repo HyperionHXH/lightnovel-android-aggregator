@@ -101,7 +101,7 @@ Book（书籍）
 - Kotlin、Jetpack Compose、Material 3。
 - 单 Activity + Navigation Compose。
 - Coroutines + Flow；ViewModel 管理 UI 状态。
-- OkHttp + Retrofit（或 Retrofit 动态 `JsonObject` 请求）+ Kotlinx Serialization。
+- 嵌入式 Cronet（HTTP/3/QUIC）+ Kotlinx Serialization；在部分大陆线路重置 TCP/TLS 时重建引擎并轮换备用 CDN 边缘地址。
 - Coil 加载网络图片。
 - DataStore 保存普通阅读设置；Android Keystore 支持的加密存储保存 `security_key` 和 `uid`。
 - 最低 Android 8.0（API 26），目标 SDK 35；Java 17。
@@ -132,6 +132,7 @@ app/src/main/java/.../
 ### 3.3 网络层策略
 
 - 所有 API 请求统一走 HTTPS。
+- 优先使用 HTTP/3/QUIC；对可重试的连接重置重建 Cronet 引擎并切换备用边缘地址，避免向用户暴露底层网络异常。
 - 请求体使用已验证字段，不复刻网页私有签名逻辑，不直接访问未验证的内部源站。
 - 响应模型对站点历史字段兼容：优先读取 snake_case，必要处为旧/新字段提供回退。
 - 列表统一适配 `data.list`、`data.cards` 和分页 `pagination/page_info`。
@@ -253,4 +254,3 @@ Gradle Wrapper 的 `distributionUrl` 优先使用可用的大陆 Gradle 分发�
 - 只读评论可用或因接口故障以清晰降级呈现。
 - 测试与构建结果记录在 README。
 - Git 历史包含有意义的初始提交，远端仓库位于 `https://github.com/jiangyuyi/` 下并已推送。
-

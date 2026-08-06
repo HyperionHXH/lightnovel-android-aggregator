@@ -19,19 +19,19 @@ class AuthViewModel(private val repository: LightNovelRepository) : ViewModel() 
     private val _state = MutableStateFlow(AuthState())
     val state: StateFlow<AuthState> = _state.asStateFlow()
 
-    fun login(username: String, password: String) = runAuth {
+    fun login(username: String, password: String) = runAuth(AuthAction.LOGIN) {
         require(username.isNotBlank() && password.isNotBlank()) { "请填写账号和密码" }
         repository.login(username, password)
         _state.value = AuthState(completed = true, message = "登录成功")
     }
 
-    fun sendCode(email: String) = runAuth {
+    fun sendCode(email: String) = runAuth(AuthAction.SEND_CODE) {
         require(EMAIL.matches(email.trim())) { "请输入有效邮箱" }
         repository.sendRegistrationCode(email)
         _state.value = AuthState(message = "验证码已发送，请检查邮箱")
     }
 
-    fun register(email: String, code: String, nickname: String, password: String) = runAuth {
+    fun register(email: String, code: String, nickname: String, password: String) = runAuth(AuthAction.REGISTER) {
         require(EMAIL.matches(email.trim())) { "请输入有效邮箱" }
         require(code.isNotBlank() && nickname.isNotBlank() && password.length >= 6) { "请完整填写信息，密码至少 6 位" }
         repository.register(email, code, nickname, password)
@@ -42,12 +42,12 @@ class AuthViewModel(private val repository: LightNovelRepository) : ViewModel() 
         _state.value = _state.value.copy(message = null, error = null)
     }
 
-    private fun runAuth(block: suspend () -> Unit) {
+    private fun runAuth(action: AuthAction, block: suspend () -> Unit) {
         if (_state.value.loading) return
         _state.value = AuthState(loading = true)
         viewModelScope.launch {
             runCatching { block() }.onFailure {
-                _state.value = AuthState(error = it.message ?: "操作失败")
+                _state.value = AuthState(error = authErrorMessage(action, it))
             }
         }
     }
@@ -56,4 +56,3 @@ class AuthViewModel(private val repository: LightNovelRepository) : ViewModel() 
         val EMAIL = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
     }
 }
-

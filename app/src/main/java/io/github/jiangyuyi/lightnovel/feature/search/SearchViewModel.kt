@@ -39,12 +39,20 @@ class SearchViewModel(private val repository: LightNovelRepository) : ViewModel(
     }
 
     fun setWorkType(value: String) {
-        _state.value = _state.value.copy(workType = if (_state.value.workType == value) "" else value)
+        _state.value = _state.value.copy(
+            query = "",
+            primaryTag = "",
+            workType = if (_state.value.workType == value) "" else value,
+        )
         search()
     }
 
     fun setTag(value: String) {
-        _state.value = _state.value.copy(primaryTag = if (_state.value.primaryTag == value) "" else value)
+        _state.value = _state.value.copy(
+            query = "",
+            workType = "",
+            primaryTag = if (_state.value.primaryTag == value) "" else value,
+        )
         search()
     }
 
@@ -62,4 +70,3 @@ class SearchViewModel(private val repository: LightNovelRepository) : ViewModel(
         }
     }
 }
-

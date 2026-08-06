@@ -13,6 +13,5 @@ class LightNovelApplication : Application() {
 class AppContainer(application: Application) {
     val sessionStore = SessionStore(application)
     val readerPreferences = ReaderPreferencesStore(application)
-    val repository = LightNovelRepository(LightNovelApi(), sessionStore)
+    val repository = LightNovelRepository(LightNovelApi(application), sessionStore)
 }
-
