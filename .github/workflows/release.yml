@@ -121,7 +121,7 @@ jobs:
           else
             version="${VERSION_TAG#v}"
             awk -v heading="## [$version]" '
-              $0 == heading { capture = 1; next }
+              index($0, heading) == 1 { capture = 1; next }
               capture && /^## \[/ { exit }
               capture { print }
             ' CHANGELOG.md > release-notes.md
