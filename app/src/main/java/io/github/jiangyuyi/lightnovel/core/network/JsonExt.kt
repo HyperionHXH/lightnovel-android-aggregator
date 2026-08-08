@@ -6,6 +6,11 @@ import io.github.jiangyuyi.lightnovel.core.model.AccountProfile
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
 import io.github.jiangyuyi.lightnovel.core.model.ChapterSummary
 import io.github.jiangyuyi.lightnovel.core.model.Comment
+import io.github.jiangyuyi.lightnovel.core.model.DmConversation
+import io.github.jiangyuyi.lightnovel.core.model.DmMessage
+import io.github.jiangyuyi.lightnovel.core.model.MessageCategory
+import io.github.jiangyuyi.lightnovel.core.model.MessageSummary
+import io.github.jiangyuyi.lightnovel.core.model.NotificationMessage
 import io.github.jiangyuyi.lightnovel.core.model.Page
 import io.github.jiangyuyi.lightnovel.core.model.PublishedWork
 import io.github.jiangyuyi.lightnovel.core.model.ReadingHistoryItem
@@ -333,6 +338,115 @@ object ApiParsers {
         return page(source, items, requestedPage, pageSize)
     }
 
+    fun messageSummary(source: JsonObject): MessageSummary {
+        val summary = source.obj("summary", "unread") ?: source
+        return MessageSummary(
+            unreadCount = summary.int("unread_count", "unreadCount", "total_unread"),
+            replyCount = summary.int("reply_count", "replies"),
+            mentionCount = summary.int("mention_count", "mentions"),
+            likeCount = summary.int("like_count", "likes"),
+            systemCount = summary.int("system_count", "notifications"),
+            dmCount = summary.int("dm_count", "dm_unread"),
+            fanCount = summary.int("fan_count", "fans"),
+        )
+    }
+
+    fun messagesPage(
+        source: JsonObject,
+        category: MessageCategory,
+        requestedPage: Int,
+        pageSize: Int,
+    ): Page<NotificationMessage> {
+        val defaultTitle = when (category) {
+            MessageCategory.REPLY -> "回复我的"
+            MessageCategory.MENTION -> "提到了我"
+            MessageCategory.LIKE -> "收到的赞"
+            MessageCategory.FAN -> "新的粉丝"
+            MessageCategory.SYSTEM -> "系统通知"
+            MessageCategory.DM -> "私信"
+        }
+        val items = listObjects(source).mapNotNull { item ->
+            val id = item.string("message_id", "id")
+            if (id.isBlank()) return@mapNotNull null
+            val sender = user(item.obj("user", "sender"))
+            val title = item.string("title", "category_text").ifBlank { defaultTitle }
+            NotificationMessage(
+                id = id,
+                category = category,
+                user = sender,
+                sourceName = item.string("source_name").ifBlank { sender?.nickname.orEmpty() },
+                sourceAvatarUrl = item.string("source_avatar")
+                    .ifBlank { sender?.avatarUrl.orEmpty() }
+                    .ifBlank { null },
+                title = title,
+                content = item.string("content", "content_text", "message").ifBlank { title },
+                quoteText = item.string("quote_text"),
+                relatedTitle = item.string("related_title"),
+                createdAt = item.string("created_at", "time"),
+                unread = item.bool("unread") ?: false,
+                targetBookId = item.long("target_book_id").takeIf { it > 0 },
+                targetVolumeId = item.long("target_volume_id").takeIf { it > 0 },
+                targetChapterId = item.long("target_chapter_id").takeIf { it > 0 },
+                targetDynamicId = item.long("target_dynamic_id").takeIf { it > 0 },
+                targetCommentId = item.long("target_comment_id", "root_comment_id").takeIf { it > 0 },
+                targetReplyId = item.long("target_reply_id").takeIf { it > 0 },
+                targetUrl = item.string(
+                    "target_url",
+                    "content_target_url",
+                    "quote_target_url",
+                    "related_target_url",
+                ),
+            )
+        }
+        return page(source, items, requestedPage, pageSize).copy(page = requestedPage)
+    }
+
+    fun dmConversations(source: JsonObject): List<DmConversation> = listObjects(source).mapNotNull { item ->
+        val user = user(item.obj("user", "peer", "peer_user", "user_info", "sender"))
+            ?: return@mapNotNull null
+        val peerUid = item.long("peer_uid").takeIf { it > 0 } ?: user.uid.takeIf { it > 0 }
+            ?: return@mapNotNull null
+        val id = item.string("conversation_id", "thread_id", "id").ifBlank { "peer-$peerUid" }
+        val lastMessage = item.obj("last_message", "latest_message", "lastMessage", "last_message_info")
+        DmConversation(
+            id = id,
+            peerUid = peerUid,
+            user = user,
+            lastMessage = item.string(
+                "last_message",
+                "last_message_text",
+                "lastMessage",
+                "summary",
+                "content",
+                "content_text",
+            ).ifBlank {
+                lastMessage?.string("content", "content_text", "body", "text", "message").orEmpty()
+            },
+            unreadCount = item.int("unread_count", "unreadCount", "unread"),
+            updatedAt = item.string("updated_at", "updatedAt", "last_message_at", "time").ifBlank {
+                lastMessage?.string("created_at", "createdAt", "sent_at", "time").orEmpty()
+            },
+            canSend = item.bool("can_send", "canSend") ?: false,
+            denyReason = item.string("deny_reason", "denyReason", "dm_disabled_reason"),
+        )
+    }
+
+    fun dmMessages(source: JsonObject, fallbackPeer: UserSummary): List<DmMessage> = listObjects(source).mapNotNull { item ->
+        val id = item.string("message_id", "id")
+        if (id.isBlank()) return@mapNotNull null
+        val sender = user(item.obj("sender", "user", "author", "peer")) ?: fallbackPeer
+        val content = item.string("content", "content_text", "body", "text")
+        if (content.isBlank()) return@mapNotNull null
+        DmMessage(
+            id = id,
+            conversationId = item.string("conversation_id", "thread_id"),
+            sender = sender,
+            content = content,
+            createdAt = item.string("created_at", "createdAt", "sent_at", "time"),
+            mine = item.bool("mine", "is_mine", "from_me") ?: false,
+        )
+    }
+
     fun booksPage(source: JsonObject, requestedPage: Int = 1): Page<BookSummary> {
         val list = sequenceOf("list", "cards", "ranking_list", "items", "books")
             .map { source.array(it) }
@@ -354,11 +468,11 @@ object ApiParsers {
     }
 
     private fun listObjects(source: JsonObject): List<JsonObject> {
-        val direct = sequenceOf("list", "cards", "items", "books")
+        val direct = sequenceOf("list", "cards", "items", "books", "messages", "conversations")
             .map { source.array(it) }
             .firstOrNull { it.isNotEmpty() }
         val nested = source.obj("data", "d")?.let { data ->
-            sequenceOf("list", "cards", "items", "books")
+            sequenceOf("list", "cards", "items", "books", "messages", "conversations")
                 .map { data.array(it) }
                 .firstOrNull { it.isNotEmpty() }
         }

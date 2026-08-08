@@ -188,3 +188,84 @@ data class PublishedWork(
     val wordCount: Long = 0,
     val updatedAt: String = "",
 )
+
+enum class MessageCategory(val code: String, val label: String) {
+    DM("dm", "私信"),
+    REPLY("reply", "回复"),
+    MENTION("mention", "@我"),
+    LIKE("like", "点赞"),
+    FAN("fan", "新粉丝"),
+    SYSTEM("system", "系统"),
+}
+
+data class MessageSummary(
+    val unreadCount: Int = 0,
+    val replyCount: Int = 0,
+    val mentionCount: Int = 0,
+    val likeCount: Int = 0,
+    val systemCount: Int = 0,
+    val dmCount: Int = 0,
+    val fanCount: Int = 0,
+) {
+    fun count(category: MessageCategory): Int = when (category) {
+        MessageCategory.DM -> dmCount
+        MessageCategory.REPLY -> replyCount
+        MessageCategory.MENTION -> mentionCount
+        MessageCategory.LIKE -> likeCount
+        MessageCategory.FAN -> fanCount
+        MessageCategory.SYSTEM -> systemCount
+    }
+
+    fun clear(category: MessageCategory): MessageSummary {
+        val removed = count(category)
+        return when (category) {
+            MessageCategory.DM -> copy(unreadCount = (unreadCount - removed).coerceAtLeast(0), dmCount = 0)
+            MessageCategory.REPLY -> copy(unreadCount = (unreadCount - removed).coerceAtLeast(0), replyCount = 0)
+            MessageCategory.MENTION -> copy(unreadCount = (unreadCount - removed).coerceAtLeast(0), mentionCount = 0)
+            MessageCategory.LIKE -> copy(unreadCount = (unreadCount - removed).coerceAtLeast(0), likeCount = 0)
+            MessageCategory.FAN -> copy(unreadCount = (unreadCount - removed).coerceAtLeast(0), fanCount = 0)
+            MessageCategory.SYSTEM -> copy(unreadCount = (unreadCount - removed).coerceAtLeast(0), systemCount = 0)
+        }
+    }
+}
+
+data class NotificationMessage(
+    val id: String,
+    val category: MessageCategory,
+    val user: UserSummary? = null,
+    val sourceName: String = "",
+    val sourceAvatarUrl: String? = null,
+    val title: String,
+    val content: String,
+    val quoteText: String = "",
+    val relatedTitle: String = "",
+    val createdAt: String = "",
+    val unread: Boolean = false,
+    val targetBookId: Long? = null,
+    val targetVolumeId: Long? = null,
+    val targetChapterId: Long? = null,
+    val targetDynamicId: Long? = null,
+    val targetCommentId: Long? = null,
+    val targetReplyId: Long? = null,
+    val targetUrl: String = "",
+)
+
+data class DmConversation(
+    val id: String,
+    val peerUid: Long,
+    val user: UserSummary,
+    val lastMessage: String = "",
+    val unreadCount: Int = 0,
+    val updatedAt: String = "",
+    val canSend: Boolean = false,
+    val denyReason: String = "",
+)
+
+data class DmMessage(
+    val id: String,
+    val conversationId: String = "",
+    val sender: UserSummary,
+    val content: String,
+    val createdAt: String = "",
+    val mine: Boolean = false,
+)

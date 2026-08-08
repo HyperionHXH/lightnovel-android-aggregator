@@ -46,6 +46,7 @@ fun ProfileScreen(
     onFollowers: () -> Unit,
     onHistory: () -> Unit,
     onPublishing: () -> Unit,
+    onMessages: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(session.loggedIn) { viewModel.refresh(session.loggedIn) }
@@ -117,6 +118,12 @@ fun ProfileScreen(
                         }
                     }
                     Text("个人功能", style = MaterialTheme.typography.titleMedium)
+                    ProfileEntry(
+                        "消息中心",
+                        "回复、@、点赞、粉丝、系统与私信",
+                        onMessages,
+                        badge = state.messageSummary.unreadCount.takeIf { it > 0 },
+                    )
                     ProfileEntry("我的书架", "收藏与章节更新", onBookshelf)
                     ProfileEntry("阅读记录", "继续上次阅读", onHistory)
                     ProfileEntry("关注与粉丝", "查看用户关系", onFollowing)
@@ -148,7 +155,7 @@ private fun ProfileStat(label: String, value: Int, onClick: (() -> Unit)?) {
 }
 
 @Composable
-private fun ProfileEntry(title: String, subtitle: String, onClick: () -> Unit) {
+private fun ProfileEntry(title: String, subtitle: String, onClick: () -> Unit, badge: Int? = null) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
@@ -160,6 +167,14 @@ private fun ProfileEntry(title: String, subtitle: String, onClick: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            badge?.let {
+                Text(
+                    it.coerceAtMost(99).let { value -> if (it > 99) "99+" else value.toString() },
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.Bold,
+                )
             }
             Text("›", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
         }
