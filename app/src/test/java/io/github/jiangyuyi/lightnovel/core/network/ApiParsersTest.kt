@@ -157,5 +157,120 @@ class ApiParsersTest {
         assertEquals("奇幻", taxonomy.tags.single().label)
     }
 
+    @Test
+    fun `account profile accepts nested stats and legacy fields`() {
+        val profile = ApiParsers.accountProfile(
+            obj(
+                """
+                {
+                  "profile": {
+                    "uid": 1419000,
+                    "nickname": "jyy0736",
+                    "avatar_url": "https://example.test/avatar.jpg",
+                    "signature": "签名",
+                    "user_group": {"name": "骑士"},
+                    "balance": {"light_coin": 370}
+                  },
+                  "stats": {"followers": 8, "following": 12, "publish_articles": 3}
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        assertEquals(1419000L, profile.user.uid)
+        assertEquals("骑士", profile.levelName)
+        assertEquals(370, profile.coin)
+        assertEquals(8, profile.fansCount)
+        assertEquals(12, profile.followingCount)
+        assertEquals(3, profile.postCount)
+    }
+
+    @Test
+    fun `social page parses relationship and page info`() {
+        val page = ApiParsers.socialPage(
+            obj(
+                """
+                {
+                  "items": [{
+                    "uid": 7,
+                    "nickname": "用户七",
+                    "sign": "你好",
+                    "relation": {"is_following": 1},
+                    "level": {"name": "骑士"}
+                  }],
+                  "page_info": {"page": 1, "page_size": 20, "total": 21, "has_more": true}
+                }
+                """.trimIndent(),
+            ),
+            requestedPage = 1,
+            pageSize = 20,
+        )
+
+        assertEquals(7L, page.items.single().user.uid)
+        assertTrue(page.items.single().followed)
+        assertEquals("骑士", page.items.single().levelName)
+        assertEquals(21, page.total)
+        assertTrue(page.hasMore)
+    }
+
+    @Test
+    fun `reading history keeps last chapter and time`() {
+        val page = ApiParsers.readingHistoryPage(
+            obj(
+                """
+                {
+                  "list": [{
+                    "book_id": 10,
+                    "title": "历史书籍",
+                    "book_cover": "https://example.test/book.jpg",
+                    "history": {
+                      "chapter_id": 99,
+                      "chapter_title": "第九章",
+                      "last_read_at": "2026-08-08"
+                    }
+                  }]
+                }
+                """.trimIndent(),
+            ),
+            requestedPage = 1,
+            pageSize = 20,
+        )
+
+        val item = page.items.single()
+        assertEquals(99L, item.lastChapterId)
+        assertEquals("第九章", item.lastChapterTitle)
+        assertEquals("2026-08-08", item.readAt)
+        assertEquals("https://example.test/book.jpg", item.book.coverUrl)
+    }
+
+    @Test
+    fun `published work maps serial and review status`() {
+        val page = ApiParsers.publishedWorksPage(
+            obj(
+                """
+                {
+                  "cards": [{
+                    "book_id": 88,
+                    "title": "作者作品",
+                    "status": 1,
+                    "word_count": 123456,
+                    "meta_json": {"type": "原创", "serialize_status": "已完结"},
+                    "review_state": {"review_status": "pending", "progress_text": "审核中"}
+                  }],
+                  "pageInfo": {"page": 1, "size": 8, "count": 1}
+                }
+                """.trimIndent(),
+            ),
+            requestedPage = 1,
+            pageSize = 8,
+        )
+
+        val work = page.items.single()
+        assertEquals(88L, work.bookId)
+        assertEquals("已完本", work.status)
+        assertEquals("审核中", work.reviewText)
+        assertEquals(123456L, work.wordCount)
+    }
+
     private fun obj(raw: String): JsonObject = json.parseToJsonElement(raw) as JsonObject
 }

@@ -2,15 +2,19 @@ package io.github.jiangyuyi.lightnovel.core.data
 
 import io.github.jiangyuyi.lightnovel.core.model.BookDetail
 import io.github.jiangyuyi.lightnovel.core.model.BookSummary
+import io.github.jiangyuyi.lightnovel.core.model.AccountProfile
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
 import io.github.jiangyuyi.lightnovel.core.model.ChapterSummary
 import io.github.jiangyuyi.lightnovel.core.model.Comment
 import io.github.jiangyuyi.lightnovel.core.model.DiscoverChannel
 import io.github.jiangyuyi.lightnovel.core.model.Page
+import io.github.jiangyuyi.lightnovel.core.model.PublishedWork
+import io.github.jiangyuyi.lightnovel.core.model.ReadingHistoryItem
 import io.github.jiangyuyi.lightnovel.core.model.ReaderBootstrap
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.SearchTaxonomy
 import io.github.jiangyuyi.lightnovel.core.model.Session
+import io.github.jiangyuyi.lightnovel.core.model.SocialUser
 import io.github.jiangyuyi.lightnovel.core.model.Volume
 import io.github.jiangyuyi.lightnovel.core.network.ApiParsers
 import io.github.jiangyuyi.lightnovel.core.network.LightNovelApi
@@ -272,6 +276,74 @@ class LightNovelRepository(
         val key = requireSession()
         val data = api.post("api/bff/bookshelf-v1", jsonBody("security_key" to key, "page" to 1, "pageSize" to 50))
         return ApiParsers.booksPage(data).items
+    }
+
+    suspend fun myProfile(): AccountProfile {
+        val key = requireSession()
+        val data = api.post("api/bff/my-home-v1", jsonBody("security_key" to key))
+        return ApiParsers.accountProfile(data)
+    }
+
+    suspend fun following(page: Int = 1, pageSize: Int = 20): Page<SocialUser> =
+        socialUsers("api/bff/user-following-v1", page, pageSize)
+
+    suspend fun followers(page: Int = 1, pageSize: Int = 20): Page<SocialUser> =
+        socialUsers("api/bff/user-followers-v1", page, pageSize)
+
+    private suspend fun socialUsers(path: String, page: Int, pageSize: Int): Page<SocialUser> {
+        val key = requireSession()
+        val uid = sessionStore.session.value.uid.takeIf { it > 0 }
+            ?: myProfile().user.uid.takeIf { it > 0 }
+            ?: error("登录响应缺少用户编号")
+        val data = api.post(
+            path,
+            jsonBody(
+                "security_key" to key,
+                "uid" to uid,
+                "page" to page,
+                "pageSize" to pageSize,
+            ),
+        )
+        return ApiParsers.socialPage(data, page, pageSize)
+    }
+
+    suspend fun setUserFollow(uid: Long, follow: Boolean): Boolean {
+        val key = requireSession()
+        api.post(
+            "api/bff/toggle-user-follow-v1",
+            jsonBody(
+                "security_key" to key,
+                "uid" to uid,
+                "act" to if (follow) "follow" else "unfollow",
+            ),
+        )
+        return follow
+    }
+
+    suspend fun readingHistory(page: Int = 1, pageSize: Int = 20): Page<ReadingHistoryItem> {
+        val key = requireSession()
+        val data = api.post(
+            "api/bff/history-v1",
+            jsonBody("security_key" to key, "page" to page, "pageSize" to pageSize),
+        )
+        return ApiParsers.readingHistoryPage(data, page, pageSize)
+    }
+
+    suspend fun deleteReadingHistory(bookId: Long) {
+        val key = requireSession()
+        api.post(
+            "api/new-content-read/delete-book-history",
+            jsonBody("security_key" to key, "book_id" to bookId),
+        )
+    }
+
+    suspend fun publishedWorks(page: Int = 1, pageSize: Int = 20): Page<PublishedWork> {
+        val key = requireSession()
+        val data = api.post(
+            "api/bff/longform-book-list-v1",
+            jsonBody("security_key" to key, "page" to page, "pageSize" to pageSize),
+        )
+        return ApiParsers.publishedWorksPage(data, page, pageSize)
     }
 
     suspend fun isInBookshelf(bookId: Long): Boolean {
