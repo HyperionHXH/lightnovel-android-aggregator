@@ -6,6 +6,25 @@ data class UserSummary(
     val avatarUrl: String? = null,
 )
 
+data class AccountProfile(
+    val user: UserSummary,
+    val signature: String = "",
+    val levelName: String = "",
+    val level: Int? = null,
+    val coin: Int = 0,
+    val fansCount: Int = 0,
+    val followingCount: Int = 0,
+    val postCount: Int = 0,
+)
+
+data class SocialUser(
+    val user: UserSummary,
+    val signature: String = "",
+    val levelName: String = "",
+    val followed: Boolean = false,
+    val relationState: String = "",
+)
+
 data class Session(
     val loggedIn: Boolean = false,
     val securityKey: String = "",
@@ -145,4 +164,27 @@ data class LocalReadingProgress(
     val chapterId: Long,
     val paragraphIndex: Int,
     val percent: Int,
+)
+
+data class ReadingHistoryItem(
+    val book: BookSummary,
+    val lastChapterId: Long? = null,
+    val lastChapterTitle: String = "",
+    val readAt: String = "",
+)
+
+data class PublishedWork(
+    val bookId: Long,
+    val title: String,
+    val coverUrl: String? = null,
+    val author: String = "",
+    val summary: String = "",
+    val type: String = "",
+    val status: String = "",
+    val reviewStatus: String = "",
+    val reviewText: String = "",
+    val volumeCount: Int = 0,
+    val chapterCount: Int = 0,
+    val wordCount: Long = 0,
+    val updatedAt: String = "",
 )

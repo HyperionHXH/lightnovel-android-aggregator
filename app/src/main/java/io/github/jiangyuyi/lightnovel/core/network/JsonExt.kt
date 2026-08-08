@@ -2,12 +2,16 @@ package io.github.jiangyuyi.lightnovel.core.network
 
 import io.github.jiangyuyi.lightnovel.core.model.BookDetail
 import io.github.jiangyuyi.lightnovel.core.model.BookSummary
+import io.github.jiangyuyi.lightnovel.core.model.AccountProfile
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
 import io.github.jiangyuyi.lightnovel.core.model.ChapterSummary
 import io.github.jiangyuyi.lightnovel.core.model.Comment
 import io.github.jiangyuyi.lightnovel.core.model.Page
+import io.github.jiangyuyi.lightnovel.core.model.PublishedWork
+import io.github.jiangyuyi.lightnovel.core.model.ReadingHistoryItem
 import io.github.jiangyuyi.lightnovel.core.model.SearchOption
 import io.github.jiangyuyi.lightnovel.core.model.SearchTaxonomy
+import io.github.jiangyuyi.lightnovel.core.model.SocialUser
 import io.github.jiangyuyi.lightnovel.core.model.UserSummary
 import io.github.jiangyuyi.lightnovel.core.model.Volume
 import kotlinx.serialization.json.JsonArray
@@ -83,7 +87,15 @@ object ApiParsers {
             title = source.string("title", "book_title").ifBlank { "未命名作品" },
             author = source.string("author_name", "author", "authorName"),
             summary = source.string("summary_short", "summary", "content_preview", "intro"),
-            coverUrl = source.string("cover_url", "cover", "banner_url").ifBlank { null },
+            coverUrl = source.string(
+                "cover_url",
+                "cover",
+                "banner_url",
+                "image",
+                "book_cover",
+                "pic_url",
+                "pic",
+            ).ifBlank { null },
             tags = tags,
             volumeCount = source.int("volume_count").takeIf { it > 0 }
                 ?: stats?.int("volume_count")
@@ -183,6 +195,144 @@ object ApiParsers {
         )
     }
 
+    fun accountProfile(source: JsonObject): AccountProfile {
+        val profile = source.obj("profile", "user") ?: source
+        val stats = source.obj("stats") ?: profile.obj("stats") ?: source
+        val balance = profile.obj("balance")
+        val level = profile.obj("level")
+        val group = profile.obj("user_group", "group", "rank")
+        val user = user(profile) ?: UserSummary(
+            uid = profile.long("uid", "user_id", "id"),
+            nickname = profile.string("nickname", "username", "name").ifBlank { "已登录用户" },
+            avatarUrl = profile.string("avatar", "avatar_url", "avatarUrl").ifBlank { null },
+        )
+        return AccountProfile(
+            user = user,
+            signature = profile.string("sign", "signature"),
+            levelName = profile.string(
+                "level_name",
+                "levelName",
+                "level_title",
+                "group_name",
+                "user_group_name",
+                "rank_name",
+                "role_name",
+            ).ifBlank { group?.string("name", "title").orEmpty() },
+            level = profile.int("level").takeIf { it > 0 }
+                ?: level?.int("level")?.takeIf { it > 0 },
+            coin = profile.int("coin", "light_coin", "lightCoin", "balance").takeIf { it > 0 }
+                ?: balance?.int("coin", "light_coin", "lightCoin")
+                ?: 0,
+            fansCount = stats.int("followers", "fans", "fans_count").takeIf { it > 0 }
+                ?: profile.int("followers", "fans", "fans_count", "fansCount"),
+            followingCount = stats.int("following", "following_count").takeIf { it > 0 }
+                ?: profile.int("following", "following_count", "followingCount"),
+            postCount = stats.int("publish_articles", "post_count", "posts").takeIf { it > 0 }
+                ?: profile.int("publish_articles", "post_count", "posts", "postCount"),
+        )
+    }
+
+    fun socialUser(source: JsonObject): SocialUser? {
+        val profile = source.obj("profile", "user") ?: source
+        val parsed = user(profile) ?: return null
+        val relation = source.obj("relation", "interaction_state")
+            ?: profile.obj("relation", "interaction_state")
+        val group = profile.obj("level", "user_group", "group", "rank")
+        return SocialUser(
+            user = parsed,
+            signature = profile.string("sign", "signature"),
+            levelName = profile.string(
+                "level_name",
+                "levelName",
+                "level_title",
+                "group_name",
+                "user_group_name",
+                "rank_name",
+                "role_name",
+            ).ifBlank { group?.string("name", "title").orEmpty() },
+            followed = profile.bool(
+                "followed",
+                "is_followed",
+                "isFollowing",
+                "is_following",
+                "has_followed",
+                "hasFollowed",
+            ) ?: relation?.bool("followed", "is_followed", "isFollowing", "is_following") ?: false,
+            relationState = profile.string("relation_state", "relationState")
+                .ifBlank { relation?.string("relation_state", "relationState").orEmpty() },
+        )
+    }
+
+    fun socialPage(source: JsonObject, requestedPage: Int, pageSize: Int): Page<SocialUser> {
+        val items = listObjects(source).mapNotNull(::socialUser).filter { it.user.uid > 0 }
+        return page(source, items, requestedPage, pageSize)
+    }
+
+    fun readingHistoryPage(source: JsonObject, requestedPage: Int, pageSize: Int): Page<ReadingHistoryItem> {
+        val items = listObjects(source).mapNotNull { item ->
+            val book = book(item)
+            if (book.id <= 0) return@mapNotNull null
+            val history = item.obj("history", "read_state")
+            ReadingHistoryItem(
+                book = book,
+                lastChapterId = item.long("last_read_chapter_id", "lastReadChapterId").takeIf { it > 0 }
+                    ?: history?.long("last_read_chapter_id", "chapter_id", "default_chapter_id")?.takeIf { it > 0 }
+                    ?: book.defaultChapterId,
+                lastChapterTitle = item.string("last_read_chapter_title", "chapter_title", "latest_chapter_title")
+                    .ifBlank { history?.string("last_read_chapter_title", "chapter_title", "title").orEmpty() },
+                readAt = item.string("read_at", "last_read_at")
+                    .ifBlank { history?.string("read_at", "last_read_at", "updated_at").orEmpty() },
+            )
+        }
+        return page(source, items, requestedPage, pageSize)
+    }
+
+    fun publishedWorksPage(source: JsonObject, requestedPage: Int, pageSize: Int): Page<PublishedWork> {
+        val items = listObjects(source).mapNotNull { item ->
+            val bookId = item.long("book_id", "bookId", "id")
+            if (bookId <= 0) return@mapNotNull null
+            val meta = item.obj("meta_json", "metaJson")
+            val review = item.obj("review_state", "reviewState")
+            val rawStatus = meta?.string("serialize_status", "serial_status")
+                .orEmpty().ifBlank { item.string("serial_status", "serialStatus", "status_text") }
+            val numericStatus = item.int("status")
+            val status = when {
+                rawStatus == "已完结" -> "已完本"
+                rawStatus.isNotBlank() -> rawStatus
+                meta?.bool("is_completed") == true || item.bool("is_completed", "isCompleted") == true -> "已完本"
+                numericStatus == 2 -> "已隐藏"
+                numericStatus == 0 -> "草稿中"
+                else -> "连载中"
+            }
+            val reviewStatus = review?.string("review_status", "reviewStatus")
+                .orEmpty().ifBlank { item.string("review_status", "reviewStatus") }
+            val reviewText = review?.string("progress_text", "progressText").orEmpty().ifBlank {
+                when (reviewStatus) {
+                    "pending" -> "审核中"
+                    "approved" -> "审核通过"
+                    "rejected" -> "审核未通过"
+                    else -> ""
+                }
+            }
+            PublishedWork(
+                bookId = bookId,
+                title = item.string("title").ifBlank { "未命名作品" },
+                coverUrl = item.string("cover_url", "coverUrl", "cover").ifBlank { null },
+                author = item.string("author_name", "author", "authorName"),
+                summary = item.string("summary", "long_summary", "longSummary"),
+                type = meta?.string("type").orEmpty().ifBlank { item.string("type") },
+                status = status,
+                reviewStatus = reviewStatus,
+                reviewText = reviewText,
+                volumeCount = item.int("volume_count", "volumeCount"),
+                chapterCount = item.int("chapter_count", "chapterCount"),
+                wordCount = item.long("word_count", "wordCount"),
+                updatedAt = item.string("updated_at", "updatedAt"),
+            )
+        }
+        return page(source, items, requestedPage, pageSize)
+    }
+
     fun booksPage(source: JsonObject, requestedPage: Int = 1): Page<BookSummary> {
         val list = sequenceOf("list", "cards", "ranking_list", "items", "books")
             .map { source.array(it) }
@@ -201,6 +351,39 @@ object ApiParsers {
             total = total,
             hasMore = hasMore,
         )
+    }
+
+    private fun listObjects(source: JsonObject): List<JsonObject> {
+        val direct = sequenceOf("list", "cards", "items", "books")
+            .map { source.array(it) }
+            .firstOrNull { it.isNotEmpty() }
+        val nested = source.obj("data", "d")?.let { data ->
+            sequenceOf("list", "cards", "items", "books")
+                .map { data.array(it) }
+                .firstOrNull { it.isNotEmpty() }
+        }
+        return (direct ?: nested ?: source.array("data", "d"))
+            .mapNotNull { it as? JsonObject }
+    }
+
+    private fun <T> page(
+        source: JsonObject,
+        items: List<T>,
+        requestedPage: Int,
+        requestedPageSize: Int,
+    ): Page<T> {
+        val pagination = source.obj("pagination", "page_info", "pageInfo")
+            ?: source.obj("data", "d")?.obj("pagination", "page_info", "pageInfo")
+        val page = pagination?.int("page", "cur", "current_page")?.takeIf { it >= 0 } ?: requestedPage
+        val total = pagination?.int("total", "count")?.takeIf { it >= 0 }
+            ?: source.int("total").takeIf { it > 0 }
+            ?: items.size
+        val actualSize = pagination?.int("page_size", "pageSize", "size").takeIf { it != null && it > 0 }
+            ?: requestedPageSize.coerceAtLeast(1)
+        val next = pagination?.int("next") ?: 0
+        val hasMore = pagination?.bool("has_more", "hasMore", "has_next")
+            ?: (next > 0 || page * actualSize < total)
+        return Page(items, page, total, hasMore)
     }
 
     fun taxonomy(source: JsonObject): SearchTaxonomy {
