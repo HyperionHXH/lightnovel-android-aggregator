@@ -59,6 +59,7 @@ fun SettingsScreen(
     readerPreferences: ReaderPreferencesAccess,
     appPreferences: AppPreferencesAccess,
     onBack: () -> Unit,
+    onRestartOnboarding: () -> Unit,
 ) {
     val wifiOnly by offlineLibrary.wifiOnly.collectAsStateWithLifecycle()
     val backgroundUpdatesEnabled by updateNotifications.enabled.collectAsStateWithLifecycle(initialValue = false)
@@ -97,6 +98,7 @@ fun SettingsScreen(
         onReaderPreferencesChange = { value -> scope.launch { readerPreferences.update(value) } },
         onAppPreferencesChange = { value -> scope.launch { appPreferences.update(value) } },
         onBack = onBack,
+        onRestartOnboarding = onRestartOnboarding,
     )
 }
 
@@ -105,13 +107,14 @@ fun SettingsScreen(
 internal fun SettingsScreenContent(
     wifiOnly: Boolean,
     backgroundUpdatesEnabled: Boolean,
-    readerPreferences: ReaderPreferences,
-    appPreferences: AppPreferences,
+    readerPreferences: ReaderPreferences = ReaderPreferences(),
+    appPreferences: AppPreferences = AppPreferences(),
     onWifiOnlyChange: (Boolean) -> Unit,
     onBackgroundUpdatesChange: (Boolean) -> Unit,
-    onReaderPreferencesChange: (ReaderPreferences) -> Unit,
-    onAppPreferencesChange: (AppPreferences) -> Unit,
+    onReaderPreferencesChange: (ReaderPreferences) -> Unit = {},
+    onAppPreferencesChange: (AppPreferences) -> Unit = {},
     onBack: () -> Unit,
+    onRestartOnboarding: () -> Unit = {},
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -149,6 +152,43 @@ internal fun SettingsScreenContent(
                 onBackgroundUpdatesChange = onBackgroundUpdatesChange,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
+        }
+        item {
+            OtherSettingsSection(
+                onRestartOnboarding = onRestartOnboarding,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun OtherSettingsSection(
+    onRestartOnboarding: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("其他", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Card(
+            Modifier.fillMaxWidth(),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            ),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("新手引导", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "重新查看外观、阅读器和使用入口设置",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                TextButton(onClick = onRestartOnboarding) { Text("打开") }
+            }
         }
     }
 }

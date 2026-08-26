@@ -25,6 +25,7 @@ import io.github.jiangyuyi.lightnovel.core.source.NovelSummary
 fun SourceNovelCard(
     novel: NovelSummary,
     sourceName: String,
+    showUnreadChapterCount: Boolean = false,
     updateLabel: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -62,7 +63,7 @@ fun SourceNovelCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                novel.unreadChapterCount?.takeIf { it > 0 }?.let { unreadCount ->
+                if (showUnreadChapterCount) novel.unreadChapterCount?.takeIf { it > 0 }?.let { unreadCount ->
                     Text(
                         "未读 $unreadCount 章",
                         style = MaterialTheme.typography.labelMedium,

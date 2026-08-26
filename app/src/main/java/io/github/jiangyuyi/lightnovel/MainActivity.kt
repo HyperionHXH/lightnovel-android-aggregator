@@ -5,8 +5,11 @@ import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -18,6 +21,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -57,6 +62,7 @@ import io.github.jiangyuyi.lightnovel.feature.profile.ProfileViewModel
 import io.github.jiangyuyi.lightnovel.feature.profile.SettingsScreen
 import io.github.jiangyuyi.lightnovel.feature.local.LocalLibraryScreen
 import io.github.jiangyuyi.lightnovel.feature.local.LocalReaderScreen
+import io.github.jiangyuyi.lightnovel.feature.onboarding.OnboardingScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadViewModel
 import io.github.jiangyuyi.lightnovel.feature.messages.MessagesScreen
@@ -75,6 +81,7 @@ import io.github.jiangyuyi.lightnovel.feature.sources.SourceBookScreen
 import io.github.jiangyuyi.lightnovel.feature.sources.SourceBookViewModel
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -86,9 +93,41 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun LightNovelAppRoot() {
     val application = LocalContext.current.applicationContext as LightNovelApplication
-    val appPreferences by application.container.appPreferences.preferences
+    val container = application.container
+    val appPreferences by container.appPreferences.preferences
         .collectAsStateWithLifecycle(initialValue = io.github.jiangyuyi.lightnovel.core.preferences.AppPreferences())
-    LightNovelTheme(appPreferences) { LightNovelApp() }
+    val readerPreferences by container.readerPreferences.preferences
+        .collectAsStateWithLifecycle(initialValue = io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences())
+    val scope = rememberCoroutineScope()
+    LightNovelTheme(appPreferences) {
+        when {
+            !appPreferences.loaded -> AppStartupLoading()
+            appPreferences.onboardingCompleted -> LightNovelApp()
+            else -> OnboardingScreen(
+                appPreferences = appPreferences,
+                readerPreferences = readerPreferences,
+                onAppPreferencesChange = { value ->
+                    scope.launch { container.appPreferences.update(value) }
+                },
+                onReaderPreferencesChange = { value ->
+                    scope.launch { container.readerPreferences.update(value) }
+                },
+                onComplete = {
+                    scope.launch { container.appPreferences.completeOnboarding() }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppStartupLoading() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator()
+    }
 }
 
 private object Routes {
@@ -142,6 +181,10 @@ private fun LightNovelApp() {
     val navController = rememberNavController()
     val appViewModel: AppViewModel = viewModel(factory = viewModelFactory { AppViewModel(container.repository) })
     val session by appViewModel.session.collectAsStateWithLifecycle()
+    val appPreferences by container.appPreferences.preferences.collectAsStateWithLifecycle(
+        initialValue = io.github.jiangyuyi.lightnovel.core.preferences.AppPreferences(),
+    )
+    val scope = rememberCoroutineScope()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
     val showBottomBar = bottomDestinations.any { it.route == currentRoute }
@@ -256,6 +299,9 @@ private fun LightNovelApp() {
                     readerPreferences = container.readerPreferences,
                     appPreferences = container.appPreferences,
                     onBack = { navController.popBackStack() },
+                    onRestartOnboarding = {
+                        scope.launch { container.appPreferences.restartOnboarding() }
+                    },
                 )
             }
             composable(Routes.DOWNLOADS) {

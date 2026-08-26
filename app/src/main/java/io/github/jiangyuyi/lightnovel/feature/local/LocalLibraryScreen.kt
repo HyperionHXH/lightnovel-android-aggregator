@@ -11,23 +11,32 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FileOpen
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.local.LocalBookRecord
@@ -52,6 +61,10 @@ fun LocalLibraryScreen(
     val importedFiles by store.importedFiles.collectAsStateWithLifecycle()
     val indexing by store.isIndexing.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val focus = LocalFocusManager.current
+    var searchVisible by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val visibleBooks = filterLocalBooks(books, query)
     val fileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
@@ -77,23 +90,63 @@ fun LocalLibraryScreen(
             TopAppBar(
                 title = { Text("本地书库") },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            if (searchVisible) {
+                                searchVisible = false
+                                query = ""
+                                focus.clearFocus()
+                            } else {
+                                searchVisible = true
+                            }
+                        },
+                    ) {
+                        Icon(
+                            if (searchVisible) Icons.Filled.Close else Icons.Filled.Search,
+                            contentDescription = if (searchVisible) "关闭搜索" else "搜索本地书库",
+                        )
+                    }
                     IconButton(onClick = { fileLauncher.launch(LOCAL_FILE_MIME_TYPES) }) {
                         Icon(Icons.Filled.FileOpen, contentDescription = "导入书籍")
                     }
                 },
             )
         }
+        if (searchVisible) {
+            item {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    singleLine = true,
+                    placeholder = { Text("搜索本地书籍") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            IconButton(onClick = { query = "" }) {
+                                Icon(Icons.Filled.Close, contentDescription = "清除搜索")
+                            }
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+                )
+            }
+        }
         if (importedFiles.isEmpty()) {
             item {
                 Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("还没有导入本地书籍", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "选择现成的 EPUB、TXT、HTML 或 FB2 文件后即可阅读。文件只在本机解析，不会上传。",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        IconButton(onClick = { fileLauncher.launch(LOCAL_FILE_MIME_TYPES) }) {
-                            Icon(Icons.Filled.FileOpen, contentDescription = "导入书籍")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "导入文件",
+                                modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            IconButton(onClick = { fileLauncher.launch(LOCAL_FILE_MIME_TYPES) }) {
+                                Icon(Icons.Filled.FileOpen, contentDescription = "导入书籍")
+                            }
                         }
                     }
                 }
@@ -106,7 +159,16 @@ fun LocalLibraryScreen(
                 }
             }
         }
-        items(books, key = LocalBookRecord::id) { book ->
+        if (books.isNotEmpty() && visibleBooks.isEmpty()) {
+            item {
+                Text(
+                    "没有找到匹配的本地书籍",
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        items(visibleBooks, key = LocalBookRecord::id) { book ->
             LocalBookCard(book, onClick = { onBook(book) })
         }
         if (importedFiles.isNotEmpty()) {
@@ -137,6 +199,15 @@ fun LocalLibraryScreen(
                 }
             }
         }
+    }
+}
+
+internal fun filterLocalBooks(books: List<LocalBookRecord>, query: String): List<LocalBookRecord> {
+    val normalizedQuery = query.trim()
+    if (normalizedQuery.isEmpty()) return books
+    return books.filter { book ->
+        book.title.contains(normalizedQuery, ignoreCase = true) ||
+            book.author.contains(normalizedQuery, ignoreCase = true)
     }
 }
 

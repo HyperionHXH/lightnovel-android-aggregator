@@ -3,8 +3,10 @@ package io.github.jiangyuyi.lightnovel.core.network
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.chromium.net.CronetEngine
 import org.chromium.net.CronetException
@@ -66,9 +68,11 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
         build()
     }
 
-    @Synchronized
-    private fun engineFor(route: NetworkRoute): CronetEngine =
-        engines.getOrPut(route) { createEngine(route) }
+    private suspend fun engineFor(route: NetworkRoute): CronetEngine = withContext(Dispatchers.IO) {
+        synchronized(engines) {
+            engines.getOrPut(route) { createEngine(route) }
+        }
+    }
 
     override suspend fun postJson(url: String, body: String): HttpResponse {
         val response = request(url, "POST", body.toByteArray(Charsets.UTF_8))

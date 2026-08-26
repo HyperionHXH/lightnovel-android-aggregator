@@ -258,6 +258,7 @@ fun AggregateBookshelfScreen(
                 SourceNovelCard(
                     novel = result.novel,
                     sourceName = result.source.displayName,
+                    showUnreadChapterCount = true,
                     updateLabel = "发现新章节".takeIf {
                         result.hasUpdates && result.novel.unreadChapterCount == null
                     },
@@ -301,6 +302,7 @@ private fun OfflineDownloadItem(
         SourceNovelCard(
             novel = record.novel,
             sourceName = sourceName,
+            showUnreadChapterCount = true,
             onClick = onOpen,
             modifier = Modifier.padding(horizontal = 14.dp),
         )

@@ -32,29 +32,39 @@ class LightNovelApplication : Application(), ImageLoaderFactory {
 }
 
 class AppContainer(application: Application) {
-    val sessionStore = SessionStore(application)
-    val readerPreferences = ReaderPreferencesStore(application)
-    val appPreferences = AppPreferencesStore(application)
-    val sourceUpdateSnapshots = SourceUpdateSnapshotStore(application)
-    val sourceUpdateNotifications = SourceUpdateNotificationSnapshotStore(application)
-    val updateNotifications = UpdateNotificationSettings(application)
-    val api = LightNovelApi(application)
-    private val cacheStore = SqliteCacheStore(application)
-    private val cachedDataSource = CachedDataSource(cacheStore)
-    val repository = LightNovelRepository(api, sessionStore, cachedDataSource)
-    val sourceRegistry = SourceRegistry(
-        listOf(
-            LightNovelKingdomSource.from(repository),
-            LightNovelShelfSource.create(application),
-        ),
-    )
-    val aggregateSearch = AggregateSearchCoordinator(sourceRegistry)
-    val chapterFonts = ChapterFontRepository(application)
-    val offlineLibrary = OfflineLibrary(
-        application,
-        sourceRegistry,
-        chapterFonts,
-        coverFetcher = { url -> runCatching { api.getBytes(url) }.getOrNull() },
-    )
-    val localLibrary = LocalLibraryStore(application)
+    // Keep the first composition lightweight. Keystore, WorkManager and source
+    // adapters are only needed after the shell or onboarding is visible.
+    val sessionStore: SessionStore by lazy { SessionStore(application) }
+    val readerPreferences: ReaderPreferencesStore by lazy { ReaderPreferencesStore(application) }
+    val appPreferences: AppPreferencesStore by lazy { AppPreferencesStore(application) }
+    val sourceUpdateSnapshots: SourceUpdateSnapshotStore by lazy { SourceUpdateSnapshotStore(application) }
+    val sourceUpdateNotifications: SourceUpdateNotificationSnapshotStore by lazy {
+        SourceUpdateNotificationSnapshotStore(application)
+    }
+    val updateNotifications: UpdateNotificationSettings by lazy { UpdateNotificationSettings(application) }
+    val api: LightNovelApi by lazy { LightNovelApi(application) }
+    private val cacheStore: SqliteCacheStore by lazy { SqliteCacheStore(application) }
+    private val cachedDataSource: CachedDataSource by lazy { CachedDataSource(cacheStore) }
+    val repository: LightNovelRepository by lazy {
+        LightNovelRepository(api, sessionStore, cachedDataSource)
+    }
+    val sourceRegistry: SourceRegistry by lazy {
+        SourceRegistry(
+            listOf(
+                LightNovelKingdomSource.from(repository),
+                LightNovelShelfSource.create(application),
+            ),
+        )
+    }
+    val aggregateSearch: AggregateSearchCoordinator by lazy { AggregateSearchCoordinator(sourceRegistry) }
+    val chapterFonts: ChapterFontRepository by lazy { ChapterFontRepository(application) }
+    val offlineLibrary: OfflineLibrary by lazy {
+        OfflineLibrary(
+            application,
+            sourceRegistry,
+            chapterFonts,
+            coverFetcher = { url -> runCatching { api.getBytes(url) }.getOrNull() },
+        )
+    }
+    val localLibrary: LocalLibraryStore by lazy { LocalLibraryStore(application) }
 }
