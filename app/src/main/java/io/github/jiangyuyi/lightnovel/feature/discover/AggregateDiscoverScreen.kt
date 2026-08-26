@@ -16,6 +16,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -40,6 +41,7 @@ fun AggregateDiscoverScreen(
     viewModel: AggregateDiscoverViewModel,
     onBook: (NovelKey) -> Unit,
     onAccounts: () -> Unit,
+    onSearch: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val activeSource = state.sources.singleOrNull()
@@ -54,6 +56,11 @@ fun AggregateDiscoverScreen(
         item {
             TopAppBar(
                 title = { Text("发现") },
+                actions = {
+                    IconButton(onClick = onSearch) {
+                        Icon(Icons.Filled.Search, contentDescription = "搜索")
+                    }
+                },
             )
             ScrollableTabRow(
                 selectedTabIndex = state.sourceOptions.indexOfFirst {

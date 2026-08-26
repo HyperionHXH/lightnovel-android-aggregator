@@ -16,7 +16,6 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -132,9 +131,8 @@ private data class BottomDestination(val route: String, val label: String, val i
 private val bottomDestinations = listOf(
     BottomDestination(Routes.DISCOVER, "发现", Icons.Filled.Home),
     BottomDestination(Routes.BOOKSHELF, "书架", Icons.AutoMirrored.Filled.MenuBook),
-    BottomDestination(Routes.SEARCH, "搜索", Icons.Filled.Search),
-    BottomDestination(Routes.PROFILE, "我的", Icons.Filled.Person),
     BottomDestination(Routes.LOCAL, "本地", Icons.Filled.AutoStories),
+    BottomDestination(Routes.PROFILE, "我的", Icons.Filled.Person),
 )
 
 @Composable
@@ -183,6 +181,7 @@ private fun LightNovelApp() {
                     viewModel = vm,
                     onBook = { navController.navigate(Routes.sourceBook(it)) },
                     onAccounts = { navController.navigate(Routes.SOURCE_ACCOUNTS) },
+                    onSearch = { navController.openRoot(Routes.SEARCH) },
                 )
             }
             composable(Routes.BOOKSHELF) {
