@@ -21,10 +21,10 @@ class OfflineFileStore(
         ignoreUnknownKeys = true
         encodeDefaults = true
     },
-) {
+) : OfflineBookStore {
     private val mutex = Mutex()
 
-    suspend fun listBooks(): List<OfflineBookRecord> = withContext(Dispatchers.IO) {
+    override suspend fun listBooks(): List<OfflineBookRecord> = withContext(Dispatchers.IO) {
         mutex.withLock {
             root.listFiles()
                 ?.filter(File::isDirectory)
@@ -34,22 +34,22 @@ class OfflineFileStore(
         }
     }
 
-    suspend fun readBook(key: NovelKey): OfflineBookRecord? = withContext(Dispatchers.IO) {
+    override suspend fun readBook(key: NovelKey): OfflineBookRecord? = withContext(Dispatchers.IO) {
         mutex.withLock { readManifest(File(bookDirectory(key), MANIFEST_FILE)) }
     }
 
-    suspend fun writeBook(record: OfflineBookRecord) = withContext(Dispatchers.IO) {
+    override suspend fun writeBook(record: OfflineBookRecord) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val file = File(bookDirectory(record.novel.key), MANIFEST_FILE)
             atomicWrite(file, json.encodeToString(record))
         }
     }
 
-    suspend fun hasChapter(novelKey: NovelKey, chapterKey: ChapterKey): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun hasChapter(novelKey: NovelKey, chapterKey: ChapterKey): Boolean = withContext(Dispatchers.IO) {
         mutex.withLock { chapterFile(novelKey, chapterKey).isFile }
     }
 
-    suspend fun readChapter(novelKey: NovelKey, chapterKey: ChapterKey): ChapterContent? =
+    override suspend fun readChapter(novelKey: NovelKey, chapterKey: ChapterKey): ChapterContent? =
         withContext(Dispatchers.IO) {
             mutex.withLock {
                 val file = chapterFile(novelKey, chapterKey)
@@ -58,7 +58,7 @@ class OfflineFileStore(
             }
         }
 
-    suspend fun writeChapter(novelKey: NovelKey, content: ChapterContent) = withContext(Dispatchers.IO) {
+    override suspend fun writeChapter(novelKey: NovelKey, content: ChapterContent) = withContext(Dispatchers.IO) {
         mutex.withLock {
             require(content.chapter.key.sourceId == novelKey.sourceId) { "chapter belongs to another source" }
             atomicWrite(
@@ -68,7 +68,7 @@ class OfflineFileStore(
         }
     }
 
-    suspend fun deleteBook(key: NovelKey) = withContext(Dispatchers.IO) {
+    override suspend fun deleteBook(key: NovelKey) = withContext(Dispatchers.IO) {
         mutex.withLock {
             val directory = bookDirectory(key)
             check(directory.canonicalFile.parentFile == root.canonicalFile) {

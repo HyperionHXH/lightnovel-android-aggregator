@@ -63,7 +63,10 @@ internal fun pendingOfflineWorkAfterNetworkPolicyChange(
 interface OfflineLibraryAccess {
     val books: StateFlow<List<OfflineBookRecord>>
     val wifiOnly: StateFlow<Boolean>
+    val downloadDirectory: StateFlow<String?>
+        get() = EMPTY_DOWNLOAD_DIRECTORY
     fun setWifiOnly(enabled: Boolean)
+    fun setDownloadDirectory(uri: String?) {}
     fun enqueue(novel: NovelSummary, volumeKey: VolumeKey? = null)
     fun retry(record: OfflineBookRecord)
     fun delete(key: NovelKey)
@@ -76,9 +79,12 @@ interface OfflineLibraryAccess {
     ): EpubExportResult? = null
 }
 
+private val EMPTY_DOWNLOAD_DIRECTORY = MutableStateFlow<String?>(null)
+
 object EmptyOfflineLibraryAccess : OfflineLibraryAccess {
     override val books = MutableStateFlow<List<OfflineBookRecord>>(emptyList())
     override val wifiOnly = MutableStateFlow(true)
+    override val downloadDirectory: StateFlow<String?> = EMPTY_DOWNLOAD_DIRECTORY
     override fun setWifiOnly(enabled: Boolean) = Unit
     override fun enqueue(novel: NovelSummary, volumeKey: VolumeKey?) = Unit
     override fun retry(record: OfflineBookRecord) = Unit

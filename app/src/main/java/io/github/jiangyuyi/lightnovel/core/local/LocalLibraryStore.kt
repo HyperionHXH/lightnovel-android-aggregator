@@ -1,7 +1,9 @@
 package io.github.jiangyuyi.lightnovel.core.local
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
@@ -27,9 +29,8 @@ class LocalLibraryStore(context: Context) {
     private val _books = MutableStateFlow<List<LocalBookRecord>>(emptyList())
     val books: StateFlow<List<LocalBookRecord>> = _books.asStateFlow()
 
-    /** Kept for migration compatibility with versions that stored folder permissions. */
-    @Deprecated("Folder authorization is no longer the primary import flow")
-    val roots: StateFlow<List<String>> = MutableStateFlow(readRoots())
+    private val _roots = MutableStateFlow(readRoots())
+    val roots: StateFlow<List<String>> = _roots.asStateFlow()
 
     init {
         indexing.set(true)
@@ -51,6 +52,14 @@ class LocalLibraryStore(context: Context) {
         reindex()
     }
 
+    fun addFolder(uri: Uri) {
+        val value = uri.toString()
+        val updated = (_roots.value + value).distinct()
+        preferences.edit().putStringSet(ROOTS, updated.toSet()).apply()
+        _roots.value = updated
+        reindex()
+    }
+
     fun removeFile(uri: String) {
         val updated = _imports.value.filterNot { it == uri }
         preferences.edit().putStringSet(IMPORTS, updated.toSet()).apply()
@@ -58,7 +67,23 @@ class LocalLibraryStore(context: Context) {
         reindex()
     }
 
-    /** Rebuilds metadata only for files the user explicitly imported. */
+    fun removeFolder(uri: String) {
+        runCatching {
+            resolver.releasePersistableUriPermission(
+                Uri.parse(uri),
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }
+        val updatedRoots = _roots.value.filterNot { it == uri }
+        preferences.edit().putStringSet(ROOTS, updatedRoots.toSet()).apply()
+        _roots.value = updatedRoots
+        val remaining = _imports.value.filterNot { isInFolder(Uri.parse(it), Uri.parse(uri)) }
+        preferences.edit().putStringSet(IMPORTS, remaining.toSet()).apply()
+        _imports.value = remaining
+        reindex()
+    }
+
+    /** Rebuilds metadata for explicitly imported files and files under authorized folders. */
     fun reindex() {
         if (!indexing.compareAndSet(false, true)) return
         _indexing.value = true
@@ -75,24 +100,11 @@ class LocalLibraryStore(context: Context) {
     @Deprecated("Use reindex")
     fun scan() = reindex()
 
-    @Deprecated("Use addFiles")
-    fun addTree(uri: Uri) {
-        scope.launch {
-            val files = listTreeFiles(uri)
-            addFiles(files)
-        }
-    }
+    @Deprecated("Use addFolder")
+    fun addTree(uri: Uri) = addFolder(uri)
 
-    @Deprecated("Use removeFile")
-    fun removeTree(uri: String) {
-        preferences.edit().remove(ROOTS).apply()
-        scope.launch {
-            val remaining = _imports.value.filterNot { it == uri || it.startsWith("$uri/") }
-            preferences.edit().putStringSet(IMPORTS, remaining.toSet()).apply()
-            _imports.value = remaining
-            reindex()
-        }
-    }
+    @Deprecated("Use removeFolder")
+    fun removeTree(uri: String) = removeFolder(uri)
 
     fun readProgress(bookId: String): Int = preferences.getInt("progress_$bookId", 0)
 
@@ -105,6 +117,7 @@ class LocalLibraryStore(context: Context) {
     }
 
     private suspend fun reindexInternal() = withContext(Dispatchers.IO) {
+        refreshFolderImports()
         val found = _imports.value.map { uriString ->
             val uri = Uri.parse(uriString)
             val file = DocumentFile.fromSingleUri(appContext, uri)
@@ -131,15 +144,20 @@ class LocalLibraryStore(context: Context) {
         )
     }
 
-    private suspend fun migrateLegacyRoots() {
-        if (_imports.value.isNotEmpty()) return
-        val legacyRoots = readRoots()
-        if (legacyRoots.isEmpty()) return
-        val files = legacyRoots.flatMap { listTreeFiles(Uri.parse(it)) }.distinct().take(MAX_BOOKS)
-        if (files.isNotEmpty()) {
-            preferences.edit().putStringSet(IMPORTS, files.map(Uri::toString).toSet()).apply()
-            _imports.value = files.map(Uri::toString)
+    private suspend fun migrateLegacyRoots() = Unit
+
+    private suspend fun refreshFolderImports() {
+        if (_roots.value.isEmpty()) return
+        val folderFiles = _roots.value
+            .flatMap { listTreeFiles(Uri.parse(it)) }
+            .map(Uri::toString)
+        val directFiles = _imports.value.filterNot { file ->
+            _roots.value.any { root -> isInFolder(Uri.parse(file), Uri.parse(root)) }
         }
+        val updated = (directFiles + folderFiles).distinct().take(MAX_BOOKS)
+        if (updated == _imports.value) return
+        preferences.edit().putStringSet(IMPORTS, updated.toSet()).apply()
+        _imports.value = updated
     }
 
     private suspend fun listTreeFiles(uri: Uri): List<Uri> = withContext(Dispatchers.IO) {
@@ -159,6 +177,14 @@ class LocalLibraryStore(context: Context) {
     private fun readImportedFiles(): List<String> = preferences.getStringSet(IMPORTS, emptySet()).orEmpty().toList().sorted()
 
     private fun readRoots(): List<String> = preferences.getStringSet(ROOTS, emptySet()).orEmpty().toList().sorted()
+
+    private fun isInFolder(file: Uri, root: Uri): Boolean = runCatching {
+        val rootId = DocumentsContract.getTreeDocumentId(root)
+        val fileId = DocumentsContract.getDocumentId(file)
+        fileId == rootId || fileId.startsWith("$rootId/")
+    }.getOrElse {
+        file.toString().startsWith(root.toString())
+    }
 
     private companion object {
         const val PREFERENCES = "local_library"

@@ -35,5 +35,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LightNovel"
+rootProject.name = "Noyue"
 include(":app")

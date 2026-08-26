@@ -20,6 +20,7 @@ import io.github.jiangyuyi.lightnovel.core.epub.EpubExportProgress
 import io.github.jiangyuyi.lightnovel.core.epub.EpubExporter
 import java.io.OutputStream
 import java.io.File
+import android.net.Uri
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,18 +36,22 @@ class OfflineLibrary(
     private val registry: SourceRegistry,
     private val chapterFonts: ChapterFontAccess,
     private val coverFetcher: suspend (String) -> ByteArray? = { null },
-    private val store: OfflineFileStore = OfflineFileStore(
-        File(context.applicationContext.filesDir, OFFLINE_DIRECTORY),
-    ),
     private val workManager: WorkManager = WorkManager.getInstance(context.applicationContext),
 ) : OfflineLibraryAccess {
     private val applicationContext = context.applicationContext
     private val preferences = applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val defaultStore = OfflineFileStore(
+        File(applicationContext.filesDir, OFFLINE_DIRECTORY),
+    )
+    @Volatile
+    private var store: OfflineBookStore = createStore(preferences.getString(KEY_DOWNLOAD_DIRECTORY, null))
     private val _books = MutableStateFlow<List<OfflineBookRecord>>(emptyList())
     override val books: StateFlow<List<OfflineBookRecord>> = _books.asStateFlow()
     private val _wifiOnly = MutableStateFlow(preferences.getBoolean(KEY_WIFI_ONLY, true))
     override val wifiOnly: StateFlow<Boolean> = _wifiOnly.asStateFlow()
+    private val _downloadDirectory = MutableStateFlow(preferences.getString(KEY_DOWNLOAD_DIRECTORY, null))
+    override val downloadDirectory: StateFlow<String?> = _downloadDirectory.asStateFlow()
 
     init {
         scope.launch { reload() }
@@ -62,10 +67,32 @@ class OfflineLibrary(
         }
     }
 
+    override fun setDownloadDirectory(uri: String?) {
+        val normalized = uri?.trim()?.takeIf(String::isNotBlank)
+        if (normalized == _downloadDirectory.value) return
+        scope.launch {
+            val nextStore = if (normalized == null) {
+                defaultStore
+            } else {
+                runCatching { OfflineDocumentStore(applicationContext, Uri.parse(normalized)) }
+                    .getOrElse { return@launch }
+            }
+            val previousStore = store
+            if (previousStore !== nextStore) {
+                migrateBooks(previousStore, nextStore)
+            }
+            store = nextStore
+            preferences.edit().putStringOrRemove(KEY_DOWNLOAD_DIRECTORY, normalized).apply()
+            _downloadDirectory.value = normalized
+            reload()
+        }
+    }
+
     override fun enqueue(novel: NovelSummary, volumeKey: VolumeKey?) {
         require(volumeKey == null || volumeKey.sourceId == novel.key.sourceId)
         scope.launch {
-            val existing = store.readBook(novel.key)
+            val activeStore = store
+            val existing = activeStore.readBook(novel.key)
             if (existing?.status == OfflineDownloadStatus.QUEUED ||
                 existing?.status == OfflineDownloadStatus.DOWNLOADING
             ) {
@@ -78,7 +105,7 @@ class OfflineLibrary(
                 error = null,
                 updatedAtMillis = System.currentTimeMillis(),
             )
-            store.writeBook(queued)
+            activeStore.writeBook(queued)
             publish(queued)
             schedule(
                 OfflineWorkSpec(
@@ -126,7 +153,8 @@ class OfflineLibrary(
     }
 
     internal suspend fun executeDownload(novelKey: NovelKey, selectedVolumeId: String?) {
-        val downloader = OfflineDownloader(registry, store, chapterFonts, onUpdated = ::publish)
+        val activeStore = store
+        val downloader = OfflineDownloader(registry, activeStore, chapterFonts, onUpdated = ::publish)
         try {
             downloader.download(novelKey, selectedVolumeId)
         } catch (error: Throwable) {
@@ -148,6 +176,24 @@ class OfflineLibrary(
     private suspend fun reload() {
         _books.value = store.listBooks()
     }
+
+    private suspend fun migrateBooks(from: OfflineBookStore, to: OfflineBookStore) {
+        from.listBooks().forEach { record ->
+            to.writeBook(record)
+            record.chapters
+                .filter { it.key.remoteId in record.downloadedChapterIds }
+                .forEach { chapter ->
+                    from.readChapter(record.novel.key, chapter.key)?.let { content ->
+                        to.writeChapter(record.novel.key, content)
+                    }
+                }
+        }
+    }
+
+    private fun createStore(uri: String?): OfflineBookStore =
+        uri?.let { value ->
+            runCatching { OfflineDocumentStore(applicationContext, Uri.parse(value)) }.getOrNull()
+        } ?: defaultStore
 
     private fun publish(record: OfflineBookRecord) {
         _books.update { current ->
@@ -180,6 +226,10 @@ class OfflineLibrary(
         const val OFFLINE_DIRECTORY = "offline_library"
         const val PREFERENCES_NAME = "offline_download_preferences"
         const val KEY_WIFI_ONLY = "wifi_only"
+        const val KEY_DOWNLOAD_DIRECTORY = "download_directory"
         const val DOWNLOAD_TAG = "offline-download"
     }
 }
+
+private fun android.content.SharedPreferences.Editor.putStringOrRemove(key: String, value: String?) =
+    if (value == null) remove(key) else putString(key, value)

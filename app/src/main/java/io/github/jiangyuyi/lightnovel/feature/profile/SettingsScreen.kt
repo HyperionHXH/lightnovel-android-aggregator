@@ -1,10 +1,13 @@
 package io.github.jiangyuyi.lightnovel.feature.profile
 
 import android.Manifest
+import android.content.Intent
+import android.net.Uri
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.documentfile.provider.DocumentFile
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +19,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Card
@@ -62,6 +67,7 @@ fun SettingsScreen(
     onRestartOnboarding: () -> Unit,
 ) {
     val wifiOnly by offlineLibrary.wifiOnly.collectAsStateWithLifecycle()
+    val downloadDirectory by offlineLibrary.downloadDirectory.collectAsStateWithLifecycle()
     val backgroundUpdatesEnabled by updateNotifications.enabled.collectAsStateWithLifecycle(initialValue = false)
     val reader by readerPreferences.preferences.collectAsStateWithLifecycle(initialValue = ReaderPreferences())
     val app by appPreferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
@@ -71,6 +77,18 @@ fun SettingsScreen(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         updateNotifications.setEnabled(granted)
+    }
+    val downloadDirectoryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }
+        offlineLibrary.setDownloadDirectory(uri.toString())
     }
     val onBackgroundUpdatesChange: (Boolean) -> Unit = { enabled ->
         if (!enabled) {
@@ -90,10 +108,14 @@ fun SettingsScreen(
 
     SettingsScreenContent(
         wifiOnly = wifiOnly,
+        downloadDirectoryLabel = downloadDirectory?.let { downloadDirectoryName(context, it) }
+            ?: "应用专用目录",
         backgroundUpdatesEnabled = backgroundUpdatesEnabled,
         readerPreferences = reader,
         appPreferences = app,
         onWifiOnlyChange = offlineLibrary::setWifiOnly,
+        onChooseDownloadDirectory = { downloadDirectoryLauncher.launch(null) },
+        onResetDownloadDirectory = { offlineLibrary.setDownloadDirectory(null) },
         onBackgroundUpdatesChange = onBackgroundUpdatesChange,
         onReaderPreferencesChange = { value -> scope.launch { readerPreferences.update(value) } },
         onAppPreferencesChange = { value -> scope.launch { appPreferences.update(value) } },
@@ -106,10 +128,13 @@ fun SettingsScreen(
 @Composable
 internal fun SettingsScreenContent(
     wifiOnly: Boolean,
+    downloadDirectoryLabel: String = "应用专用目录",
     backgroundUpdatesEnabled: Boolean,
     readerPreferences: ReaderPreferences = ReaderPreferences(),
     appPreferences: AppPreferences = AppPreferences(),
     onWifiOnlyChange: (Boolean) -> Unit,
+    onChooseDownloadDirectory: () -> Unit = {},
+    onResetDownloadDirectory: () -> Unit = {},
     onBackgroundUpdatesChange: (Boolean) -> Unit,
     onReaderPreferencesChange: (ReaderPreferences) -> Unit = {},
     onAppPreferencesChange: (AppPreferences) -> Unit = {},
@@ -147,7 +172,10 @@ internal fun SettingsScreenContent(
         item {
             DownloadSettingsSection(
                 wifiOnly = wifiOnly,
+                downloadDirectoryLabel = downloadDirectoryLabel,
                 onWifiOnlyChange = onWifiOnlyChange,
+                onChooseDownloadDirectory = onChooseDownloadDirectory,
+                onResetDownloadDirectory = onResetDownloadDirectory,
                 backgroundUpdatesEnabled = backgroundUpdatesEnabled,
                 onBackgroundUpdatesChange = onBackgroundUpdatesChange,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -320,7 +348,10 @@ private fun <T> ChipRow(
 @Composable
 internal fun DownloadSettingsSection(
     wifiOnly: Boolean,
+    downloadDirectoryLabel: String = "应用专用目录",
     onWifiOnlyChange: (Boolean) -> Unit,
+    onChooseDownloadDirectory: () -> Unit = {},
+    onResetDownloadDirectory: () -> Unit = {},
     backgroundUpdatesEnabled: Boolean,
     onBackgroundUpdatesChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -330,6 +361,34 @@ internal fun DownloadSettingsSection(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text("下载设置", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Card(
+            Modifier.fillMaxWidth(),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            ),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("下载目录", fontWeight = FontWeight.SemiBold)
+                    Text(
+                        downloadDirectoryLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onChooseDownloadDirectory) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = "选择下载目录")
+                }
+                if (downloadDirectoryLabel != "应用专用目录") {
+                    IconButton(onClick = onResetDownloadDirectory) {
+                        Icon(Icons.Default.Restore, contentDescription = "恢复应用专用目录")
+                    }
+                }
+            }
+        }
         Card(
             Modifier.fillMaxWidth(),
             colors = androidx.compose.material3.CardDefaults.cardColors(
@@ -377,3 +436,8 @@ internal fun DownloadSettingsSection(
         }
     }
 }
+
+private fun downloadDirectoryName(context: android.content.Context, value: String): String =
+    runCatching {
+        DocumentFile.fromTreeUri(context, Uri.parse(value))?.name
+    }.getOrNull()?.takeIf(String::isNotBlank) ?: "已选择的文件夹"

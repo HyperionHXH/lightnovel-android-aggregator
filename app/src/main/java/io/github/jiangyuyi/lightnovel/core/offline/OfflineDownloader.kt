@@ -10,9 +10,9 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
 import io.github.jiangyuyi.lightnovel.core.source.VolumeSummary
 import kotlinx.coroutines.CancellationException
 
-class OfflineDownloader(
+internal class OfflineDownloader(
     private val registry: SourceRegistry,
-    private val store: OfflineFileStore,
+    private val store: OfflineBookStore,
     private val chapterFonts: ChapterFontAccess = EmptyChapterFontAccess,
     private val onUpdated: (OfflineBookRecord) -> Unit = {},
     private val now: () -> Long = System::currentTimeMillis,

@@ -1,6 +1,7 @@
 package io.github.jiangyuyi.lightnovel.feature.local
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.documentfile.provider.DocumentFile
 import io.github.jiangyuyi.lightnovel.core.local.LocalBookRecord
 import io.github.jiangyuyi.lightnovel.core.local.LocalLibraryStore
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
@@ -59,12 +62,26 @@ fun LocalLibraryScreen(
 ) {
     val books by store.books.collectAsStateWithLifecycle()
     val importedFiles by store.importedFiles.collectAsStateWithLifecycle()
+    val roots by store.roots.collectAsStateWithLifecycle()
     val indexing by store.isIndexing.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val focus = LocalFocusManager.current
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val visibleBooks = filterLocalBooks(books, query)
+    val hasLibrarySources = roots.isNotEmpty() || importedFiles.isNotEmpty()
+    val folderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+        store.addFolder(uri)
+    }
     val fileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
@@ -106,8 +123,11 @@ fun LocalLibraryScreen(
                             contentDescription = if (searchVisible) "关闭搜索" else "搜索本地书库",
                         )
                     }
+                    IconButton(onClick = { folderLauncher.launch(null) }) {
+                        Icon(Icons.Filled.FolderOpen, contentDescription = "选择书库文件夹")
+                    }
                     IconButton(onClick = { fileLauncher.launch(LOCAL_FILE_MIME_TYPES) }) {
-                        Icon(Icons.Filled.FileOpen, contentDescription = "导入书籍")
+                        Icon(Icons.Filled.FileOpen, contentDescription = "单独导入文件")
                     }
                 },
             )
@@ -133,26 +153,26 @@ fun LocalLibraryScreen(
                 )
             }
         }
-        if (importedFiles.isEmpty()) {
+        if (!hasLibrarySources) {
             item {
                 Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("还没有导入本地书籍", style = MaterialTheme.typography.titleMedium)
+                        Text("还没有选择本地书库", style = MaterialTheme.typography.titleMedium)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                "导入文件",
+                                "选择文件夹后自动读取其中的小说",
                                 modifier = Modifier.weight(1f),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                            IconButton(onClick = { fileLauncher.launch(LOCAL_FILE_MIME_TYPES) }) {
-                                Icon(Icons.Filled.FileOpen, contentDescription = "导入书籍")
+                            IconButton(onClick = { folderLauncher.launch(null) }) {
+                                Icon(Icons.Filled.FolderOpen, contentDescription = "选择书库文件夹")
                             }
                         }
                     }
                 }
             }
         }
-        if (books.isEmpty() && importedFiles.isNotEmpty()) {
+        if (books.isEmpty() && hasLibrarySources) {
             item {
                 Row(Modifier.fillMaxWidth().padding(vertical = 28.dp), horizontalArrangement = Arrangement.Center) {
                     Text("正在读取已导入文件，或文件格式暂不支持", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -171,10 +191,34 @@ fun LocalLibraryScreen(
         items(visibleBooks, key = LocalBookRecord::id) { book ->
             LocalBookCard(book, onClick = { onBook(book) })
         }
+        if (roots.isNotEmpty()) {
+            item {
+                Column(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("已授权文件夹", style = MaterialTheme.typography.titleSmall)
+                    roots.forEach { root ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.FolderOpen, contentDescription = null)
+                            Text(
+                                folderDisplayName(context, root),
+                                Modifier.weight(1f).padding(start = 8.dp),
+                                maxLines = 1,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            IconButton(onClick = { store.removeFolder(root) }) {
+                                Icon(Icons.Filled.DeleteOutline, contentDescription = "移除文件夹")
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if (importedFiles.isNotEmpty()) {
             item {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("已导入文件", style = MaterialTheme.typography.titleSmall)
+                    Text("单独导入的文件", style = MaterialTheme.typography.titleSmall)
                     importedFiles.forEach { uri ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
@@ -200,6 +244,13 @@ fun LocalLibraryScreen(
             }
         }
     }
+}
+
+private fun folderDisplayName(context: android.content.Context, value: String): String {
+    val uri = Uri.parse(value)
+    return DocumentFile.fromTreeUri(context, uri)?.name
+        ?: uri.lastPathSegment?.substringAfterLast(':')?.ifBlank { null }
+        ?: "已授权文件夹"
 }
 
 internal fun filterLocalBooks(books: List<LocalBookRecord>, query: String): List<LocalBookRecord> {
