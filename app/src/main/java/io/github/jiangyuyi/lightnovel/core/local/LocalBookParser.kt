@@ -51,6 +51,21 @@ class LocalBookParser(private val resolver: ContentResolver) {
             }
         }
 
+    /** Builds a book card without opening the file contents. Metadata is filled in asynchronously. */
+    fun stub(uri: Uri, sizeBytes: Long, lastModified: Long): LocalBookRecord {
+        val format = formatOf(uri)
+        val name = displayName(uri).substringBeforeLast('.', displayName(uri))
+        return LocalBookRecord(
+            id = stableId(uri.toString()),
+            uri = uri.toString(),
+            title = name,
+            format = format,
+            sizeBytes = sizeBytes,
+            lastModified = lastModified,
+            chapterCount = if (format == LocalBookFormat.TXT) 1 else 0,
+        )
+    }
+
     private fun parseTxt(uri: Uri): LocalBookDocument {
         val name = displayName(uri).substringBeforeLast('.', displayName(uri))
         val text = resolver.openInputStream(uri)?.use(::readText) ?: error("无法读取本地文件")
@@ -226,15 +241,37 @@ class LocalBookParser(private val resolver: ContentResolver) {
     }
 
     private fun readEpubMetadata(uri: Uri): EpubMetadata {
-        val container = resolver.openInputStream(uri)?.use {
-            readZipEntries(it, setOf("META-INF/container.xml"))["META-INF/container.xml"]
-        }?.toString(StandardCharsets.UTF_8) ?: error("EPUB 缺少 container.xml")
-        val rootFile = parseRootFile(container)
-        val opf = resolver.openInputStream(uri)?.use {
-            readZipEntries(it, setOf(rootFile))[rootFile]
-        }?.toString(StandardCharsets.UTF_8) ?: error("EPUB 缺少 OPF 文件")
-        val metadata = parseOpf(opf)
-        val base = rootFile.substringBeforeLast('/', "")
+        var container: String? = null
+        var rootFile: String? = null
+        var opf: String? = null
+        resolver.openInputStream(uri)?.use { input ->
+            ZipInputStream(input).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    val name = normalizeEntryName(entry.name)
+                    if (!entry.isDirectory && !name.startsWith("/") && !name.contains("../")) {
+                        when {
+                            name == "META-INF/container.xml" -> {
+                                container = readCurrentZipEntry(zip).toString(StandardCharsets.UTF_8)
+                                rootFile = parseRootFile(requireNotNull(container))
+                            }
+                            rootFile != null && name == rootFile -> {
+                                opf = readCurrentZipEntry(zip).toString(StandardCharsets.UTF_8)
+                            }
+                        }
+                    }
+                    zip.closeEntry()
+                }
+            }
+        } ?: error("无法读取 EPUB 文件")
+        val containerXml = container ?: error("EPUB 缺少 container.xml")
+        val resolvedRootFile = rootFile ?: parseRootFile(containerXml)
+        val opfXml = opf ?: resolver.openInputStream(uri)?.use {
+            readZipEntries(it, setOf(resolvedRootFile))[resolvedRootFile]
+        }?.toString(StandardCharsets.UTF_8)
+        val opfContent = opfXml ?: error("EPUB 缺少 OPF 文件")
+        val metadata = parseOpf(opfContent)
+        val base = resolvedRootFile.substringBeforeLast('/', "")
         return EpubMetadata(
             title = metadata.title,
             author = metadata.author,
@@ -279,6 +316,18 @@ class LocalBookParser(private val resolver: ContentResolver) {
             }
         }
         return result
+    }
+
+    private fun readCurrentZipEntry(zip: ZipInputStream): ByteArray {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(16 * 1024)
+        while (true) {
+            val count = zip.read(buffer)
+            if (count <= 0) break
+            if (output.size() + count > MAX_ENTRY_BYTES) error("EPUB 元数据资源过大")
+            output.write(buffer, 0, count)
+        }
+        return output.toByteArray()
     }
 
     private fun readText(input: InputStream): String {

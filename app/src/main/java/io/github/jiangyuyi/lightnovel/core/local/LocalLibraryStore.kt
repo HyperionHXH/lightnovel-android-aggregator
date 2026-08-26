@@ -5,17 +5,17 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -35,6 +35,16 @@ class LocalLibraryStore(context: Context) {
     private val _books = MutableStateFlow<List<LocalBookRecord>>(emptyList())
     val books: StateFlow<List<LocalBookRecord>> = _books.asStateFlow()
     private val coverCache = ConcurrentHashMap<String, Result<ByteArray?>>()
+    private val coverSemaphore = Semaphore(permits = 2)
+    private val coverDirectory by lazy { File(appContext.cacheDir, "local-cover-cache") }
+    private val metadataCache = LocalBookMetadataCache(
+        readValue = { key -> preferences.getString("$CACHE_PREFIX$key", null) },
+        writeValues = { values ->
+            preferences.edit().apply {
+                values.forEach { (key, value) -> putString("$CACHE_PREFIX$key", value) }
+            }.apply()
+        },
+    )
 
     private val _roots = MutableStateFlow(readRoots())
     val roots: StateFlow<List<String>> = _roots.asStateFlow()
@@ -124,33 +134,99 @@ class LocalLibraryStore(context: Context) {
     }
 
     suspend fun readCover(record: LocalBookRecord): ByteArray? {
-        val key = "${record.id}:${record.coverPath.orEmpty()}"
-        coverCache[key]?.let { return it.getOrNull() }
-        val result = runCatching {
-            parser.readCover(Uri.parse(record.uri), record.coverPath)
+        return withContext(Dispatchers.IO) {
+            val key = "${record.id}:${record.sizeBytes}:${record.lastModified}:${record.coverPath.orEmpty()}"
+            coverCache[key]?.let { return@withContext it.getOrNull() }
+            val result = coverSemaphore.withPermit {
+                runCatching {
+                    readCachedCover(key) ?: parser.readCover(Uri.parse(record.uri), record.coverPath)
+                }
+            }
+            coverCache[key] = result
+            result.getOrNull()?.let { bytes -> writeCachedCover(key, bytes) }
+            result.getOrNull()
         }
-        coverCache[key] = result
-        return result.getOrNull()
     }
+
+    private fun readCachedCover(key: String): ByteArray? = runCatching {
+        coverFile(key).takeIf(File::isFile)?.readBytes()
+    }.getOrNull()
+
+    private fun writeCachedCover(key: String, bytes: ByteArray) {
+        runCatching {
+            if (!coverDirectory.exists()) coverDirectory.mkdirs()
+            val target = coverFile(key)
+            val temporary = File(coverDirectory, "${target.name}.tmp")
+            temporary.outputStream().use { it.write(bytes) }
+            if (!temporary.renameTo(target)) {
+                target.delete()
+                temporary.renameTo(target)
+            }
+        }
+    }
+
+    private fun coverFile(key: String): File =
+        File(coverDirectory, LocalBookParser.stableId(key))
 
     private suspend fun reindexInternal() = withContext(Dispatchers.IO) {
         refreshFolderImports()
-        val semaphore = Semaphore(permits = 4)
-        val found = coroutineScope {
-            _imports.value.map { uriString ->
-                async(Dispatchers.IO) {
-                    semaphore.withPermit {
-                        val uri = Uri.parse(uriString)
-                        val file = DocumentFile.fromSingleUri(appContext, uri)
-                        val size = file?.length() ?: 0L
-                        val modified = file?.lastModified() ?: 0L
-                        runCatching { parser.scan(uri, size, modified) }
-                            .getOrElse { missingRecord(uri, size, modified) }
-                    }
+        val entries = _imports.value
+            .mapNotNull(::prepareEntry)
+            .distinctBy(IndexedLocalFile::id)
+
+        // Publish filename-based records immediately. Cached metadata is available on the first frame
+        // after a restart, while new files are upgraded in the background one by one.
+        _books.value = entries
+            .map { it.cached ?: it.placeholder }
+            .sortedBy { it.title.lowercase() }
+
+        progressivelyLoad(
+            items = entries.filter { it.cached == null },
+            maxConcurrency = INDEX_CONCURRENCY,
+            load = { entry ->
+                val record = try {
+                    parser.scan(entry.uri, entry.sizeBytes, entry.lastModified)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    missingRecord(entry.uri, entry.sizeBytes, entry.lastModified)
                 }
-            }.awaitAll()
-        }.distinctBy(LocalBookRecord::id).sortedBy { it.title.lowercase() }
-        _books.value = found
+                metadataCache.put(record)
+                record
+            },
+            onLoaded = ::publishLoaded,
+        )
+        metadataCache.flush()
+    }
+
+    private fun prepareEntry(uriString: String): IndexedLocalFile? {
+        val uri = Uri.parse(uriString)
+        val file = DocumentFile.fromSingleUri(appContext, uri)
+        val size = file?.length() ?: 0L
+        val modified = file?.lastModified() ?: 0L
+        val placeholder = runCatching {
+            parser.stub(uri, size, modified)
+        }.getOrElse {
+            missingRecord(uri, size, modified)
+        }
+        val cached = file?.let { metadataCache.get(uriString, size, modified) }
+        return IndexedLocalFile(
+            id = placeholder.id,
+            uri = uri,
+            sizeBytes = size,
+            lastModified = modified,
+            placeholder = placeholder,
+            cached = cached,
+        )
+    }
+
+    private fun publishLoaded(record: LocalBookRecord) {
+        _books.update { current ->
+            val index = current.indexOfFirst { it.id == record.id }
+            val updated = current.toMutableList()
+            if (index >= 0) updated[index] = record else updated += record
+            updated.sortedBy { it.title.lowercase() }
+        }
     }
 
     private fun missingRecord(uri: Uri, size: Long, modified: Long): LocalBookRecord {
@@ -210,10 +286,21 @@ class LocalLibraryStore(context: Context) {
         file.toString().startsWith(root.toString())
     }
 
+    private data class IndexedLocalFile(
+        val id: String,
+        val uri: Uri,
+        val sizeBytes: Long,
+        val lastModified: Long,
+        val placeholder: LocalBookRecord,
+        val cached: LocalBookRecord?,
+    )
+
     private companion object {
         const val PREFERENCES = "local_library"
         const val IMPORTS = "imported_file_uris"
         const val ROOTS = "tree_uris"
+        const val CACHE_PREFIX = "metadata_"
+        const val INDEX_CONCURRENCY = 6
         const val MAX_BOOKS = 2_000
     }
 }
