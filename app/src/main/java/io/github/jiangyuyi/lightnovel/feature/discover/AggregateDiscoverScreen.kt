@@ -7,11 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -103,13 +100,8 @@ fun AggregateDiscoverScreen(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(source.errorMessage, color = MaterialTheme.colorScheme.error)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            IconButton(onClick = viewModel::retry) {
-                                Icon(Icons.Filled.Refresh, contentDescription = "重试")
-                            }
-                            if (source.errorKind == SourceErrorKind.AUTHENTICATION) {
-                                TextButton(onClick = onAccounts) { Text("前往登录") }
-                            }
+                        if (source.errorKind == SourceErrorKind.AUTHENTICATION) {
+                            TextButton(onClick = onAccounts) { Text("前往登录") }
                         }
                     }
                 }
@@ -149,9 +141,8 @@ private fun DiscoverSourceHeader(source: DiscoverSourceUiState) {
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
         )
-        when {
-            source.loading -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-            source.items.isNotEmpty() -> Text(
+        if (source.items.isNotEmpty()) {
+            Text(
                 "${source.items.size} 本",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
