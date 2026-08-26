@@ -29,10 +29,17 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -507,8 +514,16 @@ private fun BoxScope.ReaderControls(
     }
     TopAppBar(
         title = { Text(bookTitle) },
-        navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
-        actions = { TextButton(onClick = onCatalog) { Text("目录") } },
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+            }
+        },
+        actions = {
+            IconButton(onClick = onCatalog) {
+                Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "目录")
+            }
+        },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = colors.background.copy(alpha = 0.97f),
             titleContentColor = colors.text,
@@ -546,9 +561,15 @@ private fun BoxScope.ReaderControls(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onPrevious, enabled = previousEnabled) { Text("上一章") }
-                Button(onClick = onSettings) { Text("阅读设置") }
-                TextButton(onClick = onNext, enabled = nextEnabled) { Text("下一章") }
+                IconButton(onClick = onPrevious, enabled = previousEnabled) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上一章")
+                }
+                IconButton(onClick = onSettings) {
+                    Icon(Icons.Filled.Settings, contentDescription = "阅读设置")
+                }
+                IconButton(onClick = onNext, enabled = nextEnabled) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "下一章")
+                }
             }
         }
     }

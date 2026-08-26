@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -32,9 +35,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.Session
+import io.github.jiangyuyi.lightnovel.core.source.BuiltInSourceIds
+import io.github.jiangyuyi.lightnovel.core.source.SourceProfile
+import io.github.jiangyuyi.lightnovel.core.source.SourceSession
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
+import io.github.jiangyuyi.lightnovel.core.ui.LocalAppIconScale
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshStatus
+import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,25 +51,29 @@ fun ProfileScreen(
     session: Session,
     onLogin: () -> Unit,
     onLogout: () -> Unit,
-    onBookshelf: () -> Unit,
     onFollowing: () -> Unit,
     onFollowers: () -> Unit,
     onHistory: () -> Unit,
     onPublishing: () -> Unit,
     onMessages: () -> Unit,
+    onSourceAccount: (String) -> Unit,
+    onDownloads: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(session.loggedIn) { viewModel.refresh(session.loggedIn) }
+    val kingdomSession = state.sourceSessions[BuiltInSourceIds.LIGHT_NOVEL_KINGDOM]
+    val shelfSession = state.sourceSessions[BuiltInSourceIds.LIGHT_NOVEL_SHELF]
+    val anySourceLoggedIn = state.sourceSessions.values.any { it.loggedIn }
 
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    RefreshableLazyColumn(
+        isRefreshing = state.refreshing,
+        onRefresh = { viewModel.refresh(session.loggedIn, true) },
+        modifier = Modifier.fillMaxSize(),
+    ) {
         item {
             TopAppBar(
                 title = { Text("我的") },
-                actions = {
-                    if (session.loggedIn) {
-                        TextButton(onClick = { viewModel.refresh(true, true) }) { Text("刷新") }
-                    }
-                },
             )
         }
         item { RefreshStatus(state.refreshing, state.refreshError) }
@@ -70,87 +82,121 @@ fun ProfileScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Card(Modifier.fillMaxWidth()) {
-                    if (session.loggedIn) {
-                        val profile = state.profile
-                        Row(
-                            Modifier.fillMaxWidth().padding(18.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            AsyncImage(
-                                model = profile?.user?.avatarUrl ?: session.user?.avatarUrl,
-                                contentDescription = "头像",
-                                modifier = Modifier.size(64.dp).clip(CircleShape),
-                            )
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Text(
-                                    profile?.user?.nickname ?: session.user?.nickname ?: "已登录用户",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.SemiBold,
-                                )
-                                Text(
-                                    listOfNotNull(
-                                        (profile?.user?.uid ?: session.uid).takeIf { it > 0 }?.let { "UID $it" },
-                                        profile?.levelName?.takeIf { it.isNotBlank() },
-                                    ).joinToString(" · "),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                profile?.signature?.takeIf { it.isNotBlank() }?.let {
-                                    Text(it, style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
-                    } else {
-                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("游客", style = MaterialTheme.typography.titleLarge)
-                            Text("登录后可同步书架、阅读记录和个人消息")
-                        }
-                    }
-                }
-
-                when {
-                    state.loading && state.profile == null -> LoadingPane()
-                    state.error != null && state.profile == null -> ErrorPane(state.error!!, onRetry = {
-                        viewModel.refresh(session.loggedIn, true)
-                    })
-                }
-
-                if (session.loggedIn) {
-                    state.profile?.let { profile ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                        ) {
+                Text("账号与来源", style = MaterialTheme.typography.titleMedium)
+                SourceAccountCard(
+                    title = "轻之国度账号",
+                    session = kingdomSession,
+                    profile = state.sourceProfiles[BuiltInSourceIds.LIGHT_NOVEL_KINGDOM],
+                    loading = BuiltInSourceIds.LIGHT_NOVEL_KINGDOM in state.sourceProfileLoading,
+                    error = state.sourceProfileErrors[BuiltInSourceIds.LIGHT_NOVEL_KINGDOM],
+                    onManage = { onSourceAccount(BuiltInSourceIds.LIGHT_NOVEL_KINGDOM) },
+                    onLogout = onLogout.takeIf { kingdomSession?.loggedIn == true },
+                ) {
+                    val profile = state.profile
+                    if (profile != null) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             ProfileStat("关注", profile.followingCount, onFollowing)
                             ProfileStat("粉丝", profile.fansCount, onFollowers)
                             ProfileStat("发布", profile.postCount, onPublishing)
                             ProfileStat("轻币", profile.coin, null)
                         }
+                        ProfileEntry(
+                            "消息中心",
+                            "回复、@、点赞、粉丝、系统与私信",
+                            onMessages,
+                            badge = state.messageSummary.unreadCount.takeIf { it > 0 },
+                        )
+                        ProfileEntry("关注与粉丝", "查看用户关系", onFollowing)
+                        ProfileEntry("发布管理", "作品状态与审核进度", onPublishing)
                     }
-                    Text("个人功能", style = MaterialTheme.typography.titleMedium)
-                    ProfileEntry(
-                        "消息中心",
-                        "回复、@、点赞、粉丝、系统与私信",
-                        onMessages,
-                        badge = state.messageSummary.unreadCount.takeIf { it > 0 },
-                    )
-                    ProfileEntry("我的书架", "收藏与章节更新", onBookshelf)
-                    ProfileEntry("阅读记录", "继续上次阅读", onHistory)
-                    ProfileEntry("关注与粉丝", "查看用户关系", onFollowing)
-                    ProfileEntry("发布管理", "作品状态与审核进度", onPublishing)
-                    OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("退出登录") }
-                } else {
-                    Button(onClick = onLogin, modifier = Modifier.fillMaxWidth()) { Text("登录 / 注册") }
+                }
+                SourceAccountCard(
+                    title = "轻书架账号",
+                    session = shelfSession,
+                    profile = state.sourceProfiles[BuiltInSourceIds.LIGHT_NOVEL_SHELF],
+                    loading = BuiltInSourceIds.LIGHT_NOVEL_SHELF in state.sourceProfileLoading,
+                    error = state.sourceProfileErrors[BuiltInSourceIds.LIGHT_NOVEL_SHELF],
+                    onManage = { onSourceAccount(BuiltInSourceIds.LIGHT_NOVEL_SHELF) },
+                )
+
+                if (state.loading && state.profile == null && session.loggedIn) LoadingPane()
+                if (state.error != null && state.profile == null && session.loggedIn) {
+                    ErrorPane(state.error!!, onRetry = { viewModel.refresh(session.loggedIn, true) })
                 }
 
-                Spacer(Modifier.height(2.dp))
-                Text("说明", style = MaterialTheme.typography.titleMedium)
-                Text("这是使用轻之国度当前公开 Web API 的非官方客户端，接口可能随网站升级而变化。")
-                Text("评论当前为只读；完整写作工作台和社区发布功能仍在后续版本评估中。")
+                Text("聚合功能", style = MaterialTheme.typography.titleMedium)
+                ProfileEntry("阅读记录", "两站历史和本地阅读进度", onHistory)
+                ProfileEntry("下载与导出", "查看离线书籍、重试下载和导出 EPUB", onDownloads)
+
+                if (!anySourceLoggedIn) {
+                    Button(onClick = onLogin, modifier = Modifier.fillMaxWidth()) { Text("登录 / 注册") }
+                }
+                Text("应用设置", style = MaterialTheme.typography.titleMedium)
+                ProfileEntry("设置", "阅读、外观、下载与通知", onSettings)
+
                 Spacer(Modifier.height(18.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun SourceAccountCard(
+    title: String,
+    session: SourceSession?,
+    profile: SourceProfile?,
+    loading: Boolean,
+    error: String?,
+    onManage: () -> Unit,
+    onLogout: (() -> Unit)? = null,
+    content: @Composable () -> Unit = {},
+) {
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (profile?.avatarUrl != null) {
+                    AsyncImage(
+                        model = profile.avatarUrl,
+                        contentDescription = "${title}头像",
+                        modifier = Modifier.size(52.dp).clip(CircleShape),
+                    )
+                } else {
+                    Icon(Icons.Filled.AccountCircle, contentDescription = null, modifier = Modifier.size(52.dp))
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        if (session?.loggedIn == true) profile?.displayName ?: session.displayName ?: session.accountId ?: "已登录"
+                        else "未登录",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    profile?.accountId?.let { Text("账号 $it", style = MaterialTheme.typography.bodySmall) }
+                }
+                if (loading) androidx.compose.material3.CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            }
+            if (session?.loggedIn == true && profile != null) {
+                val details = buildList {
+                    profile.balance?.let { add("轻币 $it") }
+                    profile.levelLabel?.let { add(it) }
+                    profile.extra["连续签到"]?.let { add("连续签到 $it") }
+                    profile.extra["今日签到"]?.let { add("今日签到 $it") }
+                }
+                if (details.isNotEmpty()) Text(details.joinToString(" · "))
+                content()
+                if (profile.extra["今日签到"] == "未完成") {
+                    TextButton(onClick = onManage, modifier = Modifier.fillMaxWidth()) { Text("去签到") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onManage, modifier = Modifier.weight(1f)) { Text("账号管理") }
+                    onLogout?.let { logout ->
+                        TextButton(onClick = logout, modifier = Modifier.weight(1f)) { Text("退出登录") }
+                    }
+                }
+            } else if (!loading) {
+                Text("登录后可查看资料、轻币和该来源的专属功能", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = onManage, modifier = Modifier.fillMaxWidth()) { Text("登录此来源") }
+            }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
@@ -170,25 +216,17 @@ private fun ProfileStat(label: String, value: Int, onClick: (() -> Unit)?) {
 private fun ProfileEntry(title: String, subtitle: String, onClick: () -> Unit, badge: Int? = null) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, fontWeight = FontWeight.SemiBold)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             badge?.let {
-                Text(
-                    it.coerceAtMost(99).let { value -> if (it > 99) "99+" else value.toString() },
-                    modifier = Modifier.padding(horizontal = 10.dp),
-                    color = MaterialTheme.colorScheme.error,
-                    fontWeight = FontWeight.Bold,
-                )
+                Text(if (it > 99) "99+" else it.toString(), modifier = Modifier.padding(horizontal = 10.dp), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
             }
-            Text("›", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size((24 * LocalAppIconScale.current).dp), tint = MaterialTheme.colorScheme.primary)
         }
     }
 }

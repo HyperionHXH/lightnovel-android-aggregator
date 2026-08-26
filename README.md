@@ -4,9 +4,11 @@
 
 # LightNovel Android
 
+> 当前本地分支是轻之国度与轻书架双源聚合阅读器的开发预览版，已经接通双源独立发现、聚合搜索、统一书架（全部/已下载）、双源账号、通用详情/目录/正文、聚合阅读历史、来源更新快照、下拉刷新、离线下载、轻书架手动签到和本地书库导入。EPUB 导出已经可用；封面/插图写入导出文件、后台签到与发布级真机兼容性仍在开发和验证中。实施范围、接口边界和阶段进度见 [双源聚合开发大纲](docs/AGGREGATOR_PLAN.md) 与 [来源适配器 ADR](docs/adr/0001-built-in-source-adapters.md)。
+
 轻之国度（`lightnovel.fun`）的非官方 Android 客户端。项目基于 2026-08-06 实测的站点 Web BFF/API 实现，使用 Kotlin、Jetpack Compose 和 Material 3。
 
-[下载最新 Release APK](https://github.com/jiangyuyi/lightnovel-android/releases/latest)
+[下载最新 Release APK](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/latest)
 
 > 本项目仅用于学习与个人使用，不隶属于轻之国度。请遵守站点规则和内容版权要求，不要批量抓取、分发或商业使用站点内容。
 
@@ -30,6 +32,13 @@
 - 无衬线/衬线/等宽字体，14–32sp 字号、行高、页边距和白色/米黄/护眼绿/深色背景。
 - 书籍评论匿名只读展示；评论故障不会影响书籍详情和阅读。
 - Android Keystore 加密保存 `security_key`；不保存密码和验证码。
+- 轻之国度书架在来源提供可信数据时显示账号维度的未读章节数；轻书架没有对应字段时不猜测更新。
+- 书架支持“全部标为已读”本地确认，不会伪造远端阅读记录。
+- 书架更新以 `(sourceId, remoteId)` 区分来源，并在顶部按来源汇总有更新的书籍数量；离线书籍仍独立归入“已下载”。
+- “仅使用 Wi-Fi 下载”属于全局下载策略，已移到“我的 → 设置 → 下载与提醒”，不会出现在书架列表中。
+- “后台更新提醒”默认关闭；启用后需通知权限，WorkManager 每 6 小时检查一次书架，只提醒快照确认后的新增章节。
+- EPUB 导出已接入“已下载”列表和系统文件保存界面；当前生成文本章节、目录和元数据，封面与插图资源将在后续补齐。
+- 本地书库支持通过系统文件选择器导入 EPUB、TXT、HTML 和 FB2，并在设备上解析阅读。
 
 网站的独立“合集”分区目前标记为维护中。本客户端按实际可用的数据实现“书籍 → 分卷 → 章节”三级目录，并展示 `alternate_versions`；合集页会显示维护说明，不调用猜测接口。
 
@@ -56,6 +65,15 @@ Windows：
 ```powershell
 ./gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
+
+默认单元测试不访问外网。需要手动运行轻书架匿名 SignalR 冒烟测试时，显式设置环境变量：
+
+```powershell
+$env:RUN_LNS_SMOKE = "true"
+./gradlew.bat testDebugUnitTest --tests "io.github.jiangyuyi.lightnovel.source.lightnovelshelf.LightNovelShelfLiveSmokeTest"
+```
+
+该测试使用内存 Token，只验证未登录服务响应，不读取或修改应用内账号数据；网络不可用时应保持默认跳过。
 
 macOS/Linux：
 
@@ -159,7 +177,7 @@ app/src/main/java/io/github/jiangyuyi/lightnovel/
 - 站点接口可能临时返回 5xx，页面提供错误提示和重试。
 - 独立合集频道维护中；当前实现以分卷和同书版本覆盖实际阅读结构。
 - 评论为只读，发布、回复、点赞、图片上传和举报未实现。
-- EPUB 频道可以浏览；为避免批量下载与版权风险，首版不实现整本导出。
+- EPUB 频道可以浏览；整本导出仅针对用户已下载的章节，当前导出文件暂不包含封面与插图资源。
 - 发布管理当前为只读作品状态视图，完整作者编辑工作台尚未接入。
 - 私信发送、通知内回复、动态、发帖尚未接入；消息中心与只读私信已在 1.2.0 实现。
 

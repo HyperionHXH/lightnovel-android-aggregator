@@ -11,14 +11,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -44,6 +48,7 @@ import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshStatus
+import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,17 +59,20 @@ fun MessagesScreen(
     onTarget: (bookId: Long, chapterId: Long?) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LazyColumn(
+    RefreshableLazyColumn(
+        isRefreshing = state.refreshing,
+        onRefresh = viewModel::refresh,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
             TopAppBar(
                 title = { Text("消息中心") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
                 actions = {
-                    TextButton(onClick = viewModel::refresh) { Text("刷新") }
                     TextButton(
                         onClick = viewModel::markCurrentRead,
                         enabled = !state.markingRead && state.summary.count(state.category) > 0,
@@ -144,7 +152,7 @@ private fun ConversationCard(conversation: DmConversation, onClick: () -> Unit) 
         colors = CardDefaults.cardColors(
             containerColor = if (conversation.unreadCount > 0) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-            } else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+            } else MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
         Row(
@@ -187,7 +195,7 @@ private fun NotificationCard(message: NotificationMessage, onClick: () -> Unit) 
         colors = CardDefaults.cardColors(
             containerColor = if (message.unread) {
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-            } else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+            } else MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
         Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -231,16 +239,19 @@ fun DmThreadScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LazyColumn(
+    RefreshableLazyColumn(
+        isRefreshing = state.refreshing,
+        onRefresh = { viewModel.refresh(true) },
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
             TopAppBar(
                 title = { Text("与 ${peer.nickname} 的私信") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
-                actions = { TextButton(onClick = { viewModel.refresh(true) }) { Text("刷新") } },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
             )
         }
         item { RefreshStatus(state.refreshing, state.refreshError) }

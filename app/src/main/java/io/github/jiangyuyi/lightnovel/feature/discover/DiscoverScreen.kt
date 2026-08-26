@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -24,20 +23,20 @@ import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshStatus
+import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiscoverScreen(viewModel: DiscoverViewModel, onBook: (Long) -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LazyColumn(
+    RefreshableLazyColumn(
+        isRefreshing = state.refreshing,
+        onRefresh = viewModel::refresh,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item {
             TopAppBar(
                 title = { Text("轻之国度", color = MaterialTheme.colorScheme.primary) },
-                actions = { TextButton(onClick = viewModel::refresh) { Text("刷新") } },
             )
             ScrollableTabRow(selectedTabIndex = state.channel.ordinal, edgePadding = 10.dp) {
                 DiscoverChannel.entries.forEach { channel ->

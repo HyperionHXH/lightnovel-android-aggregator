@@ -21,11 +21,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.BookSummary
 
 @Composable
@@ -72,7 +70,7 @@ private fun PlaceholderBlock(modifier: Modifier) {
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+        color = MaterialTheme.colorScheme.surfaceVariant,
         content = {},
     )
 }
@@ -112,14 +110,13 @@ fun BookCard(book: BookSummary, onClick: () -> Unit, modifier: Modifier = Modifi
     Card(
         modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            AsyncImage(
-                model = book.coverUrl,
-                contentDescription = book.title,
+            NovelCover(
+                url = book.coverUrl,
+                title = book.title,
                 modifier = Modifier.size(width = 82.dp, height = 116.dp),
-                contentScale = ContentScale.Crop,
             )
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

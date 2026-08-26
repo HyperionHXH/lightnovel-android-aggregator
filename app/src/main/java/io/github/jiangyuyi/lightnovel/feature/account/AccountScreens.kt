@@ -11,15 +11,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -46,6 +51,7 @@ import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshStatus
+import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,12 +59,14 @@ fun SocialScreen(viewModel: SocialViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var confirmUnfollow by remember { mutableStateOf<SocialUser?>(null) }
 
-    LazyColumn(
+    RefreshableLazyColumn(
+        isRefreshing = state.refreshing,
+        onRefresh = viewModel::refresh,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { AccountTopBar("关注与粉丝", onBack, viewModel::refresh) }
+        item { AccountTopBar("关注与粉丝", onBack) }
         item { RefreshStatus(state.refreshing, state.refreshError) }
         item {
             Row(
@@ -116,7 +124,7 @@ fun SocialScreen(viewModel: SocialViewModel, onBack: () -> Unit) {
 private fun SocialUserCard(user: SocialUser, pending: Boolean, onFollow: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -159,12 +167,14 @@ fun HistoryScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var deleting by remember { mutableStateOf<ReadingHistoryItem?>(null) }
 
-    LazyColumn(
+    RefreshableLazyColumn(
+        isRefreshing = state.refreshing,
+        onRefresh = viewModel::refresh,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { AccountTopBar("阅读记录", onBack, viewModel::refresh) }
+        item { AccountTopBar("阅读记录", onBack) }
         item { RefreshStatus(state.refreshing, state.refreshError) }
         state.actionError?.let { item { ErrorText(it) } }
         when {
@@ -210,7 +220,7 @@ private fun HistoryCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp).clickable(onClick = onOpen),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
             AsyncImage(
@@ -234,7 +244,9 @@ private fun HistoryCard(
                 Spacer(Modifier.weight(1f))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onOpen) { Text("继续阅读") }
-                    TextButton(onClick = onDelete, enabled = !deleting) { Text(if (deleting) "删除中" else "删除") }
+                    IconButton(onClick = onDelete, enabled = !deleting) {
+                        Icon(Icons.Filled.DeleteOutline, contentDescription = if (deleting) "删除中" else "删除")
+                    }
                 }
             }
         }
@@ -245,12 +257,14 @@ private fun HistoryCard(
 @Composable
 fun PublishingScreen(viewModel: PublishingViewModel, onBack: () -> Unit, onBook: (Long) -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LazyColumn(
+    RefreshableLazyColumn(
+        isRefreshing = state.refreshing,
+        onRefresh = viewModel::refresh,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        item { AccountTopBar("发布管理", onBack, viewModel::refresh) }
+        item { AccountTopBar("发布管理", onBack) }
         item { RefreshStatus(state.refreshing, state.refreshError) }
         item {
             Text(
@@ -276,7 +290,7 @@ fun PublishingScreen(viewModel: PublishingViewModel, onBack: () -> Unit, onBook:
 private fun PublishedWorkCard(work: PublishedWork, onClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp).clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
             AsyncImage(
@@ -311,12 +325,13 @@ private fun PublishedWorkCard(work: PublishedWork, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AccountTopBar(title: String, onBack: () -> Unit, onRefresh: (() -> Unit)? = null) {
+private fun AccountTopBar(title: String, onBack: () -> Unit) {
     TopAppBar(
         title = { Text(title) },
-        navigationIcon = { TextButton(onClick = onBack) { Text("返回") } },
-        actions = {
-            onRefresh?.let { TextButton(onClick = it) { Text("刷新") } }
+        navigationIcon = {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+            }
         },
     )
 }

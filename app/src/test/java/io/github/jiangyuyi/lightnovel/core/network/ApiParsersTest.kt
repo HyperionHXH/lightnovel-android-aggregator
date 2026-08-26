@@ -24,6 +24,7 @@ class ApiParsersTest {
               "summary_short": "简介",
               "cover_url": "https://example.test/cover.jpg",
               "word_count": 218791,
+              "unread_chapter_count": 3,
               "visible_tags": ["历史", "文学"],
               "read_state": {
                 "default_volume_id": 11334,
@@ -43,6 +44,7 @@ class ApiParsersTest {
         assertEquals(11334L, book.defaultVolumeId)
         assertEquals(218231L, book.defaultChapterId)
         assertEquals(9, book.chapterCount)
+        assertEquals(3, book.unreadChapterCount)
         assertEquals(listOf("历史", "文学"), book.tags)
     }
 
@@ -65,6 +67,19 @@ class ApiParsersTest {
         assertEquals(listOf(1L, 2L), page.items.map { it.id })
         assertEquals(5, page.total)
         assertTrue(page.hasMore)
+    }
+
+    @Test
+    fun `book parser preserves an explicit zero unread count`() {
+        val book = ApiParsers.book(
+            obj(
+                """
+                {"book_id": 9, "title": "已读书", "unread_chapter_count": 0}
+                """.trimIndent(),
+            ),
+        )
+
+        assertEquals(0, book.unreadChapterCount)
     }
 
     @Test

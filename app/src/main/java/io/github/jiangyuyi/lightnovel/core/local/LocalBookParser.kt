@@ -1,0 +1,378 @@
+package io.github.jiangyuyi.lightnovel.core.local
+
+import android.content.ContentResolver
+import android.net.Uri
+import android.text.Html
+import android.util.Xml
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
+import java.util.zip.ZipInputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.xmlpull.v1.XmlPullParser
+
+class LocalBookParser(private val resolver: ContentResolver) {
+    suspend fun parse(uri: Uri): LocalBookDocument = withContext(Dispatchers.IO) {
+        val format = formatOf(uri)
+        when (format) {
+            LocalBookFormat.TXT -> parseTxt(uri)
+            LocalBookFormat.HTML -> parseHtml(uri)
+            LocalBookFormat.FB2 -> parseFb2(uri)
+            LocalBookFormat.EPUB -> parseEpub(uri)
+        }
+    }
+
+    suspend fun scan(uri: Uri, sizeBytes: Long, lastModified: Long): LocalBookRecord =
+        withContext(Dispatchers.IO) {
+            val format = formatOf(uri)
+            when (format) {
+                LocalBookFormat.TXT -> LocalBookRecord(
+                    id = stableId(uri.toString()),
+                    uri = uri.toString(),
+                    title = displayName(uri).substringBeforeLast('.', displayName(uri)),
+                    format = format,
+                    sizeBytes = sizeBytes,
+                    lastModified = lastModified,
+                )
+                LocalBookFormat.HTML -> {
+                    val document = parseHtml(uri)
+                    document.record.copy(sizeBytes = sizeBytes, lastModified = lastModified)
+                }
+                LocalBookFormat.FB2 -> {
+                    val document = parseFb2(uri)
+                    document.record.copy(sizeBytes = sizeBytes, lastModified = lastModified)
+                }
+                LocalBookFormat.EPUB -> {
+                    val document = parseEpub(uri)
+                    document.record.copy(sizeBytes = sizeBytes, lastModified = lastModified)
+                }
+            }
+        }
+
+    private fun parseTxt(uri: Uri): LocalBookDocument {
+        val name = displayName(uri).substringBeforeLast('.', displayName(uri))
+        val text = resolver.openInputStream(uri)?.use(::readText) ?: error("无法读取本地文件")
+        val record = LocalBookRecord(stableId(uri.toString()), uri.toString(), name, format = LocalBookFormat.TXT)
+        val chapter = LocalChapterRef("chapter-1", name, "text")
+        return LocalBookDocument(record, listOf(chapter), mapOf("text" to text.toByteArray(StandardCharsets.UTF_8)))
+    }
+
+    private fun parseHtml(uri: Uri): LocalBookDocument {
+        val name = displayName(uri).substringBeforeLast('.', displayName(uri))
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("无法读取本地文件")
+        val raw = bytes.toString(StandardCharsets.UTF_8)
+        val title = Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .find(raw)?.groupValues?.getOrNull(1)?.let { Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString().trim() }
+            ?.takeIf { it.isNotBlank() } ?: name
+        val record = LocalBookRecord(stableId(uri.toString()), uri.toString(), title, format = LocalBookFormat.HTML)
+        val chapter = LocalChapterRef("chapter-1", title, "html")
+        return LocalBookDocument(record, listOf(chapter), mapOf("html" to bytes))
+    }
+
+    private fun parseFb2(uri: Uri): LocalBookDocument {
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: error("无法读取本地文件")
+        val xml = bytes.toString(StandardCharsets.UTF_8)
+        val parser = newParser(xml)
+        var bookTitle: String? = null
+        var author = StringBuilder()
+        var sectionDepth = 0
+        var sectionTitle = ""
+        var sectionText = StringBuilder()
+        var sectionIndex = 0
+        var captureTag: String? = null
+        var capture = StringBuilder()
+        val chapters = mutableListOf<LocalChapterRef>()
+        val entries = linkedMapOf<String, ByteArray>()
+
+        fun finishCapture(tag: String) {
+            if (captureTag != tag) return
+            val value = capture.toString().trim()
+            when (tag) {
+                "book-title" -> bookTitle = value.takeIf { it.isNotBlank() }
+                "first-name", "middle-name", "last-name", "nickname" -> {
+                    if (value.isNotBlank()) {
+                        if (author.isNotEmpty()) author.append(' ')
+                        author.append(value)
+                    }
+                }
+                "section-title" -> sectionTitle = value
+                "paragraph" -> if (value.isNotBlank()) {
+                    if (sectionText.isNotEmpty()) sectionText.append("\n\n")
+                    sectionText.append(value)
+                }
+            }
+            captureTag = null
+            capture = StringBuilder()
+        }
+
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            val tag = parser.name?.substringAfterLast(':').orEmpty()
+            when (parser.eventType) {
+                XmlPullParser.START_TAG -> {
+                    when {
+                        tag == "section" -> {
+                            if (sectionDepth == 0) {
+                                sectionTitle = ""
+                                sectionText = StringBuilder()
+                            }
+                            sectionDepth++
+                        }
+                        tag == "book-title" && sectionDepth == 0 -> {
+                            captureTag = tag
+                            capture = StringBuilder()
+                        }
+                        tag in setOf("first-name", "middle-name", "last-name", "nickname") && sectionDepth == 0 -> {
+                            captureTag = tag
+                            capture = StringBuilder()
+                        }
+                        tag == "title" && sectionDepth == 1 -> {
+                            captureTag = "section-title"
+                            capture = StringBuilder()
+                        }
+                        tag == "p" && sectionDepth >= 1 && captureTag != "section-title" -> {
+                            captureTag = "paragraph"
+                            capture = StringBuilder()
+                        }
+                    }
+                }
+                XmlPullParser.TEXT -> if (captureTag != null) capture.append(parser.text)
+                XmlPullParser.END_TAG -> {
+                    when {
+                        tag == "title" && captureTag == "section-title" -> finishCapture("section-title")
+                        tag == "p" && captureTag == "paragraph" -> finishCapture("paragraph")
+                        else -> finishCapture(tag)
+                    }
+                    if (tag == "section") {
+                        sectionDepth--
+                        if (sectionDepth == 0 && sectionText.isNotBlank()) {
+                            sectionIndex++
+                            val id = "section-$sectionIndex"
+                            val title = sectionTitle.ifBlank { "第 $sectionIndex 章" }
+                            chapters += LocalChapterRef(id, title, id)
+                            entries[id] = sectionText.toString().toByteArray(StandardCharsets.UTF_8)
+                        }
+                    }
+                }
+            }
+        }
+        if (chapters.isEmpty()) error("FB2 没有可读取的章节")
+        val fallbackTitle = displayName(uri).substringBeforeLast('.', displayName(uri))
+        val record = LocalBookRecord(
+            id = stableId(uri.toString()),
+            uri = uri.toString(),
+            title = bookTitle?.ifBlank { null } ?: fallbackTitle,
+            author = author.toString().trim(),
+            format = LocalBookFormat.FB2,
+            chapterCount = chapters.size,
+        )
+        return LocalBookDocument(record, chapters, entries)
+    }
+
+    private fun parseEpub(uri: Uri): LocalBookDocument {
+        val entries = resolver.openInputStream(uri)?.use(::readZipEntries) ?: error("无法读取 EPUB 文件")
+        val container = entries["META-INF/container.xml"]?.toString(StandardCharsets.UTF_8)
+            ?: error("EPUB 缺少 container.xml")
+        val rootFile = parseRootFile(container)
+        val opf = entries[rootFile]?.toString(StandardCharsets.UTF_8) ?: error("EPUB 缺少 OPF 文件")
+        val metadata = parseOpf(opf)
+        val base = rootFile.substringBeforeLast('/', "")
+        val chapters = metadata.spine.mapIndexedNotNull { index, id ->
+            val item = metadata.manifest[id] ?: return@mapIndexedNotNull null
+            val path = resolvePath(base, item.href)
+            if (entries[path] == null) return@mapIndexedNotNull null
+            LocalChapterRef("chapter-${index + 1}", item.title ?: path.substringAfterLast('/').substringBeforeLast('.'), path)
+        }
+        if (chapters.isEmpty()) error("EPUB 没有可读取的章节")
+        val fallbackTitle = displayName(uri).substringBeforeLast('.', displayName(uri))
+        val record = LocalBookRecord(
+            id = stableId(uri.toString()),
+            uri = uri.toString(),
+            title = metadata.title?.ifBlank { null } ?: fallbackTitle,
+            author = metadata.author.orEmpty(),
+            format = LocalBookFormat.EPUB,
+            chapterCount = chapters.size,
+        )
+        return LocalBookDocument(record, chapters, entries)
+    }
+
+    private fun readZipEntries(input: InputStream): Map<String, ByteArray> {
+        val result = linkedMapOf<String, ByteArray>()
+        var totalBytes = 0L
+        ZipInputStream(input).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                if (entry.isDirectory) continue
+                val name = entry.name.replace('\\', '/')
+                if (name.startsWith("/") || name.contains("../")) continue
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(16 * 1024)
+                var total = 0L
+                while (true) {
+                    val count = zip.read(buffer)
+                    if (count <= 0) break
+                    total += count
+                    if (total > MAX_ENTRY_BYTES) error("EPUB 章节资源过大")
+                    totalBytes += count
+                    if (totalBytes > MAX_TOTAL_BYTES) error("EPUB 文件资源过大")
+                    output.write(buffer, 0, count)
+                }
+                result[name] = output.toByteArray()
+            }
+        }
+        return result
+    }
+
+    private fun readText(input: InputStream): String {
+        val bytes = input.readBytes()
+        val (charset, offset) = when {
+            bytes.startsWith(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())) -> StandardCharsets.UTF_8 to 3
+            bytes.startsWith(byteArrayOf(0xFF.toByte(), 0xFE.toByte())) -> StandardCharsets.UTF_16LE to 2
+            bytes.startsWith(byteArrayOf(0xFE.toByte(), 0xFF.toByte())) -> StandardCharsets.UTF_16BE to 2
+            isUtf8(bytes) -> StandardCharsets.UTF_8 to 0
+            else -> runCatching { Charset.forName("GB18030") }.getOrDefault(Charset.defaultCharset()) to 0
+        }
+        return bytes.copyOfRange(offset, bytes.size).toString(charset)
+    }
+
+    private fun parseRootFile(xml: String): String {
+        val parser = newParser(xml)
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            if (parser.eventType == XmlPullParser.START_TAG && parser.name == "rootfile") {
+                return parser.getAttributeValue(null, "full-path") ?: error("container.xml 缺少 rootfile")
+            }
+        }
+        error("container.xml 缺少 rootfile")
+    }
+
+    private fun parseOpf(xml: String): OpfMetadata {
+        val parser = newParser(xml)
+        val manifest = linkedMapOf<String, ManifestItem>()
+        val spine = mutableListOf<String>()
+        var title: String? = null
+        var author: String? = null
+        var currentText: StringBuilder? = null
+        var currentTag: String? = null
+        while (parser.next() != XmlPullParser.END_DOCUMENT) {
+            when (parser.eventType) {
+                XmlPullParser.START_TAG -> when (parser.name.substringAfterLast(':')) {
+                    "item" -> {
+                        val id = parser.getAttributeValue(null, "id")
+                        val href = parser.getAttributeValue(null, "href")
+                        if (!id.isNullOrBlank() && !href.isNullOrBlank()) {
+                            manifest[id] = ManifestItem(
+                                href = decodeHref(href),
+                                title = null,
+                            )
+                        }
+                    }
+                    "itemref" -> parser.getAttributeValue(null, "idref")?.let(spine::add)
+                    "title", "creator" -> {
+                        currentTag = parser.name.substringAfterLast(':')
+                        currentText = StringBuilder()
+                    }
+                }
+                XmlPullParser.TEXT -> currentText?.append(parser.text)
+                XmlPullParser.END_TAG -> {
+                    val tag = parser.name.substringAfterLast(':')
+                    if (tag == currentTag) {
+                        val value = currentText?.toString()?.trim().orEmpty()
+                        if (tag == "title" && value.isNotBlank()) title = value
+                        if (tag == "creator" && value.isNotBlank()) author = value
+                        currentTag = null
+                        currentText = null
+                    }
+                }
+            }
+        }
+        return OpfMetadata(title, author, manifest, spine)
+    }
+
+    private fun newParser(xml: String): XmlPullParser = Xml.newPullParser().apply {
+        setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+        setInput(xml.reader())
+    }
+
+    fun displayNameOf(uri: Uri): String = resolver.query(uri, arrayOf("_display_name"), null, null, null)?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else "本地书籍"
+    } ?: uri.lastPathSegment?.substringAfterLast('/') ?: "本地书籍"
+
+    private fun displayName(uri: Uri): String = displayNameOf(uri)
+
+    fun formatOf(uri: Uri): LocalBookFormat = when (uri.lastPathSegment.orEmpty().substringAfterLast('.').lowercase()) {
+        "epub" -> LocalBookFormat.EPUB
+        "html", "htm", "xhtml" -> LocalBookFormat.HTML
+        "fb2" -> LocalBookFormat.FB2
+        "txt", "md", "markdown" -> LocalBookFormat.TXT
+        else -> error("暂不支持的本地格式")
+    }
+
+    companion object {
+        private const val MAX_ENTRY_BYTES = 24L * 1024 * 1024
+        private const val MAX_TOTAL_BYTES = 96L * 1024 * 1024
+
+        fun stableId(uri: String): String = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(uri.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+
+        private fun resolvePath(base: String, href: String): String {
+            val decoded = Uri.decode(href).substringBefore('#')
+            val parts = (if (base.isBlank()) decoded else "$base/$decoded").split('/')
+            val normalized = ArrayDeque<String>()
+            parts.forEach { part ->
+                when (part) {
+                    "", "." -> Unit
+                    ".." -> if (normalized.isNotEmpty()) normalized.removeLast()
+                    else -> normalized.addLast(part)
+                }
+            }
+            return normalized.joinToString("/")
+        }
+
+        private fun decodeHref(value: String): String = Uri.decode(value).substringBefore('#')
+
+        private fun ByteArray.startsWith(prefix: ByteArray): Boolean = size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
+
+        private fun isUtf8(bytes: ByteArray): Boolean {
+            var index = 0
+            while (index < bytes.size) {
+                val value = bytes[index].toInt() and 0xFF
+                val width = when {
+                    value <= 0x7F -> 1
+                    value in 0xC2..0xDF -> 2
+                    value in 0xE0..0xEF -> 3
+                    value in 0xF0..0xF4 -> 4
+                    else -> return false
+                }
+                if (index + width > bytes.size) return false
+                for (offset in 1 until width) {
+                    if ((bytes[index + offset].toInt() and 0xC0) != 0x80) return false
+                }
+                index += width
+            }
+            return true
+        }
+    }
+
+    private data class OpfMetadata(
+        val title: String?,
+        val author: String?,
+        val manifest: Map<String, ManifestItem>,
+        val spine: List<String>,
+    )
+
+    private data class ManifestItem(val href: String, val title: String?)
+}
+
+fun LocalBookDocument.chapterContent(chapter: LocalChapterRef): LocalChapterContent {
+    val bytes = epubEntries[chapter.path] ?: error("找不到章节文件")
+    val raw = bytes.toString(StandardCharsets.UTF_8)
+    val text = Html.fromHtml(raw, Html.FROM_HTML_MODE_LEGACY).toString()
+        .replace('\u00A0', ' ')
+        .replace(Regex("[\\t ]+"), " ")
+        .replace(Regex("\\n{3,}"), "\\n\\n")
+        .trim()
+    return LocalChapterContent(chapter, text)
+}

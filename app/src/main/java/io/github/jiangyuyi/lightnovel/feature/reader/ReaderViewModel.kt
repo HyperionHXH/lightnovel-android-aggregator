@@ -6,7 +6,7 @@ import io.github.jiangyuyi.lightnovel.core.data.LightNovelRepository
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
 import io.github.jiangyuyi.lightnovel.core.model.LocalReadingProgress
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
-import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesStore
+import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,7 +33,7 @@ class ReaderViewModel(
     private val bookId: Long,
     initialChapterId: Long,
     private val repository: LightNovelRepository,
-    private val preferenceStore: ReaderPreferencesStore,
+    private val preferenceStore: ReaderPreferencesAccess,
 ) : ViewModel() {
     private val _state = MutableStateFlow(ReaderState())
     val state: StateFlow<ReaderState> = _state.asStateFlow()

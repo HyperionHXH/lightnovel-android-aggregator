@@ -47,6 +47,9 @@ internal fun JsonObject.long(vararg keys: String): Long =
 internal fun JsonObject.int(vararg keys: String): Int =
     (element(*keys) as? JsonPrimitive)?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() } ?: 0
 
+internal fun JsonObject.intOrNull(vararg keys: String): Int? =
+    (element(*keys) as? JsonPrimitive)?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() }
+
 internal fun JsonObject.double(vararg keys: String): Double? =
     (element(*keys) as? JsonPrimitive)?.let { it.doubleOrNull ?: it.contentOrNull?.toDoubleOrNull() }
 
@@ -121,7 +124,7 @@ object ApiParsers {
             defaultChapterId = source.long("default_chapter_id", "last_read_chapter_id").takeIf { it > 0 }
                 ?: readState?.long("default_chapter_id")?.takeIf { it > 0 },
             inBookshelf = source.bool("in_shelf", "in_collection", "favorited", "inBookshelf"),
-            unreadChapterCount = source.int("unread_chapter_count").takeIf { it > 0 },
+            unreadChapterCount = source.intOrNull("unread_chapter_count")?.takeIf { it >= 0 },
         )
     }
 
