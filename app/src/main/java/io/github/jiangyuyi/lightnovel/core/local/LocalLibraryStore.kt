@@ -6,13 +6,19 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 class LocalLibraryStore(context: Context) {
@@ -28,6 +34,7 @@ class LocalLibraryStore(context: Context) {
     val importedFiles: StateFlow<List<String>> = _imports.asStateFlow()
     private val _books = MutableStateFlow<List<LocalBookRecord>>(emptyList())
     val books: StateFlow<List<LocalBookRecord>> = _books.asStateFlow()
+    private val coverCache = ConcurrentHashMap<String, Result<ByteArray?>>()
 
     private val _roots = MutableStateFlow(readRoots())
     val roots: StateFlow<List<String>> = _roots.asStateFlow()
@@ -116,15 +123,32 @@ class LocalLibraryStore(context: Context) {
         runCatching { parser.parse(Uri.parse(record.uri)) }.getOrNull()
     }
 
+    suspend fun readCover(record: LocalBookRecord): ByteArray? {
+        val key = "${record.id}:${record.coverPath.orEmpty()}"
+        coverCache[key]?.let { return it.getOrNull() }
+        val result = runCatching {
+            parser.readCover(Uri.parse(record.uri), record.coverPath)
+        }
+        coverCache[key] = result
+        return result.getOrNull()
+    }
+
     private suspend fun reindexInternal() = withContext(Dispatchers.IO) {
         refreshFolderImports()
-        val found = _imports.value.map { uriString ->
-            val uri = Uri.parse(uriString)
-            val file = DocumentFile.fromSingleUri(appContext, uri)
-            val size = file?.length() ?: 0L
-            val modified = file?.lastModified() ?: 0L
-            runCatching { parser.scan(uri, size, modified) }
-                .getOrElse { missingRecord(uri, size, modified) }
+        val semaphore = Semaphore(permits = 4)
+        val found = coroutineScope {
+            _imports.value.map { uriString ->
+                async(Dispatchers.IO) {
+                    semaphore.withPermit {
+                        val uri = Uri.parse(uriString)
+                        val file = DocumentFile.fromSingleUri(appContext, uri)
+                        val size = file?.length() ?: 0L
+                        val modified = file?.lastModified() ?: 0L
+                        runCatching { parser.scan(uri, size, modified) }
+                            .getOrElse { missingRecord(uri, size, modified) }
+                    }
+                }
+            }.awaitAll()
         }.distinctBy(LocalBookRecord::id).sortedBy { it.title.lowercase() }
         _books.value = found
     }

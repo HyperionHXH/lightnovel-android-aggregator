@@ -46,8 +46,7 @@ class LocalBookParser(private val resolver: ContentResolver) {
                     document.record.copy(sizeBytes = sizeBytes, lastModified = lastModified)
                 }
                 LocalBookFormat.EPUB -> {
-                    val document = parseEpub(uri)
-                    document.record.copy(sizeBytes = sizeBytes, lastModified = lastModified)
+                    scanEpub(uri, sizeBytes, lastModified)
                 }
             }
         }
@@ -171,19 +170,39 @@ class LocalBookParser(private val resolver: ContentResolver) {
         return LocalBookDocument(record, chapters, entries)
     }
 
+    private fun scanEpub(uri: Uri, sizeBytes: Long, lastModified: Long): LocalBookRecord {
+        val metadata = readEpubMetadata(uri)
+        val chapters = chapterPaths(metadata)
+        if (chapters.isEmpty()) error("EPUB 没有可读取的章节")
+        val fallbackTitle = displayName(uri).substringBeforeLast('.', displayName(uri))
+        return LocalBookRecord(
+            id = stableId(uri.toString()),
+            uri = uri.toString(),
+            title = metadata.title?.ifBlank { null } ?: fallbackTitle,
+            author = metadata.author.orEmpty(),
+            format = LocalBookFormat.EPUB,
+            coverPath = metadata.coverPath,
+            sizeBytes = sizeBytes,
+            lastModified = lastModified,
+            chapterCount = chapters.size,
+        )
+    }
+
     private fun parseEpub(uri: Uri): LocalBookDocument {
-        val entries = resolver.openInputStream(uri)?.use(::readZipEntries) ?: error("无法读取 EPUB 文件")
-        val container = entries["META-INF/container.xml"]?.toString(StandardCharsets.UTF_8)
-            ?: error("EPUB 缺少 container.xml")
-        val rootFile = parseRootFile(container)
-        val opf = entries[rootFile]?.toString(StandardCharsets.UTF_8) ?: error("EPUB 缺少 OPF 文件")
-        val metadata = parseOpf(opf)
-        val base = rootFile.substringBeforeLast('/', "")
-        val chapters = metadata.spine.mapIndexedNotNull { index, id ->
-            val item = metadata.manifest[id] ?: return@mapIndexedNotNull null
-            val path = resolvePath(base, item.href)
+        val metadata = readEpubMetadata(uri)
+        val chapterPaths = chapterPaths(metadata)
+        val wanted = chapterPaths.toMutableSet().apply {
+            metadata.coverPath?.let(::add)
+        }
+        val entries = resolver.openInputStream(uri)?.use { readZipEntries(it, wanted) }
+            ?: error("无法读取 EPUB 文件")
+        val chapters = chapterPaths.mapIndexedNotNull { index, path ->
             if (entries[path] == null) return@mapIndexedNotNull null
-            LocalChapterRef("chapter-${index + 1}", item.title ?: path.substringAfterLast('/').substringBeforeLast('.'), path)
+            LocalChapterRef(
+                "chapter-${index + 1}",
+                path.substringAfterLast('/').substringBeforeLast('.'),
+                path,
+            )
         }
         if (chapters.isEmpty()) error("EPUB 没有可读取的章节")
         val fallbackTitle = displayName(uri).substringBeforeLast('.', displayName(uri))
@@ -193,20 +212,57 @@ class LocalBookParser(private val resolver: ContentResolver) {
             title = metadata.title?.ifBlank { null } ?: fallbackTitle,
             author = metadata.author.orEmpty(),
             format = LocalBookFormat.EPUB,
+            coverPath = metadata.coverPath?.takeIf(entries::containsKey),
             chapterCount = chapters.size,
         )
         return LocalBookDocument(record, chapters, entries)
     }
 
-    private fun readZipEntries(input: InputStream): Map<String, ByteArray> {
+    suspend fun readCover(uri: Uri, coverPath: String?): ByteArray? = withContext(Dispatchers.IO) {
+        val path = coverPath?.takeIf(String::isNotBlank) ?: return@withContext null
+        resolver.openInputStream(uri)?.use { input ->
+            readZipEntries(input, setOf(path))[path]
+        }
+    }
+
+    private fun readEpubMetadata(uri: Uri): EpubMetadata {
+        val container = resolver.openInputStream(uri)?.use {
+            readZipEntries(it, setOf("META-INF/container.xml"))["META-INF/container.xml"]
+        }?.toString(StandardCharsets.UTF_8) ?: error("EPUB 缺少 container.xml")
+        val rootFile = parseRootFile(container)
+        val opf = resolver.openInputStream(uri)?.use {
+            readZipEntries(it, setOf(rootFile))[rootFile]
+        }?.toString(StandardCharsets.UTF_8) ?: error("EPUB 缺少 OPF 文件")
+        val metadata = parseOpf(opf)
+        val base = rootFile.substringBeforeLast('/', "")
+        return EpubMetadata(
+            title = metadata.title,
+            author = metadata.author,
+            manifest = metadata.manifest,
+            spine = metadata.spine,
+            base = base,
+            coverPath = metadata.coverHref?.let { resolvePath(base, it) },
+        )
+    }
+
+    private fun chapterPaths(metadata: EpubMetadata): List<String> = metadata.spine.mapNotNull { id ->
+        metadata.manifest[id]?.let { resolvePath(metadata.base, it.href) }
+    }
+
+    private fun readZipEntries(input: InputStream, wanted: Set<String>? = null): Map<String, ByteArray> {
+        val normalizedWanted = wanted?.mapTo(hashSetOf(), ::normalizeEntryName)
         val result = linkedMapOf<String, ByteArray>()
         var totalBytes = 0L
         ZipInputStream(input).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
                 if (entry.isDirectory) continue
-                val name = entry.name.replace('\\', '/')
+                val name = normalizeEntryName(entry.name)
                 if (name.startsWith("/") || name.contains("../")) continue
+                if (normalizedWanted != null && name !in normalizedWanted) {
+                    zip.closeEntry()
+                    continue
+                }
                 val output = ByteArrayOutputStream()
                 val buffer = ByteArray(16 * 1024)
                 var total = 0L
@@ -253,6 +309,8 @@ class LocalBookParser(private val resolver: ContentResolver) {
         val spine = mutableListOf<String>()
         var title: String? = null
         var author: String? = null
+        var legacyCoverRef: String? = null
+        var propertyCoverHref: String? = null
         var currentText: StringBuilder? = null
         var currentTag: String? = null
         while (parser.next() != XmlPullParser.END_DOCUMENT) {
@@ -261,20 +319,31 @@ class LocalBookParser(private val resolver: ContentResolver) {
                     "item" -> {
                         val id = parser.getAttributeValue(null, "id")
                         val href = parser.getAttributeValue(null, "href")
+                        val mediaType = parser.getAttributeValue(null, "media-type").orEmpty()
+                        val properties = parser.getAttributeValue(null, "properties").orEmpty()
                         if (!id.isNullOrBlank() && !href.isNullOrBlank()) {
                             manifest[id] = ManifestItem(
                                 href = decodeHref(href),
                                 title = null,
+                                mediaType = mediaType,
                             )
+                            if (properties.split(' ').contains("cover-image")) {
+                                propertyCoverHref = decodeHref(href)
+                            }
                         }
                     }
                     "itemref" -> parser.getAttributeValue(null, "idref")?.let(spine::add)
+                    "meta" -> {
+                        if (parser.getAttributeValue(null, "name").equals("cover", ignoreCase = true)) {
+                            legacyCoverRef = parser.getAttributeValue(null, "content")
+                        }
+                    }
                     "title", "creator" -> {
                         currentTag = parser.name.substringAfterLast(':')
                         currentText = StringBuilder()
                     }
                 }
-                XmlPullParser.TEXT -> currentText?.append(parser.text)
+                XmlPullParser.TEXT, XmlPullParser.CDSECT -> currentText?.append(parser.text)
                 XmlPullParser.END_TAG -> {
                     val tag = parser.name.substringAfterLast(':')
                     if (tag == currentTag) {
@@ -287,7 +356,16 @@ class LocalBookParser(private val resolver: ContentResolver) {
                 }
             }
         }
-        return OpfMetadata(title, author, manifest, spine)
+        val coverHref = legacyCoverRef?.let { reference ->
+            manifest[reference]?.href
+                ?: manifest.values.firstOrNull { item ->
+                    item.href == reference || item.href.substringAfterLast('/') == reference.substringAfterLast('/')
+                }?.href
+        } ?: propertyCoverHref ?: manifest.values.firstOrNull { item ->
+            item.mediaType.startsWith("image/") &&
+                item.href.substringAfterLast('/').substringBeforeLast('.').equals("cover", ignoreCase = true)
+        }?.href
+        return OpfMetadata(title, author, manifest, spine, coverHref)
     }
 
     private fun newParser(xml: String): XmlPullParser = Xml.newPullParser().apply {
@@ -333,6 +411,8 @@ class LocalBookParser(private val resolver: ContentResolver) {
 
         private fun decodeHref(value: String): String = Uri.decode(value).substringBefore('#')
 
+        private fun normalizeEntryName(value: String): String = value.replace('\\', '/')
+
         private fun ByteArray.startsWith(prefix: ByteArray): Boolean = size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
 
         private fun isUtf8(bytes: ByteArray): Boolean {
@@ -361,9 +441,23 @@ class LocalBookParser(private val resolver: ContentResolver) {
         val author: String?,
         val manifest: Map<String, ManifestItem>,
         val spine: List<String>,
+        val coverHref: String?,
     )
 
-    private data class ManifestItem(val href: String, val title: String?)
+    private data class ManifestItem(
+        val href: String,
+        val title: String?,
+        val mediaType: String,
+    )
+
+    private data class EpubMetadata(
+        val title: String?,
+        val author: String?,
+        val manifest: Map<String, ManifestItem>,
+        val spine: List<String>,
+        val base: String,
+        val coverPath: String?,
+    )
 }
 
 fun LocalBookDocument.chapterContent(chapter: LocalChapterRef): LocalChapterContent {

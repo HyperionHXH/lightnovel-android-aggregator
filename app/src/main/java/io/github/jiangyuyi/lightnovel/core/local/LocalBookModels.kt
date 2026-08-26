@@ -17,6 +17,7 @@ data class LocalBookRecord(
     val title: String,
     val author: String = "",
     val format: LocalBookFormat,
+    val coverPath: String? = null,
     val sizeBytes: Long = 0,
     val lastModified: Long = 0,
     val chapterCount: Int = 1,

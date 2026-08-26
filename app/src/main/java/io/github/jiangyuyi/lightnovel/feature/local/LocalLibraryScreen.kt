@@ -1,22 +1,26 @@
 package io.github.jiangyuyi.lightnovel.feature.local
 
+import android.graphics.BitmapFactory
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Search
@@ -29,19 +33,24 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.documentfile.provider.DocumentFile
 import io.github.jiangyuyi.lightnovel.core.local.LocalBookRecord
 import io.github.jiangyuyi.lightnovel.core.local.LocalLibraryStore
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
@@ -189,68 +198,9 @@ fun LocalLibraryScreen(
             }
         }
         items(visibleBooks, key = LocalBookRecord::id) { book ->
-            LocalBookCard(book, onClick = { onBook(book) })
-        }
-        if (roots.isNotEmpty()) {
-            item {
-                Column(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text("已授权文件夹", style = MaterialTheme.typography.titleSmall)
-                    roots.forEach { root ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.FolderOpen, contentDescription = null)
-                            Text(
-                                folderDisplayName(context, root),
-                                Modifier.weight(1f).padding(start = 8.dp),
-                                maxLines = 1,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            IconButton(onClick = { store.removeFolder(root) }) {
-                                Icon(Icons.Filled.DeleteOutline, contentDescription = "移除文件夹")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if (importedFiles.isNotEmpty()) {
-            item {
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("单独导入的文件", style = MaterialTheme.typography.titleSmall)
-                    importedFiles.forEach { uri ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                uri.substringAfterLast('/').ifBlank { uri },
-                                Modifier.weight(1f),
-                                maxLines = 1,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            IconButton(onClick = {
-                                runCatching {
-                                    context.contentResolver.releasePersistableUriPermission(
-                                        android.net.Uri.parse(uri),
-                                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                                    )
-                                }
-                                store.removeFile(uri)
-                            }) {
-                                Icon(Icons.Filled.DeleteOutline, contentDescription = "移除导入文件")
-                            }
-                        }
-                    }
-                }
-            }
+            LocalBookCard(store, book, onClick = { onBook(book) })
         }
     }
-}
-
-private fun folderDisplayName(context: android.content.Context, value: String): String {
-    val uri = Uri.parse(value)
-    return DocumentFile.fromTreeUri(context, uri)?.name
-        ?: uri.lastPathSegment?.substringAfterLast(':')?.ifBlank { null }
-        ?: "已授权文件夹"
 }
 
 internal fun filterLocalBooks(books: List<LocalBookRecord>, query: String): List<LocalBookRecord> {
@@ -263,13 +213,48 @@ internal fun filterLocalBooks(books: List<LocalBookRecord>, query: String): List
 }
 
 @Composable
-private fun LocalBookCard(book: LocalBookRecord, onClick: () -> Unit) {
+private fun LocalBookCard(store: LocalLibraryStore, book: LocalBookRecord, onClick: () -> Unit) {
+    var coverBytes by remember(book.id, book.coverPath) { mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(book.id, book.coverPath) {
+        coverBytes = store.readCover(book)
+    }
+    val coverBitmap = remember(coverBytes) {
+        coverBytes?.let { bytes ->
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }
+    }
     Card(
         onClick = onClick,
         enabled = book.available,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
     ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(width = 72.dp, height = 104.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (coverBitmap != null) {
+                    Image(
+                        bitmap = coverBitmap,
+                        contentDescription = "${book.title} 封面",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Text(
+                        book.title.trim().take(1).ifBlank { "书" },
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(book.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text(
