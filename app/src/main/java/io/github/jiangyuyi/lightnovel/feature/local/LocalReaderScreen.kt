@@ -165,7 +165,7 @@ fun LocalReaderScreen(
                     }
                 },
                 colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
-                    containerColor = colors.background.copy(alpha = 0.97f),
+                    containerColor = colors.background,
                     titleContentColor = colors.text,
                 ),
             )

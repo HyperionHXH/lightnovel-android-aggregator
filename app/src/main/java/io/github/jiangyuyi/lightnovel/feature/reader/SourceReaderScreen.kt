@@ -161,7 +161,7 @@ fun SourceReaderScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = colors.background.copy(alpha = 0.97f),
+                    containerColor = colors.background,
                     titleContentColor = colors.text,
                     navigationIconContentColor = colors.text,
                     actionIconContentColor = colors.text,
