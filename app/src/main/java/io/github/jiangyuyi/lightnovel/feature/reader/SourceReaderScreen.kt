@@ -1,6 +1,7 @@
 package io.github.jiangyuyi.lightnovel.feature.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,8 +36,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +56,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
@@ -115,11 +120,13 @@ fun SourceReaderScreen(
                     onNextChapter = viewModel::next,
                     onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
                     onToggleControls = viewModel::toggleControls,
+                    controlsVisible = state.controlsVisible,
                 )
             } else LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
+                    .padding(top = if (state.controlsVisible) 64.dp else 0.dp)
                     .pointerInput(chapter.chapter.key) {
                         detectTapGestures { position ->
                             val horizontal = position.x / size.width.toFloat().coerceAtLeast(1f)
@@ -130,13 +137,18 @@ fun SourceReaderScreen(
                         }
                     },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    horizontal = state.preferences.horizontalPadding.dp,
-                    vertical = 18.dp,
+                    start = state.preferences.horizontalPadding.dp,
+                    end = state.preferences.horizontalPadding.dp,
+                    top = 18.dp,
+                    bottom = 18.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 itemsIndexed(blocks, key = { index, _ -> index }) { _, block ->
                     SourceReaderBlock(block, state.preferences, colors, state.chapterFontFamily)
+                }
+                if (chapter.nextChapterKey != null) {
+                    item { SourceChapterEnd(viewModel::next) }
                 }
             }
         }
@@ -190,13 +202,16 @@ private fun SourcePagedReader(
     onNextChapter: () -> Unit,
     onProgress: (Int) -> Unit,
     onToggleControls: () -> Unit,
+    controlsVisible: Boolean,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val textMeasurer = rememberTextMeasurer()
         val horizontalPadding = preferences.horizontalPadding.dp
         val pageWidth = with(density) { (maxWidth - horizontalPadding * 2).roundToPx().coerceAtLeast(1) }
-        val pageHeight = with(density) { (maxHeight - 28.dp).roundToPx().coerceAtLeast(1) }
+        val pageHeight = with(density) {
+            (maxHeight - 28.dp - if (controlsVisible) 64.dp else 0.dp).roundToPx().coerceAtLeast(1)
+        }
         val pages = remember(blocks, preferences, pageWidth, pageHeight) {
             paginateReaderBlocks(
                 blocks = blocks,
@@ -220,7 +235,10 @@ private fun SourcePagedReader(
             state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = 8.dp, bottom = 12.dp)
+                .padding(
+                    top = 8.dp + if (controlsVisible) 64.dp else 0.dp,
+                    bottom = 12.dp,
+                )
                 .pointerInput(pagerState.currentPage, pages.size, hasNextChapter) {
                     detectTapGestures { position ->
                         when {
@@ -247,7 +265,9 @@ private fun SourcePagedReader(
         ) { pageIndex ->
             Column(
                 Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = if (pages[pageIndex].elements.size == 1 &&
+                    pages[pageIndex].elements.firstOrNull() is ReaderPageElement.Illustration
+                ) Arrangement.Center else Arrangement.spacedBy(14.dp),
             ) {
                 pages[pageIndex].elements.forEach { element ->
                     when (element) {
@@ -308,11 +328,20 @@ private fun SourceReaderBlock(
 }
 
 @Composable
+private fun SourceChapterEnd(onNextChapter: () -> Unit) {
+    androidx.compose.material3.TextButton(
+        onClick = onNextChapter,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+    ) { Text("下一章") }
+}
+
+@Composable
 private fun ReaderRemoteImage(url: String, modifier: Modifier) {
+    var zoomed by remember(url) { mutableStateOf(false) }
     SubcomposeAsyncImage(
         model = url,
         contentDescription = "插图",
-        modifier = modifier,
+        modifier = modifier.clickable { zoomed = true },
         contentScale = ContentScale.Fit,
         loading = {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -325,6 +354,24 @@ private fun ReaderRemoteImage(url: String, modifier: Modifier) {
             }
         },
     )
+    if (zoomed) {
+        Dialog(
+            onDismissRequest = { zoomed = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black).clickable { zoomed = false },
+                contentAlignment = Alignment.Center,
+            ) {
+                SubcomposeAsyncImage(
+                    model = url,
+                    contentDescription = "放大插图",
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

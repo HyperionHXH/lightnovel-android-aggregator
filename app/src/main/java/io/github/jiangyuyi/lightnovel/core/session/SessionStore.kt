@@ -14,6 +14,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import java.security.MessageDigest
 
 class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -21,6 +22,14 @@ class SessionStore(context: Context) {
     val session: StateFlow<Session> = _session.asStateFlow()
 
     fun securityKey(): String = _session.value.securityKey
+
+    /** Keeps purchases visible after a cache refresh while remaining isolated per account. */
+    fun markChapterUnlocked(chapterId: Long) {
+        preferences.edit().putBoolean(unlockPreferenceKey(chapterId), true).apply()
+    }
+
+    fun isChapterUnlocked(chapterId: Long): Boolean =
+        preferences.getBoolean(unlockPreferenceKey(chapterId), false)
 
     fun save(session: Session) {
         require(session.securityKey.isNotBlank()) { "securityKey must not be blank" }
@@ -93,6 +102,15 @@ class SessionStore(context: Context) {
             )
             generateKey()
         }
+    }
+
+    private fun unlockPreferenceKey(chapterId: Long): String {
+        val identity = _session.value.uid.takeIf { it > 0 }?.toString()
+            ?: MessageDigest.getInstance("SHA-256")
+                .digest(_session.value.securityKey.toByteArray(Charsets.UTF_8))
+                .joinToString("") { byte -> "%02x".format(byte) }
+                .take(16)
+        return "unlocked_${identity}_$chapterId"
     }
 
     private data class EncryptedValue(val payload: String, val iv: String)

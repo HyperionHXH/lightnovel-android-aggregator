@@ -108,7 +108,9 @@ class SourceBookViewModel(
             refreshing = hasContent && forceRefresh,
             error = null,
             directoryError = null,
-            chapters = if (forceRefresh) emptyMap() else _state.value.chapters,
+            // A book screen can be revisited with the same ViewModel after a purchase.
+            // Re-read chapter summaries so the server's unlocked state is reflected.
+            chapters = emptyMap(),
         )
         loadJob = viewModelScope.launch {
             supervisorScope {

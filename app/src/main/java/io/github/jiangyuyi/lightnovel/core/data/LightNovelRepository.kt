@@ -448,6 +448,7 @@ class LightNovelRepository(
         )
         val list = data.array("list", "chapters")
             .mapNotNull { (it as? JsonObject)?.let(ApiParsers::chapter) }
+            .map { chapter -> chapter.copy(locked = chapter.locked && !sessionStore.isChapterUnlocked(chapter.id)) }
             .filter { it.id > 0 }
         val pagination = data.obj("pagination", "page_info")
         val total = pagination?.int("total", "count") ?: list.size
@@ -459,7 +460,12 @@ class LightNovelRepository(
             "api/new-content-read/get-chapter-detail",
             withOptionalSession("book_id" to bookId, "chapter_id" to chapterId),
         )
-        val detail = ApiParsers.chapterDetail(data)
+        val parsed = ApiParsers.chapterDetail(data)
+        val detail = parsed.copy(
+            chapter = parsed.chapter.copy(
+                locked = parsed.chapter.locked && !sessionStore.isChapterUnlocked(parsed.chapter.id),
+            ),
+        )
         if (detail.previousChapterId != null && detail.nextChapterId != null) return detail
         return runCatching { completeChapterNavigation(bookId, detail) }.getOrDefault(detail)
     }
@@ -732,6 +738,7 @@ class LightNovelRepository(
             "api/new-content-read/unlock-chapter",
             jsonBody("security_key" to key, "chapter_id" to chapterId),
         )
+        sessionStore.markChapterUnlocked(chapterId)
         cache.removePrefix(userScope(), cachePrefix("chapter"))
         cache.removePrefix(userScope(), cachePrefix("chapters"))
         cache.removePrefix(userScope(), cachePrefix("book"))

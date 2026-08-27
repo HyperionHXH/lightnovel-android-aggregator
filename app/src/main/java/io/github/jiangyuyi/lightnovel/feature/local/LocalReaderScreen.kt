@@ -3,6 +3,7 @@ package io.github.jiangyuyi.lightnovel.feature.local
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,6 +46,8 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.local.LocalBookDocument
 import io.github.jiangyuyi.lightnovel.core.local.LocalBookRecord
@@ -116,10 +119,12 @@ fun LocalReaderScreen(
                             hasNextChapter = chapterIndex < loaded.chapters.lastIndex,
                             onNextChapter = { chapterIndex++ },
                             onToggleControls = { controlsVisible = !controlsVisible },
+                            controlsVisible = controlsVisible,
                         )
                     } else LazyColumn(
                         Modifier
                             .fillMaxSize()
+                            .padding(top = if (controlsVisible) 64.dp else 0.dp)
                             .pointerInput(chapterIndex, loaded.chapters.size) {
                                 detectTapGestures { position ->
                                     val horizontal = position.x / size.width.toFloat().coerceAtLeast(1f)
@@ -146,6 +151,9 @@ fun LocalReaderScreen(
                                 )
                                 is LocalContentBlock.Image -> LocalImageBlock(block.bytes, Modifier.fillMaxWidth())
                             }
+                        }
+                        if (chapterIndex < loaded.chapters.lastIndex) {
+                            item { LocalChapterEnd { chapterIndex++ } }
                         }
                     }
                 } ?: CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -189,6 +197,7 @@ private fun LocalPagedReader(
     hasNextChapter: Boolean,
     onNextChapter: () -> Unit,
     onToggleControls: () -> Unit,
+    controlsVisible: Boolean,
 ) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
         val estimatedChars = remember(maxWidth, maxHeight, preferences.fontSize, preferences.lineHeight) {
@@ -238,10 +247,12 @@ private fun LocalPagedReader(
                 modifier = Modifier.fillMaxSize().padding(
                     start = preferences.horizontalPadding.dp,
                     end = preferences.horizontalPadding.dp,
-                    top = 12.dp,
+                    top = 12.dp + if (controlsVisible) 64.dp else 0.dp,
                     bottom = 40.dp,
                 ),
-                verticalArrangement = Arrangement.spacedBy((preferences.lineHeight * 3).dp),
+                verticalArrangement = if (pages[pageIndex].size == 1 &&
+                    pages[pageIndex].firstOrNull() is LocalContentBlock.Image
+                ) Arrangement.Center else Arrangement.spacedBy((preferences.lineHeight * 3).dp),
             ) {
                 if (pageIndex == 0) Text(chapter.chapter.title, style = localHeadingStyle(preferences, colors.text))
                 pages[pageIndex].forEach { block -> LocalBlockView(block, preferences, colors) }
@@ -260,11 +271,20 @@ private fun LocalBlockView(block: LocalContentBlock, preferences: ReaderPreferen
     }
 }
 
+@Composable
+private fun LocalChapterEnd(onNextChapter: () -> Unit) {
+    androidx.compose.material3.TextButton(
+        onClick = onNextChapter,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+    ) { Text("下一章") }
+}
+
 private data class LocalImageLoad(val image: ImageBitmap? = null, val finished: Boolean = false)
 
 @Composable
 private fun LocalImageBlock(bytes: ByteArray, modifier: Modifier) {
     var result by remember(bytes) { mutableStateOf(LocalImageLoad()) }
+    var zoomed by remember(bytes) { mutableStateOf(false) }
     LaunchedEffect(bytes) {
         result = withContext(Dispatchers.Default) {
             LocalImageLoad(
@@ -275,11 +295,24 @@ private fun LocalImageBlock(bytes: ByteArray, modifier: Modifier) {
     }
     Box(modifier, contentAlignment = Alignment.Center) {
         result.image?.let { image ->
-            Image(image, "正文插图", Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+            Image(image, "正文插图", modifier.clickable { zoomed = true }, contentScale = ContentScale.Fit)
         } ?: if (!result.finished) {
             CircularProgressIndicator(strokeWidth = 2.dp)
         } else {
             Text("图片无法读取", color = MaterialTheme.colorScheme.error)
+        }
+    }
+    if (zoomed && result.image != null) {
+        Dialog(
+            onDismissRequest = { zoomed = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black).clickable { zoomed = false },
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(result.image!!, "放大插图", Modifier.fillMaxSize().padding(16.dp), contentScale = ContentScale.Fit)
+            }
         }
     }
 }

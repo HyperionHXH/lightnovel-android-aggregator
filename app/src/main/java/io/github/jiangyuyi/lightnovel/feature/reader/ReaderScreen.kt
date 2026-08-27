@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -71,6 +72,8 @@ import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -134,6 +137,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 hasPreviousChapter = state.chapter?.previousChapterId != null,
                 hasNextChapter = state.chapter?.nextChapterId != null,
                 safeTopPadding = safeTopPadding,
+                controlsVisible = state.controlsVisible,
             )
             else -> ScrollingReader(
                 blocks = blocks,
@@ -143,7 +147,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 onAnchorChanged = { anchorBlock = it },
                 onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
                 onToggleControls = viewModel::toggleControls,
+                onNextChapter = viewModel::next,
+                hasNextChapter = state.chapter?.nextChapterId != null,
                 safeTopPadding = safeTopPadding,
+                controlsVisible = state.controlsVisible,
             )
         }
 
@@ -188,6 +195,7 @@ private fun PagedReader(
     hasPreviousChapter: Boolean,
     hasNextChapter: Boolean,
     safeTopPadding: Dp,
+    controlsVisible: Boolean,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -195,7 +203,7 @@ private fun PagedReader(
         val paragraphStyle = preferences.paragraphStyle(colors.text)
         val headingStyle = preferences.headingStyle(colors.text)
         val horizontalPadding = preferences.horizontalPadding.dp
-        val pageTopPadding = safeTopPadding + 8.dp
+        val pageTopPadding = safeTopPadding + 8.dp + if (controlsVisible) 64.dp else 0.dp
         val pageBottomPadding = 12.dp
         val pageWidthPx = with(density) { (maxWidth - horizontalPadding * 2).roundToPx().coerceAtLeast(1) }
         val pageHeightPx = with(density) {
@@ -347,7 +355,10 @@ private fun ScrollingReader(
     onAnchorChanged: (Int) -> Unit,
     onProgress: (Int) -> Unit,
     onToggleControls: () -> Unit,
+    onNextChapter: () -> Unit,
+    hasNextChapter: Boolean,
     safeTopPadding: Dp,
+    controlsVisible: Boolean,
 ) {
     val listState = rememberLazyListState()
     LaunchedEffect(blocks) {
@@ -368,6 +379,7 @@ private fun ScrollingReader(
         state = listState,
         modifier = Modifier
             .fillMaxSize()
+            .padding(top = safeTopPadding + if (controlsVisible) 64.dp else 0.dp)
             .pointerInput(onToggleControls) {
                 detectTapGestures { position ->
                     val horizontalFraction = position.x / size.width.toFloat().coerceAtLeast(1f)
@@ -380,7 +392,7 @@ private fun ScrollingReader(
         contentPadding = PaddingValues(
             start = preferences.horizontalPadding.dp,
             end = preferences.horizontalPadding.dp,
-            top = safeTopPadding + 8.dp,
+            top = 8.dp,
             bottom = 12.dp,
         ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -397,6 +409,21 @@ private fun ScrollingReader(
                 is ReaderBlock.Illustration -> ReaderIllustration(block, Modifier.fillMaxWidth(), colors)
             }
         }
+        if (blocks.isNotEmpty() && hasNextChapter) {
+            item {
+                ReaderChapterEnd(onNextChapter)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReaderChapterEnd(onNextChapter: () -> Unit) {
+    androidx.compose.material3.TextButton(
+        onClick = onNextChapter,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+    ) {
+        Text("下一章")
     }
 }
 
@@ -413,11 +440,12 @@ private fun ReaderTextElement(element: ReaderPageElement.Text, preferences: Read
 
 @Composable
 private fun ReaderIllustration(block: ReaderBlock.Illustration, modifier: Modifier, colors: ReaderColors) {
+    var zoomed by remember(block.url) { mutableStateOf(false) }
     SubcomposeAsyncImage(
         model = block.url,
         contentDescription = "正文插图",
         contentScale = ContentScale.Fit,
-        modifier = modifier,
+        modifier = modifier.clickable { zoomed = true },
         loading = {
             Box(Modifier.fillMaxSize().background(colors.text.copy(alpha = 0.04f)), contentAlignment = Alignment.Center) {
                 LinearProgressIndicator(Modifier.fillMaxWidth(0.45f))
@@ -429,6 +457,24 @@ private fun ReaderIllustration(block: ReaderBlock.Illustration, modifier: Modifi
             }
         },
     )
+    if (zoomed) {
+        Dialog(
+            onDismissRequest = { zoomed = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black).clickable { zoomed = false },
+                contentAlignment = Alignment.Center,
+            ) {
+                SubcomposeAsyncImage(
+                    model = block.url,
+                    contentDescription = "放大插图",
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
