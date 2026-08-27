@@ -333,8 +333,9 @@ class LocalBookParser(private val resolver: ContentResolver) {
         return output.toByteArray()
     }
 
-    private fun readText(input: InputStream): String {
-        val bytes = input.readBytes()
+    private fun readText(input: InputStream): String = decodeTextBytes(input.readBytes())
+
+    private fun decodeTextBytes(bytes: ByteArray): String {
         val (charset, offset) = when {
             bytes.startsWith(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())) -> StandardCharsets.UTF_8 to 3
             bytes.startsWith(byteArrayOf(0xFF.toByte(), 0xFE.toByte())) -> StandardCharsets.UTF_16LE to 2
@@ -514,9 +515,9 @@ class LocalBookParser(private val resolver: ContentResolver) {
 
 fun LocalBookDocument.chapterContent(chapter: LocalChapterRef): LocalChapterContent {
     val bytes = epubEntries[chapter.path] ?: error("找不到章节文件")
-    val raw = bytes.toString(StandardCharsets.UTF_8)
+    val raw = decodeLocalText(bytes)
     val blocks = mutableListOf<LocalContentBlock>()
-    val tokenRegex = Regex("<p\\b[^>]*>.*?</p>|<img\\b[^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    val imageRegex = Regex("<img\\b[^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     var cursor = 0
     fun appendText(value: String) {
         val text = Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY).toString()
@@ -526,23 +527,31 @@ fun LocalBookDocument.chapterContent(chapter: LocalChapterRef): LocalChapterCont
             .trim()
         if (text.isNotBlank()) blocks += LocalContentBlock.Paragraph(text)
     }
-    tokenRegex.findAll(raw).forEach { token ->
-        val before = raw.substring(cursor, token.range.first)
-        if (token.value.startsWith("<img", ignoreCase = true)) {
-            appendText(before)
-            val src = Regex("\\bsrc\\s*=\\s*[\\\"']([^\\\"']+)", RegexOption.IGNORE_CASE)
-                .find(token.value)?.groupValues?.getOrNull(1)
-            val path = src?.let { resolveRelativeAssetPath(chapter.path, it) }
-            path?.let { epubEntries[it] }?.let { blocks += LocalContentBlock.Image(it) }
-        } else {
-            appendText(token.value)
-        }
-        cursor = token.range.last + 1
+    imageRegex.findAll(raw).forEach { image ->
+        appendText(raw.substring(cursor, image.range.first))
+        val src = Regex("\\bsrc\\s*=\\s*[\\\"']([^\\\"']+)", RegexOption.IGNORE_CASE)
+            .find(image.value)?.groupValues?.getOrNull(1)
+        val path = src?.let { resolveRelativeAssetPath(chapter.path, it) }
+        path?.let { epubEntries[it] }?.let { blocks += LocalContentBlock.Image(it) }
+        cursor = image.range.last + 1
     }
     appendText(raw.substring(cursor))
     if (blocks.isEmpty()) blocks += LocalContentBlock.Paragraph("本章暂无正文")
     return LocalChapterContent(chapter, blocks)
 }
+
+private fun decodeLocalText(bytes: ByteArray): String {
+    val (charset, offset) = when {
+        bytes.hasPrefix(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())) -> StandardCharsets.UTF_8 to 3
+        bytes.hasPrefix(byteArrayOf(0xFF.toByte(), 0xFE.toByte())) -> StandardCharsets.UTF_16LE to 2
+        bytes.hasPrefix(byteArrayOf(0xFE.toByte(), 0xFF.toByte())) -> StandardCharsets.UTF_16BE to 2
+        else -> StandardCharsets.UTF_8 to 0
+    }
+    return bytes.copyOfRange(offset, bytes.size).toString(charset)
+}
+
+private fun ByteArray.hasPrefix(prefix: ByteArray): Boolean =
+    size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }
 
 private fun resolveRelativeAssetPath(chapterPath: String, href: String): String {
     val decoded = android.net.Uri.decode(href)

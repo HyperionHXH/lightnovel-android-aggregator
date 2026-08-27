@@ -187,7 +187,7 @@ class LightNovelRepository(
         pageSize: Int = 50,
         forceRefresh: Boolean = false,
     ): Flow<CacheUpdate<Page<ChapterSummary>>> = cache.updates(
-        scope = CacheScopes.PUBLIC,
+        scope = currentScope(),
         key = cacheKey("chapters", bookId, volumeId, page, pageSize),
         policy = CachePolicies.BOOK,
         serializer = Page.serializer(ChapterSummary.serializer()),
@@ -199,7 +199,7 @@ class LightNovelRepository(
         chapterId: Long,
         forceRefresh: Boolean = false,
     ): Flow<CacheUpdate<ChapterDetail>> = cache.updates(
-        scope = CacheScopes.PUBLIC,
+        scope = currentScope(),
         key = cacheKey("chapter", bookId, chapterId),
         policy = CachePolicies.CHAPTER,
         serializer = ChapterDetail.serializer(),
@@ -438,7 +438,7 @@ class LightNovelRepository(
         val acceptedPageSize = pageSize.coerceIn(1, 50)
         val data = api.post(
             "api/new-content-read/get-volume-chapters",
-            jsonBody(
+            withOptionalSession(
                 "book_id" to bookId,
                 "volume_id" to volumeId,
                 "page" to page,

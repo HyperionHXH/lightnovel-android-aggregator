@@ -3,7 +3,6 @@ package io.github.jiangyuyi.lightnovel.feature.local
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,12 +30,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
@@ -56,6 +57,7 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -83,6 +85,7 @@ fun LocalReaderScreen(
         val loaded = document ?: return@LaunchedEffect
         store.saveProgress(record.id, chapterIndex)
         val chapter = loaded.chapters.getOrNull(chapterIndex) ?: return@LaunchedEffect
+        content = null
         content = withContext(Dispatchers.IO) { runCatching { loaded.chapterContent(chapter) }.getOrNull() }
     }
 
@@ -107,26 +110,13 @@ fun LocalReaderScreen(
                             chapter = chapter,
                             preferences = preferences,
                             colors = colors,
+                            onPreviousChapter = { if (chapterIndex > 0) chapterIndex-- },
                             hasNextChapter = chapterIndex < loaded.chapters.lastIndex,
                             onNextChapter = { chapterIndex++ },
                         )
                     } else LazyColumn(
                         Modifier
                             .fillMaxSize()
-                            .pointerInput(chapterIndex, loaded.chapters.size) {
-                                var distance = 0f
-                                detectHorizontalDragGestures(
-                                    onHorizontalDrag = { _, dragAmount -> distance += dragAmount },
-                                    onDragEnd = {
-                                        when {
-                                            distance < -80f && chapterIndex < loaded.chapters.lastIndex -> chapterIndex++
-                                            distance > 80f && chapterIndex > 0 -> chapterIndex--
-                                        }
-                                        distance = 0f
-                                    },
-                                    onDragCancel = { distance = 0f },
-                                )
-                            }
                             .pointerInput(chapterIndex, loaded.chapters.size) {
                                 detectTapGestures { position ->
                                     when {
@@ -150,21 +140,11 @@ fun LocalReaderScreen(
                                     block.text,
                                     style = localBodyStyle(preferences, colors.text),
                                 )
-                                is LocalContentBlock.Image -> {
-                                    val bitmap = BitmapFactory.decodeByteArray(block.bytes, 0, block.bytes.size)?.asImageBitmap()
-                                    if (bitmap != null) {
-                                        Image(
-                                            bitmap = bitmap,
-                                            contentDescription = "正文插图",
-                                            contentScale = ContentScale.Fit,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                    }
-                                }
+                                is LocalContentBlock.Image -> LocalImageBlock(block.bytes, Modifier.fillMaxWidth())
                             }
                         }
                     }
-                }
+                } ?: CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
             }
         }
     }
@@ -175,27 +155,55 @@ private fun LocalPagedReader(
     chapter: LocalChapterContent,
     preferences: ReaderPreferences,
     colors: LocalReaderColors,
+    onPreviousChapter: () -> Unit,
     hasNextChapter: Boolean,
     onNextChapter: () -> Unit,
 ) {
-    val pages = remember(chapter.chapter.id, chapter.blocks, preferences.fontSize) { localPages(chapter.blocks) }
-    val pagerState = rememberPagerState { pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0 }
-    LaunchedEffect(chapter.chapter.id, pages.size) {
-        pagerState.scrollToPage(0)
-    }
-    LaunchedEffect(pagerState.currentPage, pages.size, hasNextChapter) {
-        if (hasNextChapter && pagerState.currentPage == pages.size) onNextChapter()
-    }
-    HorizontalPager(
-        state = pagerState,
-        modifier = Modifier.fillMaxSize(),
-        beyondViewportPageCount = 1,
-        userScrollEnabled = true,
-    ) { pageIndex ->
-        if (pageIndex < pages.size) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+        val estimatedChars = remember(maxWidth, maxHeight, preferences.fontSize, preferences.lineHeight) {
+            val charsPerLine = (maxWidth.value - preferences.horizontalPadding * 2) /
+                (preferences.fontSize * 0.95f)
+            val linesPerPage = (maxHeight.value - 54f) /
+                (preferences.fontSize * preferences.lineHeight * 1.15f)
+            (charsPerLine * linesPerPage * 0.82f).toInt().coerceIn(240, 900)
+        }
+        val pages = remember(chapter.chapter.id, chapter.blocks, estimatedChars) {
+            localPages(chapter.blocks, estimatedChars)
+        }
+        val pagerState = rememberPagerState { pages.size.coerceAtLeast(1) }
+        val pagerScope = rememberCoroutineScope()
+        LaunchedEffect(chapter.chapter.id, pages.size) {
+            pagerState.scrollToPage(0)
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(pagerState.currentPage, pages.size, hasNextChapter) {
+                    detectTapGestures { position ->
+                        when {
+                            position.x < size.width * 0.35f -> {
+                                if (pagerState.currentPage > 0) {
+                                    pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+                                } else {
+                                    onPreviousChapter()
+                                }
+                            }
+                            position.x > size.width * 0.65f -> {
+                                if (pagerState.currentPage < pages.lastIndex) {
+                                    pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                                } else if (hasNextChapter) {
+                                    onNextChapter()
+                                }
+                            }
+                        }
+                    }
+                },
+            beyondViewportPageCount = 1,
+            userScrollEnabled = false,
+        ) { pageIndex ->
+            Column(
+                modifier = Modifier.fillMaxSize().padding(
                     start = preferences.horizontalPadding.dp,
                     end = preferences.horizontalPadding.dp,
                     top = 12.dp,
@@ -203,11 +211,9 @@ private fun LocalPagedReader(
                 ),
                 verticalArrangement = Arrangement.spacedBy((preferences.lineHeight * 3).dp),
             ) {
-                item { Text(chapter.chapter.title, style = localHeadingStyle(preferences, colors.text)) }
-                items(pages[pageIndex]) { block -> LocalBlockView(block, preferences, colors) }
+                if (pageIndex == 0) Text(chapter.chapter.title, style = localHeadingStyle(preferences, colors.text))
+                pages[pageIndex].forEach { block -> LocalBlockView(block, preferences, colors) }
             }
-        } else {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("正在进入下一章…", color = colors.text.copy(alpha = 0.72f)) }
         }
     }
 }
@@ -217,8 +223,31 @@ private fun LocalBlockView(block: LocalContentBlock, preferences: ReaderPreferen
     when (block) {
         is LocalContentBlock.Paragraph -> Text(block.text, style = localBodyStyle(preferences, colors.text))
         is LocalContentBlock.Image -> {
-            val bitmap = BitmapFactory.decodeByteArray(block.bytes, 0, block.bytes.size)?.asImageBitmap()
-            if (bitmap != null) Image(bitmap, "正文插图", Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+            LocalImageBlock(block.bytes, Modifier.fillMaxWidth())
+        }
+    }
+}
+
+private data class LocalImageLoad(val image: ImageBitmap? = null, val finished: Boolean = false)
+
+@Composable
+private fun LocalImageBlock(bytes: ByteArray, modifier: Modifier) {
+    var result by remember(bytes) { mutableStateOf(LocalImageLoad()) }
+    LaunchedEffect(bytes) {
+        result = withContext(Dispatchers.Default) {
+            LocalImageLoad(
+                image = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap(),
+                finished = true,
+            )
+        }
+    }
+    Box(modifier, contentAlignment = Alignment.Center) {
+        result.image?.let { image ->
+            Image(image, "正文插图", Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+        } ?: if (!result.finished) {
+            CircularProgressIndicator(strokeWidth = 2.dp)
+        } else {
+            Text("图片无法读取", color = MaterialTheme.colorScheme.error)
         }
     }
 }

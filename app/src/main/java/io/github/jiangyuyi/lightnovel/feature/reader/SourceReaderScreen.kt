@@ -1,7 +1,6 @@
 package io.github.jiangyuyi.lightnovel.feature.reader
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,9 +20,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,7 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
 import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
@@ -66,6 +64,7 @@ import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,6 +135,7 @@ fun SourceReaderScreen(
                         preferences = state.preferences,
                         colors = colors,
                         chapterFontFamily = state.chapterFontFamily,
+                        onPreviousChapter = viewModel::previous,
                         hasNextChapter = chapter.nextChapterKey != null,
                         onNextChapter = viewModel::next,
                         onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
@@ -144,20 +144,6 @@ fun SourceReaderScreen(
                     state = listState,
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(chapter?.chapter?.key) {
-                            var distance = 0f
-                            detectHorizontalDragGestures(
-                                onHorizontalDrag = { _, amount -> distance += amount },
-                                onDragEnd = {
-                                    when {
-                                        distance < -80f && chapter?.nextChapterKey != null -> viewModel.next()
-                                        distance > 80f && chapter?.previousChapterKey != null -> viewModel.previous()
-                                    }
-                                    distance = 0f
-                                },
-                                onDragCancel = { distance = 0f },
-                            )
-                        }
                         .pointerInput(chapter?.chapter?.key) {
                             detectTapGestures { position ->
                                 when {
@@ -195,6 +181,7 @@ private fun SourcePagedReader(
     preferences: ReaderPreferences,
     colors: SourceReaderColors,
     chapterFontFamily: FontFamily?,
+    onPreviousChapter: () -> Unit,
     hasNextChapter: Boolean,
     onNextChapter: () -> Unit,
     onProgress: (Int) -> Unit,
@@ -217,46 +204,60 @@ private fun SourcePagedReader(
                 spacingPx = with(density) { 14.dp.roundToPx() },
             )
         }
-        val pagerState = rememberPagerState { pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0 }
-        LaunchedEffect(pagerState, pages, hasNextChapter) {
+        val pagerState = rememberPagerState { pages.size.coerceAtLeast(1) }
+        val pagerScope = rememberCoroutineScope()
+        LaunchedEffect(pagerState, pages) {
             snapshotFlow { pagerState.currentPage }.distinctUntilChanged().collect { index ->
-                if (hasNextChapter && index == pages.size) onNextChapter()
                 pages.getOrNull(index)?.let { onProgress(it.firstBlockIndex) }
             }
         }
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize().padding(top = 8.dp, bottom = 12.dp),
-            beyondViewportPageCount = 1,
-            userScrollEnabled = true,
-        ) { pageIndex ->
-            if (pageIndex < pages.size) {
-                Column(
-                    Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    pages[pageIndex].elements.forEach { element ->
-                        when (element) {
-                            is ReaderPageElement.Text -> Text(
-                                element.text,
-                                style = preferences.sourceTextStyle(colors.text, chapterFontFamily).copy(
-                                    fontSize = if (element.heading) (preferences.fontSize + 4).sp else preferences.fontSize.sp,
-                                    fontWeight = if (element.heading) FontWeight.SemiBold else FontWeight.Normal,
-                                    textIndent = TextIndent(firstLine = if (element.firstLineIndent) 2.em else 0.em),
-                                ),
-                            )
-                            is ReaderPageElement.Illustration -> AsyncImage(
-                                model = element.block.url,
-                                contentDescription = "插图",
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).height(with(density) { element.heightPx.toDp() }),
-                                contentScale = ContentScale.Fit,
-                            )
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = 8.dp, bottom = 12.dp)
+                .pointerInput(pagerState.currentPage, pages.size, hasNextChapter) {
+                    detectTapGestures { position ->
+                        when {
+                            position.x < size.width * 0.35f -> {
+                                if (pagerState.currentPage > 0) {
+                                    pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+                                } else {
+                                    onPreviousChapter()
+                                }
+                            }
+                            position.x > size.width * 0.65f -> {
+                                if (pagerState.currentPage < pages.lastIndex) {
+                                    pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                                } else if (hasNextChapter) {
+                                    onNextChapter()
+                                }
+                            }
                         }
                     }
-                }
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("正在进入下一章…", color = colors.text.copy(alpha = 0.72f))
+                },
+            beyondViewportPageCount = 1,
+            userScrollEnabled = false,
+        ) { pageIndex ->
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                pages[pageIndex].elements.forEach { element ->
+                    when (element) {
+                        is ReaderPageElement.Text -> Text(
+                            element.text,
+                            style = preferences.sourceTextStyle(colors.text, chapterFontFamily).copy(
+                                fontSize = if (element.heading) (preferences.fontSize + 4).sp else preferences.fontSize.sp,
+                                fontWeight = if (element.heading) FontWeight.SemiBold else FontWeight.Normal,
+                                textIndent = TextIndent(firstLine = if (element.firstLineIndent) 2.em else 0.em),
+                            ),
+                        )
+                        is ReaderPageElement.Illustration -> ReaderRemoteImage(
+                            url = element.block.url,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).height(with(density) { element.heightPx.toDp() }),
+                        )
+                    }
                 }
             }
         }
@@ -295,14 +296,29 @@ private fun SourceReaderBlock(
             } else {
                 modifier.heightIn(min = 180.dp, max = 520.dp)
             }
-            AsyncImage(
-                model = block.url,
-                contentDescription = "插图",
-                modifier = modifier,
-                contentScale = ContentScale.Fit,
-            )
+            ReaderRemoteImage(block.url, modifier)
         }
     }
+}
+
+@Composable
+private fun ReaderRemoteImage(url: String, modifier: Modifier) {
+    SubcomposeAsyncImage(
+        model = url,
+        contentDescription = "插图",
+        modifier = modifier,
+        contentScale = ContentScale.Fit,
+        loading = {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.CircularProgressIndicator(strokeWidth = 2.dp)
+            }
+        },
+        error = {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("图片加载失败", color = MaterialTheme.colorScheme.error)
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

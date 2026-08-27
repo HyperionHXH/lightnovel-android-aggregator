@@ -305,8 +305,6 @@ private fun PagedReader(
                         val endY = releasedY ?: return@awaitEachGesture
                         val deltaX = endX - start.x
                         val deltaY = endY - start.y
-                        val swipeThreshold = size.width * 0.10f
-                        val isHorizontalSwipe = abs(deltaX) >= swipeThreshold && abs(deltaX) > abs(deltaY)
 
                         fun requestTurn(direction: ReaderTurnDirection) {
                             turnRequestToken += 1
@@ -314,8 +312,6 @@ private fun PagedReader(
                         }
 
                         when {
-                            isHorizontalSwipe && deltaX > 0 -> requestTurn(ReaderTurnDirection.PREVIOUS)
-                            isHorizontalSwipe && deltaX < 0 -> requestTurn(ReaderTurnDirection.NEXT)
                             abs(deltaX) <= viewConfiguration.touchSlop && abs(deltaY) <= viewConfiguration.touchSlop -> {
                                 when (endX / size.width.toFloat().coerceAtLeast(1f)) {
                                     in 0f..0.30f -> requestTurn(ReaderTurnDirection.PREVIOUS)
