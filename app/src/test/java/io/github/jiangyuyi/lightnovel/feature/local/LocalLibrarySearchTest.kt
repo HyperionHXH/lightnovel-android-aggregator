@@ -21,4 +21,12 @@ class LocalLibrarySearchTest {
         assertEquals(listOf("星海旅人"), filterLocalBooks(books, "星海").map(LocalBookRecord::title))
         assertEquals(listOf("星海旅人"), filterLocalBooks(books, "LIN").map(LocalBookRecord::title))
     }
+
+    @Test
+    fun toggleAllSelectionSelectsEveryRecordThenClearsIt() {
+        val ids = books.map(LocalBookRecord::id).toSet()
+
+        assertEquals(ids, toggleAllSelection(emptySet(), ids))
+        assertEquals(emptySet<String>(), toggleAllSelection(ids, ids))
+    }
 }

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -84,6 +85,8 @@ fun LocalLibraryScreen(
     var selectedIds by rememberSaveable { mutableStateOf<Set<String>>(emptySet()) }
     var confirmDelete by remember { mutableStateOf(false) }
     val visibleBooks = filterLocalBooks(books, query)
+    val allBookIds = remember(books) { books.map(LocalBookRecord::id).toSet() }
+    val allSelected = allBookIds.isNotEmpty() && selectedIds.containsAll(allBookIds)
     val hasLibrarySources = roots.isNotEmpty() || importedFiles.isNotEmpty()
     val folderLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -126,8 +129,17 @@ fun LocalLibraryScreen(
                         IconButton(onClick = { confirmDelete = true }) {
                             Icon(Icons.Filled.Delete, contentDescription = "移除选中记录")
                         }
+                        IconButton(
+                            onClick = { selectedIds = toggleAllSelection(selectedIds, allBookIds) },
+                        ) {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = if (allSelected) "取消全选" else "全选")
+                        }
                         IconButton(onClick = { selectedIds = emptySet() }) {
                             Icon(Icons.Filled.Close, contentDescription = "取消选择")
+                        }
+                    } else if (allBookIds.isNotEmpty()) {
+                        IconButton(onClick = { selectedIds = allBookIds }) {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = "全选")
                         }
                     }
                     IconButton(
@@ -257,6 +269,9 @@ internal fun filterLocalBooks(books: List<LocalBookRecord>, query: String): List
     }
 }
 
+internal fun toggleAllSelection(selectedIds: Set<String>, allIds: Set<String>): Set<String> =
+    if (allIds.isNotEmpty() && selectedIds.containsAll(allIds)) emptySet() else allIds
+
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun LocalBookCard(
@@ -280,7 +295,11 @@ private fun LocalBookCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp)
-            .combinedClickable(enabled = book.available, onClick = onClick, onLongClick = onLongClick),
+            .combinedClickable(
+                enabled = selectionMode || book.available,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
         colors = androidx.compose.material3.CardDefaults.cardColors(
             containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         ),
