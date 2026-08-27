@@ -16,8 +16,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.DeleteOutline
-import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -27,6 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Surface
@@ -48,6 +48,7 @@ import io.github.jiangyuyi.lightnovel.core.offline.OfflineDownloadStatus
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.SourceNovelCard
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
+import io.github.jiangyuyi.lightnovel.R
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -338,11 +339,11 @@ private fun OfflineDownloadItem(
             }
             if (record.status == OfflineDownloadStatus.COMPLETE) {
                 IconButton(onClick = onExport) {
-                    Icon(Icons.Filled.FileDownload, contentDescription = "导出 EPUB")
+                    Icon(painterResource(R.drawable.ic_file_download), contentDescription = "导出 EPUB")
                 }
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.DeleteOutline, contentDescription = "删除离线书籍")
+                Icon(Icons.Filled.Delete, contentDescription = "删除离线书籍")
             }
         }
     }

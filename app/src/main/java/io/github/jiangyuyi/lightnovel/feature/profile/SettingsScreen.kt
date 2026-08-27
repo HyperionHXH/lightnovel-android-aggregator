@@ -19,8 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Card
@@ -37,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,6 +52,7 @@ import io.github.jiangyuyi.lightnovel.core.preferences.AppPreferences
 import io.github.jiangyuyi.lightnovel.core.preferences.AppPreferencesAccess
 import io.github.jiangyuyi.lightnovel.core.preferences.AppScale
 import io.github.jiangyuyi.lightnovel.core.preferences.AppThemeMode
+import io.github.jiangyuyi.lightnovel.R
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
 import io.github.jiangyuyi.lightnovel.core.updates.UpdateNotificationSettings
 import kotlinx.coroutines.launch
@@ -380,11 +381,11 @@ internal fun DownloadSettingsSection(
                     )
                 }
                 IconButton(onClick = onChooseDownloadDirectory) {
-                    Icon(Icons.Default.FolderOpen, contentDescription = "选择下载目录")
+                    Icon(painterResource(R.drawable.ic_folder_open), contentDescription = "选择下载目录")
                 }
                 if (downloadDirectoryLabel != "应用专用目录") {
                     IconButton(onClick = onResetDownloadDirectory) {
-                        Icon(Icons.Default.Restore, contentDescription = "恢复应用专用目录")
+                        Icon(Icons.Default.Refresh, contentDescription = "恢复应用专用目录")
                     }
                 }
             }

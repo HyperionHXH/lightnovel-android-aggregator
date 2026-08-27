@@ -4,14 +4,14 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
+import android.util.LruCache
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,14 +27,16 @@ class LocalLibraryStore(context: Context) {
     private val parser = LocalBookParser(resolver)
     private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val indexing = AtomicBoolean(false)
+    private val reindexRequests = Channel<Unit>(Channel.CONFLATED)
     private val _indexing = MutableStateFlow(true)
     val isIndexing: StateFlow<Boolean> = _indexing.asStateFlow()
     private val _imports = MutableStateFlow(readImportedFiles())
     val importedFiles: StateFlow<List<String>> = _imports.asStateFlow()
     private val _books = MutableStateFlow<List<LocalBookRecord>>(emptyList())
     val books: StateFlow<List<LocalBookRecord>> = _books.asStateFlow()
-    private val coverCache = ConcurrentHashMap<String, Result<ByteArray?>>()
+    private val coverCache = object : LruCache<String, ByteArray>(COVER_MEMORY_CACHE_BYTES) {
+        override fun sizeOf(key: String, value: ByteArray): Int = value.size
+    }
     private val coverSemaphore = Semaphore(permits = 2)
     private val coverDirectory by lazy { File(appContext.cacheDir, "local-cover-cache") }
     private val metadataCache = LocalBookMetadataCache(
@@ -50,16 +52,26 @@ class LocalLibraryStore(context: Context) {
     val roots: StateFlow<List<String>> = _roots.asStateFlow()
 
     init {
-        indexing.set(true)
         scope.launch {
-            try {
-                migrateLegacyRoots()
-                reindexInternal()
-            } finally {
-                indexing.set(false)
-                _indexing.value = false
+            var initialIndex = true
+            for (request in reindexRequests) {
+                _indexing.value = true
+                try {
+                    if (initialIndex) {
+                        migrateLegacyRoots()
+                        initialIndex = false
+                    }
+                    reindexInternal()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // Keep the worker alive so a later refresh can recover from a provider failure.
+                } finally {
+                    _indexing.value = false
+                }
             }
         }
+        reindexRequests.trySend(Unit)
     }
 
     fun addFiles(uris: List<Uri>) {
@@ -102,16 +114,7 @@ class LocalLibraryStore(context: Context) {
 
     /** Rebuilds metadata for explicitly imported files and files under authorized folders. */
     fun reindex() {
-        if (!indexing.compareAndSet(false, true)) return
-        _indexing.value = true
-        scope.launch {
-            try {
-                reindexInternal()
-            } finally {
-                indexing.set(false)
-                _indexing.value = false
-            }
-        }
+        reindexRequests.trySend(Unit)
     }
 
     @Deprecated("Use reindex")
@@ -136,15 +139,17 @@ class LocalLibraryStore(context: Context) {
     suspend fun readCover(record: LocalBookRecord): ByteArray? {
         return withContext(Dispatchers.IO) {
             val key = "${record.id}:${record.sizeBytes}:${record.lastModified}:${record.coverPath.orEmpty()}"
-            coverCache[key]?.let { return@withContext it.getOrNull() }
-            val result = coverSemaphore.withPermit {
+            coverCache.get(key)?.let { return@withContext it }
+            val bytes = coverSemaphore.withPermit {
                 runCatching {
                     readCachedCover(key) ?: parser.readCover(Uri.parse(record.uri), record.coverPath)
-                }
+                }.getOrNull()
             }
-            coverCache[key] = result
-            result.getOrNull()?.let { bytes -> writeCachedCover(key, bytes) }
-            result.getOrNull()
+            bytes?.let {
+                coverCache.put(key, it)
+                writeCachedCover(key, it)
+            }
+            bytes
         }
     }
 
@@ -197,6 +202,7 @@ class LocalLibraryStore(context: Context) {
             onLoaded = ::publishLoaded,
         )
         metadataCache.flush()
+        _books.update { records -> records.sortedBy { it.title.lowercase() } }
     }
 
     private fun prepareEntry(uriString: String): IndexedLocalFile? {
@@ -225,7 +231,7 @@ class LocalLibraryStore(context: Context) {
             val index = current.indexOfFirst { it.id == record.id }
             val updated = current.toMutableList()
             if (index >= 0) updated[index] = record else updated += record
-            updated.sortedBy { it.title.lowercase() }
+            updated
         }
     }
 
@@ -302,5 +308,6 @@ class LocalLibraryStore(context: Context) {
         const val CACHE_PREFIX = "metadata_"
         const val INDEX_CONCURRENCY = 6
         const val MAX_BOOKS = 2_000
+        const val COVER_MEMORY_CACHE_BYTES = 8 * 1024 * 1024
     }
 }

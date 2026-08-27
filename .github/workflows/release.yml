@@ -94,7 +94,7 @@ jobs:
         id: package
         shell: bash
         run: |
-          apk="LightNovel-${{ steps.version.outputs.name }}.apk"
+          apk="Mixn-${{ steps.version.outputs.name }}.apk"
           cp app/build/outputs/apk/release/app-release.apk "$apk"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$apk"
           sha256sum "$apk" > "$apk.sha256"
@@ -103,7 +103,7 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: LightNovel-${{ steps.version.outputs.name }}
+          name: Mixn-${{ steps.version.outputs.name }}
           path: |
             ${{ steps.package.outputs.apk }}
             ${{ steps.package.outputs.apk }}.sha256
@@ -128,12 +128,12 @@ jobs:
             if [[ -s release-notes.md ]]; then
               gh release create "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256" \
                 --target "$GITHUB_SHA" \
-                --title "LightNovel $version" \
+                --title "Mixn $version" \
                 --notes-file release-notes.md
             else
               gh release create "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256" \
                 --target "$GITHUB_SHA" \
-                --title "LightNovel $version" \
+                --title "Mixn $version" \
                 --generate-notes
             fi
           fi

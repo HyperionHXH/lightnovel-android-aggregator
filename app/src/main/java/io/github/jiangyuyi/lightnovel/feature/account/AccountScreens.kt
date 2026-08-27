@@ -16,7 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -245,7 +245,7 @@ private fun HistoryCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = onOpen) { Text("继续阅读") }
                     IconButton(onClick = onDelete, enabled = !deleting) {
-                        Icon(Icons.Filled.DeleteOutline, contentDescription = if (deleting) "删除中" else "删除")
+                        Icon(Icons.Filled.Delete, contentDescription = if (deleting) "删除中" else "删除")
                     }
                 }
             }

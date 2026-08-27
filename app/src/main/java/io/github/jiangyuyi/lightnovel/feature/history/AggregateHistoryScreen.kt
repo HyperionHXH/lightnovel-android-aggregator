@@ -11,7 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -156,7 +156,7 @@ fun AggregateHistoryScreen(
                                 enabled = entry.novel.key !in state.deleting,
                             ) {
                                 Icon(
-                                    Icons.Filled.DeleteOutline,
+                                    Icons.Filled.Delete,
                                     contentDescription = if (entry.novel.key in state.deleting) "删除中" else "删除",
                                 )
                             }

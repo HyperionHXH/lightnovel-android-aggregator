@@ -15,8 +15,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
@@ -169,8 +169,8 @@ private data class BottomDestination(val route: String, val label: String, val i
 
 private val bottomDestinations = listOf(
     BottomDestination(Routes.DISCOVER, "发现", Icons.Filled.Home),
-    BottomDestination(Routes.BOOKSHELF, "书架", Icons.AutoMirrored.Filled.MenuBook),
-    BottomDestination(Routes.LOCAL, "本地", Icons.Filled.AutoStories),
+    BottomDestination(Routes.BOOKSHELF, "书架", Icons.AutoMirrored.Filled.List),
+    BottomDestination(Routes.LOCAL, "本地", Icons.Filled.Create),
     BottomDestination(Routes.PROFILE, "我的", Icons.Filled.Person),
 )
 

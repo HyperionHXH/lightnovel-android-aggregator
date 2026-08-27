@@ -21,8 +21,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FileOpen
-import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -54,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.local.LocalBookRecord
 import io.github.jiangyuyi.lightnovel.core.local.LocalLibraryStore
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
+import io.github.jiangyuyi.lightnovel.R
 
 private val LOCAL_FILE_MIME_TYPES = arrayOf(
     "application/epub+zip",
@@ -133,10 +133,10 @@ fun LocalLibraryScreen(
                         )
                     }
                     IconButton(onClick = { folderLauncher.launch(null) }) {
-                        Icon(Icons.Filled.FolderOpen, contentDescription = "选择书库文件夹")
+                        Icon(painterResource(R.drawable.ic_folder_open), contentDescription = "选择书库文件夹")
                     }
                     IconButton(onClick = { fileLauncher.launch(LOCAL_FILE_MIME_TYPES) }) {
-                        Icon(Icons.Filled.FileOpen, contentDescription = "单独导入文件")
+                        Icon(painterResource(R.drawable.ic_file_open), contentDescription = "单独导入文件")
                     }
                 },
             )
@@ -174,7 +174,7 @@ fun LocalLibraryScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             IconButton(onClick = { folderLauncher.launch(null) }) {
-                                Icon(Icons.Filled.FolderOpen, contentDescription = "选择书库文件夹")
+                                Icon(painterResource(R.drawable.ic_folder_open), contentDescription = "选择书库文件夹")
                             }
                         }
                     }
@@ -269,7 +269,7 @@ private fun LocalBookCard(store: LocalLibraryStore, book: LocalBookRecord, onCli
                 )
             }
             if (book.available) {
-                Icon(Icons.Filled.FileOpen, contentDescription = "打开书籍", tint = MaterialTheme.colorScheme.primary)
+                Icon(painterResource(R.drawable.ic_file_open), contentDescription = "打开书籍", tint = MaterialTheme.colorScheme.primary)
             }
         }
     }

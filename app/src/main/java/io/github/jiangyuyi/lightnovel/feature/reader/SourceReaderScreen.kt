@@ -17,7 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -123,7 +123,7 @@ fun SourceReaderScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上一章", tint = colors.text)
                 }
                 IconButton(onClick = onCatalog) {
-                    Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "目录", tint = colors.text)
+                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录", tint = colors.text)
                 }
                 IconButton(
                     onClick = viewModel::next,

@@ -27,7 +27,9 @@ internal class OfflineDocumentStore(
     private val selectedRoot = requireNotNull(DocumentFile.fromTreeUri(appContext, treeUri)) {
         "无法访问下载文件夹"
     }
-    private val root = findOrCreateDirectory(selectedRoot, APP_DIRECTORY)
+    private val root = selectedRoot.findFile(APP_DIRECTORY)?.takeIf(DocumentFile::isDirectory)
+        ?: selectedRoot.findFile(LEGACY_APP_DIRECTORY)?.takeIf(DocumentFile::isDirectory)
+        ?: findOrCreateDirectory(selectedRoot, APP_DIRECTORY)
     private val mutex = Mutex()
 
     override suspend fun listBooks(): List<OfflineBookRecord> = withContext(Dispatchers.IO) {
@@ -136,7 +138,8 @@ internal class OfflineDocumentStore(
     }
 
     private companion object {
-        const val APP_DIRECTORY = "诺阅"
+        const val APP_DIRECTORY = "Mixn"
+        const val LEGACY_APP_DIRECTORY = "诺阅"
         const val MANIFEST_FILE = "manifest.json"
         const val CHAPTERS_DIRECTORY = "chapters"
     }

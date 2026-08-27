@@ -2,4 +2,6 @@
 <full-backup-content>
     <exclude domain="database" path="." />
     <exclude domain="file" path="offline_library" />
+    <exclude domain="sharedpref" path="secure_session.xml" />
+    <exclude domain="sharedpref" path="credentials_lightnovelshelf.xml" />
 </full-backup-content>
