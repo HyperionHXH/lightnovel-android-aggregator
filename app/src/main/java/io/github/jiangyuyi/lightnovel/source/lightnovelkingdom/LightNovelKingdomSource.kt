@@ -16,6 +16,7 @@ import io.github.jiangyuyi.lightnovel.core.source.BuiltInSourceIds
 import io.github.jiangyuyi.lightnovel.core.source.ChapterContent
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
+import io.github.jiangyuyi.lightnovel.core.source.ChapterUnlockProvider
 import io.github.jiangyuyi.lightnovel.core.source.DetailProvider
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverFeed
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverProvider
@@ -65,6 +66,7 @@ internal interface LightNovelKingdomGateway {
         paragraphIndex: Int,
         percent: Int,
     )
+    suspend fun unlockChapter(chapterId: Long): Unit = error("chapter unlock is not implemented")
 }
 
 private class RepositoryLightNovelKingdomGateway(
@@ -97,6 +99,7 @@ private class RepositoryLightNovelKingdomGateway(
         paragraphIndex: Int,
         percent: Int,
     ) = repository.saveReadingProgress(bookId, volumeId, chapterId, paragraphIndex, percent)
+    override suspend fun unlockChapter(chapterId: Long) = repository.unlockChapter(chapterId)
 }
 
 class LightNovelKingdomSource internal constructor(
@@ -111,6 +114,7 @@ class LightNovelKingdomSource internal constructor(
     HistoryProvider,
     HistoryMutationProvider,
     ReadingProgressSyncProvider,
+    ChapterUnlockProvider,
     SourceProfileProvider {
 
     override val descriptor = SourceDescriptor(
@@ -173,6 +177,9 @@ class LightNovelKingdomSource internal constructor(
 
     override suspend fun getChapter(novelKey: NovelKey, chapterKey: ChapterKey): ChapterContent =
         gateway.chapter(novelKey.requireKingdomId(), chapterKey.requireKingdomId()).toSource()
+
+    override suspend fun unlockChapter(chapterKey: ChapterKey) =
+        gateway.unlockChapter(chapterKey.requireKingdomId())
 
     override suspend fun restoreSession(): SourceSession = gateway.restoreSession().toSource()
 
@@ -274,6 +281,7 @@ private fun KingdomChapterSummary.toSource() = ChapterSummary(
     order = order,
     wordCount = wordCount,
     locked = locked,
+    coinPrice = coinPrice?.toLong(),
 )
 
 private fun ChapterDetail.toSource() = ChapterContent(

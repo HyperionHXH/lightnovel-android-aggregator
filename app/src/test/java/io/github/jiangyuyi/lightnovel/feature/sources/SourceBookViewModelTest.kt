@@ -9,6 +9,7 @@ import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
 import io.github.jiangyuyi.lightnovel.core.source.ChapterContent
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
+import io.github.jiangyuyi.lightnovel.core.source.ChapterUnlockProvider
 import io.github.jiangyuyi.lightnovel.core.source.DetailProvider
 import io.github.jiangyuyi.lightnovel.core.source.NovelDetail
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
@@ -19,6 +20,8 @@ import io.github.jiangyuyi.lightnovel.core.source.ReadingProgress
 import io.github.jiangyuyi.lightnovel.core.source.ShelfProvider
 import io.github.jiangyuyi.lightnovel.core.source.SourceCapability
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
+import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
+import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import io.github.jiangyuyi.lightnovel.core.source.SourcePage
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
 import io.github.jiangyuyi.lightnovel.core.source.VolumeKey
@@ -126,7 +129,45 @@ class SourceBookViewModelTest {
             assertEquals(savedChapter, openedChapter)
         }
 
-    private class FakeReadableSource : NovelSource, DetailProvider, ReaderProvider, ShelfProvider {
+    @Test
+    fun `unlocking a chapter updates its lock state and invokes completion`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val source = FakeReadableSource()
+            val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)))
+            advanceUntilIdle()
+
+            var completed = false
+            val lockedChapter = viewModel.state.value.chapters.getValue(source.volumeKey).items
+                .first()
+                .copy(locked = true, coinPrice = 3)
+            viewModel.unlockChapter(lockedChapter, onLoginRequired = {}, onUnlocked = { completed = true })
+            advanceUntilIdle()
+
+            assertEquals(listOf(lockedChapter.key), source.unlockedChapters)
+            assertFalse(viewModel.state.value.chapters.getValue(source.volumeKey).items.first().locked)
+            assertTrue(completed)
+            assertNull(viewModel.state.value.unlockError)
+        }
+
+    @Test
+    fun `authentication failure from unlock requests account login`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val source = FakeReadableSource(unlockError = SourceException(SourceErrorKind.AUTHENTICATION, "请先登录"))
+            val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)))
+            advanceUntilIdle()
+
+            var loginRequested = false
+            val chapter = viewModel.state.value.chapters.getValue(source.volumeKey).items.first()
+            viewModel.unlockChapter(chapter, onLoginRequired = { loginRequested = true }, onUnlocked = {})
+            advanceUntilIdle()
+
+            assertTrue(loginRequested)
+            assertEquals("请先登录该来源", viewModel.state.value.unlockError)
+        }
+
+    private class FakeReadableSource(
+        private val unlockError: Throwable? = null,
+    ) : NovelSource, DetailProvider, ReaderProvider, ShelfProvider, ChapterUnlockProvider {
         override val descriptor = SourceDescriptor(
             id = "source",
             displayName = "来源",
@@ -139,6 +180,7 @@ class SourceBookViewModelTest {
         val novelKey = NovelKey(descriptor.id, "book")
         val volumeKey = VolumeKey(descriptor.id, "volume")
         val shelfMutations = mutableListOf<Boolean>()
+        val unlockedChapters = mutableListOf<ChapterKey>()
 
         override suspend fun getNovelDetail(key: NovelKey) = NovelDetail(
             novel = NovelSummary(key, "测试书"),
@@ -169,6 +211,11 @@ class SourceBookViewModelTest {
         override suspend fun setInRemoteShelf(key: NovelKey, add: Boolean): Boolean {
             shelfMutations += add
             return add
+        }
+
+        override suspend fun unlockChapter(chapterKey: ChapterKey) {
+            unlockError?.let { throw it }
+            unlockedChapters += chapterKey
         }
 
         private fun chapter(number: Int) = ChapterSummary(

@@ -111,6 +111,15 @@ class ApiParsersTest {
     }
 
     @Test
+    fun `chapter parser reads official coin price`() {
+        val chapter = ApiParsers.chapter(
+            obj("""{"chapter_id": 20, "book_id": 1, "volume_id": 2, "title": "付费章", "locked": true, "coin_price": 12}"""),
+        )
+        assertTrue(chapter.locked)
+        assertEquals(12, chapter.coinPrice)
+    }
+
+    @Test
     fun `chapter parser accepts live object navigation and direct ids`() {
         val liveObject = ApiParsers.chapterDetail(
             obj(

@@ -38,6 +38,8 @@ class SourceRegistry(sources: Iterable<NovelSource>) {
 
     fun readerProvider(sourceId: String): ReaderProvider? = get(sourceId) as? ReaderProvider
 
+    fun unlockProvider(sourceId: String): ChapterUnlockProvider? = get(sourceId) as? ChapterUnlockProvider
+
     fun discoverProvider(sourceId: String): DiscoverProvider? = get(sourceId) as? DiscoverProvider
 
     fun accountProvider(sourceId: String): AccountProvider? = get(sourceId) as? AccountProvider

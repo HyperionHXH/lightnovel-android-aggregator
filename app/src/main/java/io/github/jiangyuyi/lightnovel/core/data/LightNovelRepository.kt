@@ -36,6 +36,8 @@ import io.github.jiangyuyi.lightnovel.core.network.long
 import io.github.jiangyuyi.lightnovel.core.network.obj
 import io.github.jiangyuyi.lightnovel.core.network.string
 import io.github.jiangyuyi.lightnovel.core.session.SessionStore
+import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
+import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -724,6 +726,18 @@ class LightNovelRepository(
         )
     }
 
+    suspend fun unlockChapter(chapterId: Long) {
+        val key = requireSession()
+        api.post(
+            "api/new-content-read/unlock-chapter",
+            jsonBody("security_key" to key, "chapter_id" to chapterId),
+        )
+        cache.removePrefix(userScope(), cachePrefix("chapter"))
+        cache.removePrefix(userScope(), cachePrefix("chapters"))
+        cache.removePrefix(userScope(), cachePrefix("book"))
+        cache.removePrefix(userScope(), cachePrefix("reader-bootstrap"))
+    }
+
     suspend fun comments(bookId: Long, page: Int = 1, pageSize: Int = 20): Page<Comment> {
         val data = api.post(
             "api/new-content-read/get-book-comments",
@@ -765,7 +779,9 @@ class LightNovelRepository(
         return session
     }
 
-    private fun requireSession(): String = sessionStore.securityKey().ifBlank { error("请先登录") }
+    private fun requireSession(): String = sessionStore.securityKey().ifBlank {
+        throw SourceException(SourceErrorKind.AUTHENTICATION, "请先登录")
+    }
 
     private fun currentScope(): String = if (sessionStore.session.value.loggedIn) userScope() else CacheScopes.PUBLIC
 

@@ -46,6 +46,9 @@ data class SourceBookState(
     val refreshing: Boolean = false,
     val startingReader: Boolean = false,
     val shelfSupported: Boolean = false,
+    val unlockSupported: Boolean = false,
+    val unlockingChapterKey: ChapterKey? = null,
+    val unlockError: String? = null,
     val inRemoteShelf: Boolean? = null,
     val shelfLoading: Boolean = false,
     val shelfError: String? = null,
@@ -65,6 +68,7 @@ class SourceBookViewModel(
         SourceBookState(
             source = registry.get(novelKey.sourceId)?.descriptor,
             shelfSupported = registry.shelfProvider(novelKey.sourceId) != null,
+            unlockSupported = registry.unlockProvider(novelKey.sourceId) != null,
         ),
     )
     val state: StateFlow<SourceBookState> = _state.asStateFlow()
@@ -167,6 +171,33 @@ class SourceBookViewModel(
                     if (error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION) {
                         onLoginRequired()
                     }
+                }
+        }
+    }
+
+    fun unlockChapter(
+        chapter: ChapterSummary,
+        onLoginRequired: () -> Unit,
+        onUnlocked: () -> Unit,
+    ) {
+        val provider = registry.unlockProvider(novelKey.sourceId) ?: return
+        if (_state.value.unlockingChapterKey != null) return
+        _state.value = _state.value.copy(unlockingChapterKey = chapter.key, unlockError = null)
+        viewModelScope.launch {
+            runSourceCatching { provider.unlockChapter(chapter.key) }
+                .onSuccess {
+                    updateChapters(chapter.volumeKey) { current ->
+                        current.copy(items = current.items.map { item -> if (item.key == chapter.key) item.copy(locked = false) else item })
+                    }
+                    _state.value = _state.value.copy(unlockingChapterKey = null, unlockError = null)
+                    onUnlocked()
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        unlockingChapterKey = null,
+                        unlockError = error.toSourceUiMessage("章节解锁失败"),
+                    )
+                    if (error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION) onLoginRequired()
                 }
         }
     }

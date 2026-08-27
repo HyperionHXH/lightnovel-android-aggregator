@@ -13,8 +13,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,6 +33,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -38,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
+import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineDownloadStatus
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
@@ -56,6 +62,7 @@ fun SourceBookScreen(
     onAccounts: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var unlockTarget by remember { mutableStateOf<ChapterSummary?>(null) }
 
     RefreshableLazyColumn(
         isRefreshing = state.refreshing,
@@ -242,11 +249,60 @@ fun SourceBookScreen(
                                 state.offlineRecord?.status != OfflineDownloadStatus.DOWNLOADING,
                             onLoadMore = { viewModel.loadMoreChapters(volume.key) },
                             onRead = onRead,
+                            onUnlock = { chapter -> unlockTarget = chapter },
                         )
                     }
                 }
             }
         }
+    }
+
+    unlockTarget?.let { chapter ->
+        val price = chapter.coinPrice?.let { "$it 轻币" } ?: "以站点显示为准"
+        AlertDialog(
+            onDismissRequest = { if (state.unlockingChapterKey == null) unlockTarget = null },
+            title = { Text("解锁章节") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(chapter.title, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Lock,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                        Text("官方价格：$price", modifier = Modifier.padding(start = 6.dp))
+                    }
+                    state.unlockError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Text(
+                        if (state.unlockSupported) "将使用轻之国度账户的轻币完成购买，扣费由站点处理。请确认价格后再继续。"
+                        else "当前来源未提供官方解锁接口，请前往来源站点完成购买。",
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = state.unlockSupported && state.unlockingChapterKey == null,
+                    onClick = {
+                        viewModel.unlockChapter(
+                            chapter = chapter,
+                            onLoginRequired = onAccounts,
+                            onUnlocked = {
+                                unlockTarget = null
+                                onRead(chapter.key)
+                            },
+                        )
+                    },
+                ) {
+                    if (state.unlockingChapterKey != null) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("确认支付并解锁")
+                }
+            },
+            dismissButton = {
+                TextButton(enabled = state.unlockingChapterKey == null, onClick = { unlockTarget = null }) { Text("取消") }
+            },
+        )
     }
 }
 
@@ -261,6 +317,7 @@ private fun SourceVolumeCard(
     downloadEnabled: Boolean,
     onLoadMore: () -> Unit,
     onRead: (ChapterKey) -> Unit,
+    onUnlock: (ChapterSummary) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -286,11 +343,19 @@ private fun SourceVolumeCard(
                     HorizontalDivider()
                     Row(
                         modifier = Modifier.fillMaxWidth()
-                            .clickable(enabled = !chapter.locked) { onRead(chapter.key) }
+                            .clickable { if (chapter.locked) onUnlock(chapter) else onRead(chapter.key) }
                             .padding(horizontal = 16.dp, vertical = 13.dp),
                     ) {
+                        if (chapter.locked) {
+                            Icon(
+                                imageVector = Icons.Filled.Lock,
+                                contentDescription = "已锁定",
+                                modifier = Modifier.size(18.dp).padding(end = 2.dp),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
                         Text(chapter.title, Modifier.weight(1f))
-                        if (chapter.locked) Text("锁定", color = MaterialTheme.colorScheme.error)
+                        if (chapter.locked) Text(chapter.coinPrice?.let { "$it 轻币" } ?: "锁定", color = MaterialTheme.colorScheme.error)
                     }
                 }
                 if (chapters?.loading == true) {

@@ -159,6 +159,7 @@ object ApiParsers {
         order = source.int("chapter_no", "order_no", "sort_index"),
         wordCount = source.long("word_count"),
         locked = source.bool("locked") == true || source.bool("unlocked") == false,
+        coinPrice = source.int("coin_price", "coinPrice", "price", "cost").takeIf { it > 0 },
     )
 
     fun chapterDetail(source: JsonObject): ChapterDetail {

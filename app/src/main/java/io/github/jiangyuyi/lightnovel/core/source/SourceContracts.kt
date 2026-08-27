@@ -32,6 +32,10 @@ interface ReaderProvider : SourceProvider {
     suspend fun getChapter(novelKey: NovelKey, chapterKey: ChapterKey): ChapterContent
 }
 
+interface ChapterUnlockProvider : SourceProvider {
+    suspend fun unlockChapter(chapterKey: ChapterKey)
+}
+
 interface AccountProvider : SourceProvider {
     suspend fun restoreSession(): SourceSession
     suspend fun login(credentials: PasswordCredentials): SourceSession

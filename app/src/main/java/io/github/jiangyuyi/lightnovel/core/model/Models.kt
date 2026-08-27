@@ -85,6 +85,7 @@ data class ChapterSummary(
     val order: Int = 0,
     val wordCount: Long = 0,
     val locked: Boolean = false,
+    val coinPrice: Int? = null,
 )
 
 @Serializable
