@@ -1,18 +1,24 @@
 package io.github.jiangyuyi.lightnovel.feature.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -33,11 +39,15 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -49,12 +59,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
+import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,12 +82,12 @@ fun SourceReaderScreen(
     val listState = rememberLazyListState()
 
     LaunchedEffect(chapter?.chapter?.key, state.restoredBlock, blocks.size) {
-        if (blocks.isNotEmpty()) {
+        if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL && blocks.isNotEmpty()) {
             listState.scrollToItem(state.restoredBlock.coerceIn(0, blocks.lastIndex))
         }
     }
     LaunchedEffect(chapter?.chapter?.key, blocks.size) {
-        if (chapter != null && blocks.isNotEmpty()) {
+        if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL && chapter != null && blocks.isNotEmpty()) {
             snapshotFlow { listState.firstVisibleItemIndex }
                 .distinctUntilChanged()
                 .collect { index -> viewModel.saveProgress(index, blocks.size) }
@@ -110,29 +122,6 @@ fun SourceReaderScreen(
                 ),
             )
         },
-        bottomBar = {
-            Row(
-                modifier = Modifier.fillMaxWidth().background(colors.background).padding(horizontal = 8.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(
-                    onClick = viewModel::previous,
-                    enabled = chapter?.previousChapterKey != null,
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上一章", tint = colors.text)
-                }
-                IconButton(onClick = onCatalog) {
-                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录", tint = colors.text)
-                }
-                IconButton(
-                    onClick = viewModel::next,
-                    enabled = chapter?.nextChapterKey != null,
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "下一章", tint = colors.text)
-                }
-            }
-        },
     ) { padding ->
         Box(
             modifier = Modifier.fillMaxSize().background(colors.background).padding(padding),
@@ -141,9 +130,42 @@ fun SourceReaderScreen(
                 state.loading -> LoadingPane()
                 state.error != null -> ErrorPane(state.error!!, onRetry = viewModel::retry)
                 chapter == null -> EmptyPane("章节不存在或暂不可见")
-                else -> LazyColumn(
+                else -> if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.PAGED) {
+                    SourcePagedReader(
+                        blocks = blocks,
+                        preferences = state.preferences,
+                        colors = colors,
+                        chapterFontFamily = state.chapterFontFamily,
+                        hasNextChapter = chapter.nextChapterKey != null,
+                        onNextChapter = viewModel::next,
+                        onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
+                    )
+                } else LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(chapter?.chapter?.key) {
+                            var distance = 0f
+                            detectHorizontalDragGestures(
+                                onHorizontalDrag = { _, amount -> distance += amount },
+                                onDragEnd = {
+                                    when {
+                                        distance < -80f && chapter?.nextChapterKey != null -> viewModel.next()
+                                        distance > 80f && chapter?.previousChapterKey != null -> viewModel.previous()
+                                    }
+                                    distance = 0f
+                                },
+                                onDragCancel = { distance = 0f },
+                            )
+                        }
+                        .pointerInput(chapter?.chapter?.key) {
+                            detectTapGestures { position ->
+                                when {
+                                    position.x < size.width * 0.30f && chapter?.previousChapterKey != null -> viewModel.previous()
+                                    position.x > size.width * 0.70f && chapter?.nextChapterKey != null -> viewModel.next()
+                                }
+                            }
+                        },
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
                         horizontal = state.preferences.horizontalPadding.dp,
                         vertical = 18.dp,
@@ -164,6 +186,80 @@ fun SourceReaderScreen(
             onChange = { updated -> viewModel.updatePreferences { updated } },
             onDismiss = { viewModel.showSettings(false) },
         )
+    }
+}
+
+@Composable
+private fun SourcePagedReader(
+    blocks: List<ReaderBlock>,
+    preferences: ReaderPreferences,
+    colors: SourceReaderColors,
+    chapterFontFamily: FontFamily?,
+    hasNextChapter: Boolean,
+    onNextChapter: () -> Unit,
+    onProgress: (Int) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val textMeasurer = rememberTextMeasurer()
+        val horizontalPadding = preferences.horizontalPadding.dp
+        val pageWidth = with(density) { (maxWidth - horizontalPadding * 2).roundToPx().coerceAtLeast(1) }
+        val pageHeight = with(density) { (maxHeight - 28.dp).roundToPx().coerceAtLeast(1) }
+        val pages = remember(blocks, preferences, pageWidth, pageHeight) {
+            paginateReaderBlocks(
+                blocks = blocks,
+                textMeasurer = textMeasurer,
+                paragraphStyle = preferences.sourceTextStyle(colors.text, chapterFontFamily),
+                headingStyle = preferences.sourceTextStyle(colors.text, chapterFontFamily).copy(fontSize = (preferences.fontSize + 4).sp),
+                density = density,
+                pageWidthPx = pageWidth,
+                pageHeightPx = pageHeight,
+                spacingPx = with(density) { 14.dp.roundToPx() },
+            )
+        }
+        val pagerState = rememberPagerState { pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0 }
+        LaunchedEffect(pagerState, pages, hasNextChapter) {
+            snapshotFlow { pagerState.currentPage }.distinctUntilChanged().collect { index ->
+                if (hasNextChapter && index == pages.size) onNextChapter()
+                pages.getOrNull(index)?.let { onProgress(it.firstBlockIndex) }
+            }
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize().padding(top = 8.dp, bottom = 12.dp),
+            beyondViewportPageCount = 1,
+            userScrollEnabled = true,
+        ) { pageIndex ->
+            if (pageIndex < pages.size) {
+                Column(
+                    Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    pages[pageIndex].elements.forEach { element ->
+                        when (element) {
+                            is ReaderPageElement.Text -> Text(
+                                element.text,
+                                style = preferences.sourceTextStyle(colors.text, chapterFontFamily).copy(
+                                    fontSize = if (element.heading) (preferences.fontSize + 4).sp else preferences.fontSize.sp,
+                                    fontWeight = if (element.heading) FontWeight.SemiBold else FontWeight.Normal,
+                                    textIndent = TextIndent(firstLine = if (element.firstLineIndent) 2.em else 0.em),
+                                ),
+                            )
+                            is ReaderPageElement.Illustration -> AsyncImage(
+                                model = element.block.url,
+                                contentDescription = "插图",
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).height(with(density) { element.heightPx.toDp() }),
+                                contentScale = ContentScale.Fit,
+                            )
+                        }
+                    }
+                }
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("正在进入下一章…", color = colors.text.copy(alpha = 0.72f))
+                }
+            }
+        }
     }
 }
 
@@ -222,6 +318,16 @@ private fun SourceReaderSettings(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("阅读设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("翻页方式")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReaderMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = preferences.mode == mode,
+                        onClick = { onChange(preferences.copy(mode = mode)) },
+                        label = { Text(mode.label) },
+                    )
+                }
+            }
             Text("字号 ${preferences.fontSize.toInt()}")
             Slider(
                 value = preferences.fontSize,

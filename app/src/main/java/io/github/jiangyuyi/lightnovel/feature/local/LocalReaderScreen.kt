@@ -1,7 +1,12 @@
 package io.github.jiangyuyi.lightnovel.feature.local
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +36,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.sp
@@ -37,9 +47,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.local.LocalBookDocument
 import io.github.jiangyuyi.lightnovel.core.local.LocalBookRecord
 import io.github.jiangyuyi.lightnovel.core.local.LocalChapterContent
+import io.github.jiangyuyi.lightnovel.core.local.LocalContentBlock
 import io.github.jiangyuyi.lightnovel.core.local.LocalLibraryStore
 import io.github.jiangyuyi.lightnovel.core.local.chapterContent
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
+import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
@@ -89,28 +101,40 @@ fun LocalReaderScreen(
             error != null -> Text(error!!, Modifier.padding(24.dp), color = MaterialTheme.colorScheme.error)
             else -> {
                 val loaded = requireNotNull(document)
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(loaded.chapters.getOrNull(chapterIndex)?.title ?: "正文", Modifier.weight(1f))
-                    IconButton(
-                        enabled = chapterIndex > 0,
-                        onClick = { chapterIndex-- },
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上一章")
-                    }
-                    IconButton(
-                        enabled = chapterIndex < loaded.chapters.lastIndex,
-                        onClick = { chapterIndex++ },
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "下一章")
-                    }
-                }
                 content?.let { chapter ->
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
+                    if (preferences.mode == ReaderMode.PAGED) {
+                        LocalPagedReader(
+                            chapter = chapter,
+                            preferences = preferences,
+                            colors = colors,
+                            hasNextChapter = chapterIndex < loaded.chapters.lastIndex,
+                            onNextChapter = { chapterIndex++ },
+                        )
+                    } else LazyColumn(
+                        Modifier
+                            .fillMaxSize()
+                            .pointerInput(chapterIndex, loaded.chapters.size) {
+                                var distance = 0f
+                                detectHorizontalDragGestures(
+                                    onHorizontalDrag = { _, dragAmount -> distance += dragAmount },
+                                    onDragEnd = {
+                                        when {
+                                            distance < -80f && chapterIndex < loaded.chapters.lastIndex -> chapterIndex++
+                                            distance > 80f && chapterIndex > 0 -> chapterIndex--
+                                        }
+                                        distance = 0f
+                                    },
+                                    onDragCancel = { distance = 0f },
+                                )
+                            }
+                            .pointerInput(chapterIndex, loaded.chapters.size) {
+                                detectTapGestures { position ->
+                                    when {
+                                        position.x < size.width * 0.30f && chapterIndex > 0 -> chapterIndex--
+                                        position.x > size.width * 0.70f && chapterIndex < loaded.chapters.lastIndex -> chapterIndex++
+                                    }
+                                }
+                            },
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(
                             start = preferences.horizontalPadding.dp,
                             end = preferences.horizontalPadding.dp,
@@ -120,14 +144,109 @@ fun LocalReaderScreen(
                         verticalArrangement = Arrangement.spacedBy((preferences.lineHeight * 3).dp),
                     ) {
                         item { Text(chapter.chapter.title, style = localHeadingStyle(preferences, colors.text)) }
-                        items(chapter.text.split(Regex("\\n{2,}"))) { paragraph ->
-                            if (paragraph.isNotBlank()) Text(paragraph.trim(), style = localBodyStyle(preferences, colors.text))
+                        items(chapter.blocks) { block ->
+                            when (block) {
+                                is LocalContentBlock.Paragraph -> Text(
+                                    block.text,
+                                    style = localBodyStyle(preferences, colors.text),
+                                )
+                                is LocalContentBlock.Image -> {
+                                    val bitmap = BitmapFactory.decodeByteArray(block.bytes, 0, block.bytes.size)?.asImageBitmap()
+                                    if (bitmap != null) {
+                                        Image(
+                                            bitmap = bitmap,
+                                            contentDescription = "正文插图",
+                                            contentScale = ContentScale.Fit,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun LocalPagedReader(
+    chapter: LocalChapterContent,
+    preferences: ReaderPreferences,
+    colors: LocalReaderColors,
+    hasNextChapter: Boolean,
+    onNextChapter: () -> Unit,
+) {
+    val pages = remember(chapter.chapter.id, chapter.blocks, preferences.fontSize) { localPages(chapter.blocks) }
+    val pagerState = rememberPagerState { pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0 }
+    LaunchedEffect(chapter.chapter.id, pages.size) {
+        pagerState.scrollToPage(0)
+    }
+    LaunchedEffect(pagerState.currentPage, pages.size, hasNextChapter) {
+        if (hasNextChapter && pagerState.currentPage == pages.size) onNextChapter()
+    }
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize(),
+        beyondViewportPageCount = 1,
+        userScrollEnabled = true,
+    ) { pageIndex ->
+        if (pageIndex < pages.size) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = preferences.horizontalPadding.dp,
+                    end = preferences.horizontalPadding.dp,
+                    top = 12.dp,
+                    bottom = 40.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy((preferences.lineHeight * 3).dp),
+            ) {
+                item { Text(chapter.chapter.title, style = localHeadingStyle(preferences, colors.text)) }
+                items(pages[pageIndex]) { block -> LocalBlockView(block, preferences, colors) }
+            }
+        } else {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("正在进入下一章…", color = colors.text.copy(alpha = 0.72f)) }
+        }
+    }
+}
+
+@Composable
+private fun LocalBlockView(block: LocalContentBlock, preferences: ReaderPreferences, colors: LocalReaderColors) {
+    when (block) {
+        is LocalContentBlock.Paragraph -> Text(block.text, style = localBodyStyle(preferences, colors.text))
+        is LocalContentBlock.Image -> {
+            val bitmap = BitmapFactory.decodeByteArray(block.bytes, 0, block.bytes.size)?.asImageBitmap()
+            if (bitmap != null) Image(bitmap, "正文插图", Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+        }
+    }
+}
+
+private fun localPages(blocks: List<LocalContentBlock>, maxChars: Int = 900): List<List<LocalContentBlock>> {
+    val pages = mutableListOf<MutableList<LocalContentBlock>>()
+    var current = mutableListOf<LocalContentBlock>()
+    var chars = 0
+    fun finish() {
+        if (current.isNotEmpty()) pages += current
+        current = mutableListOf()
+        chars = 0
+    }
+    blocks.forEach { block ->
+        if (block is LocalContentBlock.Image) {
+            if (current.isNotEmpty()) finish()
+            pages += mutableListOf(block)
+        } else {
+            val text = (block as LocalContentBlock.Paragraph).text
+            text.chunked(maxChars).forEach { part ->
+                if (chars + part.length > maxChars && current.isNotEmpty()) finish()
+                current += LocalContentBlock.Paragraph(part)
+                chars += part.length
+            }
+        }
+    }
+    finish()
+    return pages.ifEmpty { listOf(emptyList()) }
 }
 
 private data class LocalReaderColors(val background: Color, val text: Color)

@@ -32,6 +32,7 @@ class LocalLibraryStore(context: Context) {
     val isIndexing: StateFlow<Boolean> = _indexing.asStateFlow()
     private val _imports = MutableStateFlow(readImportedFiles())
     val importedFiles: StateFlow<List<String>> = _imports.asStateFlow()
+    private val excludedFiles = readExcludedFiles().toMutableSet()
     private val _books = MutableStateFlow<List<LocalBookRecord>>(emptyList())
     val books: StateFlow<List<LocalBookRecord>> = _books.asStateFlow()
     private val coverCache = object : LruCache<String, ByteArray>(COVER_MEMORY_CACHE_BYTES) {
@@ -75,6 +76,8 @@ class LocalLibraryStore(context: Context) {
     }
 
     fun addFiles(uris: List<Uri>) {
+        excludedFiles.removeAll(uris.map(Uri::toString).toSet())
+        persistExcludedFiles()
         val updated = (_imports.value + uris.map(Uri::toString)).distinct().take(MAX_BOOKS)
         preferences.edit().putStringSet(IMPORTS, updated.toSet()).apply()
         _imports.value = updated
@@ -90,7 +93,16 @@ class LocalLibraryStore(context: Context) {
     }
 
     fun removeFile(uri: String) {
-        val updated = _imports.value.filterNot { it == uri }
+        removeFiles(listOf(uri))
+    }
+
+    /** Removes library records only. The selected files remain untouched on disk. */
+    fun removeFiles(uris: Collection<String>) {
+        if (uris.isEmpty()) return
+        val targets = uris.toSet()
+        excludedFiles += targets
+        persistExcludedFiles()
+        val updated = _imports.value.filterNot(targets::contains)
         preferences.edit().putStringSet(IMPORTS, updated.toSet()).apply()
         _imports.value = updated
         reindex()
@@ -109,6 +121,8 @@ class LocalLibraryStore(context: Context) {
         val remaining = _imports.value.filterNot { isInFolder(Uri.parse(it), Uri.parse(uri)) }
         preferences.edit().putStringSet(IMPORTS, remaining.toSet()).apply()
         _imports.value = remaining
+        excludedFiles.removeAll { isInFolder(Uri.parse(it), Uri.parse(uri)) }
+        persistExcludedFiles()
         reindex()
     }
 
@@ -256,6 +270,7 @@ class LocalLibraryStore(context: Context) {
         if (_roots.value.isEmpty()) return
         val folderFiles = _roots.value
             .flatMap { listTreeFiles(Uri.parse(it)) }
+            .filterNot { it.toString() in excludedFiles }
             .map(Uri::toString)
         val directFiles = _imports.value.filterNot { file ->
             _roots.value.any { root -> isInFolder(Uri.parse(file), Uri.parse(root)) }
@@ -284,6 +299,12 @@ class LocalLibraryStore(context: Context) {
 
     private fun readRoots(): List<String> = preferences.getStringSet(ROOTS, emptySet()).orEmpty().toList().sorted()
 
+    private fun readExcludedFiles(): Set<String> = preferences.getStringSet(EXCLUDED, emptySet()).orEmpty()
+
+    private fun persistExcludedFiles() {
+        preferences.edit().putStringSet(EXCLUDED, excludedFiles.toSet()).apply()
+    }
+
     private fun isInFolder(file: Uri, root: Uri): Boolean = runCatching {
         val rootId = DocumentsContract.getTreeDocumentId(root)
         val fileId = DocumentsContract.getDocumentId(file)
@@ -305,6 +326,7 @@ class LocalLibraryStore(context: Context) {
         const val PREFERENCES = "local_library"
         const val IMPORTS = "imported_file_uris"
         const val ROOTS = "tree_uris"
+        const val EXCLUDED = "excluded_file_uris"
         const val CACHE_PREFIX = "metadata_"
         const val INDEX_CONCURRENCY = 6
         const val MAX_BOOKS = 2_000

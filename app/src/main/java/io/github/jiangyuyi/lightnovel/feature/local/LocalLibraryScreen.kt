@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +24,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,7 +67,7 @@ private val LOCAL_FILE_MIME_TYPES = arrayOf(
     "application/x-fictionbook+xml",
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LocalLibraryScreen(
     store: LocalLibraryStore,
@@ -77,6 +81,8 @@ fun LocalLibraryScreen(
     val focus = LocalFocusManager.current
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
+    var selectedIds by rememberSaveable { mutableStateOf<Set<String>>(emptySet()) }
+    var confirmDelete by remember { mutableStateOf(false) }
     val visibleBooks = filterLocalBooks(books, query)
     val hasLibrarySources = roots.isNotEmpty() || importedFiles.isNotEmpty()
     val folderLauncher = rememberLauncherForActivityResult(
@@ -116,6 +122,14 @@ fun LocalLibraryScreen(
             TopAppBar(
                 title = { Text("本地书库") },
                 actions = {
+                    if (selectedIds.isNotEmpty()) {
+                        IconButton(onClick = { confirmDelete = true }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "移除选中记录")
+                        }
+                        IconButton(onClick = { selectedIds = emptySet() }) {
+                            Icon(Icons.Filled.Close, contentDescription = "取消选择")
+                        }
+                    }
                     IconButton(
                         onClick = {
                             if (searchVisible) {
@@ -198,8 +212,39 @@ fun LocalLibraryScreen(
             }
         }
         items(visibleBooks, key = LocalBookRecord::id) { book ->
-            LocalBookCard(store, book, onClick = { onBook(book) })
+            LocalBookCard(
+                store = store,
+                book = book,
+                selected = book.id in selectedIds,
+                selectionMode = selectedIds.isNotEmpty(),
+                onClick = {
+                    if (selectedIds.isNotEmpty()) {
+                        selectedIds = selectedIds.toMutableSet().apply {
+                            if (!add(book.id)) remove(book.id)
+                        }
+                    } else onBook(book)
+                },
+                onLongClick = { selectedIds = selectedIds.toMutableSet().apply { add(book.id) } },
+            )
         }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("移除本地记录") },
+            text = { Text("只从 Mixn 书库中移除选中记录，不会删除手机上的原文件。") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    store.removeFiles(books.filter { it.id in selectedIds }.map(LocalBookRecord::uri))
+                    selectedIds = emptySet()
+                    confirmDelete = false
+                }) { Text("移除") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+            },
+        )
     }
 }
 
@@ -213,7 +258,15 @@ internal fun filterLocalBooks(books: List<LocalBookRecord>, query: String): List
 }
 
 @Composable
-private fun LocalBookCard(store: LocalLibraryStore, book: LocalBookRecord, onClick: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun LocalBookCard(
+    store: LocalLibraryStore,
+    book: LocalBookRecord,
+    selected: Boolean,
+    selectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     var coverBytes by remember(book.id, book.coverPath) { mutableStateOf<ByteArray?>(null) }
     LaunchedEffect(book.id, book.coverPath) {
         coverBytes = store.readCover(book)
@@ -224,9 +277,13 @@ private fun LocalBookCard(store: LocalLibraryStore, book: LocalBookRecord, onCli
         }
     }
     Card(
-        onClick = onClick,
-        enabled = book.available,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .combinedClickable(enabled = book.available, onClick = onClick, onLongClick = onLongClick),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        ),
     ) {
         Row(
             Modifier.padding(12.dp),
@@ -268,7 +325,9 @@ private fun LocalBookCard(store: LocalLibraryStore, book: LocalBookRecord, onCli
                     color = if (book.available) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
                 )
             }
-            if (book.available) {
+            if (selectionMode) {
+                androidx.compose.material3.Checkbox(checked = selected, onCheckedChange = null)
+            } else if (book.available) {
                 Icon(painterResource(R.drawable.ic_file_open), contentDescription = "打开书籍", tint = MaterialTheme.colorScheme.primary)
             }
         }

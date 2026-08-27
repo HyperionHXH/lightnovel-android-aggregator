@@ -38,5 +38,10 @@ data class LocalBookDocument(
 
 data class LocalChapterContent(
     val chapter: LocalChapterRef,
-    val text: String,
+    val blocks: List<LocalContentBlock>,
 )
+
+sealed interface LocalContentBlock {
+    data class Paragraph(val text: String) : LocalContentBlock
+    data class Image(val bytes: ByteArray) : LocalContentBlock
+}

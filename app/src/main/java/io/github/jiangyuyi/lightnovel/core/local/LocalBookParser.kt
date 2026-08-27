@@ -208,6 +208,9 @@ class LocalBookParser(private val resolver: ContentResolver) {
         val chapterPaths = chapterPaths(metadata)
         val wanted = chapterPaths.toMutableSet().apply {
             metadata.coverPath?.let(::add)
+            metadata.manifest.values
+                .filter { it.mediaType.startsWith("image/", ignoreCase = true) }
+                .mapTo(this) { resolvePath(metadata.base, it.href) }
         }
         val entries = resolver.openInputStream(uri)?.use { readZipEntries(it, wanted) }
             ?: error("无法读取 EPUB 文件")
@@ -512,10 +515,48 @@ class LocalBookParser(private val resolver: ContentResolver) {
 fun LocalBookDocument.chapterContent(chapter: LocalChapterRef): LocalChapterContent {
     val bytes = epubEntries[chapter.path] ?: error("找不到章节文件")
     val raw = bytes.toString(StandardCharsets.UTF_8)
-    val text = Html.fromHtml(raw, Html.FROM_HTML_MODE_LEGACY).toString()
-        .replace('\u00A0', ' ')
-        .replace(Regex("[\\t ]+"), " ")
-        .replace(Regex("\\n{3,}"), "\\n\\n")
-        .trim()
-    return LocalChapterContent(chapter, text)
+    val blocks = mutableListOf<LocalContentBlock>()
+    val tokenRegex = Regex("<p\\b[^>]*>.*?</p>|<img\\b[^>]*>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    var cursor = 0
+    fun appendText(value: String) {
+        val text = Html.fromHtml(value, Html.FROM_HTML_MODE_LEGACY).toString()
+            .replace('\u00A0', ' ')
+            .replace(Regex("[\\t ]+"), " ")
+            .replace(Regex("\\n{3,}"), "\\n\\n")
+            .trim()
+        if (text.isNotBlank()) blocks += LocalContentBlock.Paragraph(text)
+    }
+    tokenRegex.findAll(raw).forEach { token ->
+        val before = raw.substring(cursor, token.range.first)
+        if (token.value.startsWith("<img", ignoreCase = true)) {
+            appendText(before)
+            val src = Regex("\\bsrc\\s*=\\s*[\\\"']([^\\\"']+)", RegexOption.IGNORE_CASE)
+                .find(token.value)?.groupValues?.getOrNull(1)
+            val path = src?.let { resolveRelativeAssetPath(chapter.path, it) }
+            path?.let { epubEntries[it] }?.let { blocks += LocalContentBlock.Image(it) }
+        } else {
+            appendText(token.value)
+        }
+        cursor = token.range.last + 1
+    }
+    appendText(raw.substring(cursor))
+    if (blocks.isEmpty()) blocks += LocalContentBlock.Paragraph("本章暂无正文")
+    return LocalChapterContent(chapter, blocks)
+}
+
+private fun resolveRelativeAssetPath(chapterPath: String, href: String): String {
+    val decoded = android.net.Uri.decode(href)
+        .replace(Regex("\\s+"), "")
+        .substringBefore('#')
+        .replace('\\', '/')
+    val parts = (chapterPath.substringBeforeLast('/', "") + "/" + decoded).split('/')
+    val normalized = ArrayDeque<String>()
+    parts.forEach { part ->
+        when (part) {
+            "", "." -> Unit
+            ".." -> if (normalized.isNotEmpty()) normalized.removeLast()
+            else -> normalized.addLast(part)
+        }
+    }
+    return normalized.joinToString("/")
 }

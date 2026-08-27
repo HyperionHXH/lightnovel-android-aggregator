@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -33,6 +34,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -59,6 +62,7 @@ fun BookScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    var lockedChapter by androidx.compose.runtime.remember { mutableStateOf<String?>(null) }
     RefreshableLazyColumn(
         isRefreshing = state.refreshing,
         onRefresh = { viewModel.load(true) },
@@ -177,7 +181,9 @@ fun BookScreen(
                                             HorizontalDivider()
                                             Row(
                                                 modifier = Modifier.fillMaxWidth()
-                                                    .clickable(enabled = !chapter.locked) { onRead(chapter.id) }
+                                                    .clickable {
+                                                        if (chapter.locked) lockedChapter = chapter.title else onRead(chapter.id)
+                                                    }
                                                     .padding(horizontal = 16.dp, vertical = 13.dp),
                                             ) {
                                                 Text(chapter.title, Modifier.weight(1f))
@@ -210,6 +216,15 @@ fun BookScreen(
                 }
             }
         }
+    }
+
+    lockedChapter?.let { title ->
+        AlertDialog(
+            onDismissRequest = { lockedChapter = null },
+            title = { Text("章节暂不可读") },
+            text = { Text("“$title”是轻之国度服务器标记的锁定章节。可能需要登录、满足站点权限或购买后才能阅读，客户端不会绕过站点限制。") },
+            confirmButton = { TextButton(onClick = { lockedChapter = null }) { Text("知道了") } },
+        )
     }
 }
 

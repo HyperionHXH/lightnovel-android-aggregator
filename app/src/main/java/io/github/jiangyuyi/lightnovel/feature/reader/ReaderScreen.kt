@@ -26,7 +26,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,15 +36,12 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -54,7 +50,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,7 +66,6 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.Dp
@@ -109,14 +103,6 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
     var anchorBlock by rememberSaveable(state.chapter?.chapter?.id) {
         mutableIntStateOf(state.restoredParagraph.coerceAtLeast(0))
     }
-    var readerPosition by remember(chapterId, state.preferences.mode) {
-        mutableStateOf(ReaderPosition(unit = if (state.preferences.mode == ReaderMode.PAGED) "页" else "段"))
-    }
-    var jumpRequest by remember(chapterId, state.preferences.mode) {
-        mutableStateOf<ReaderJumpRequest?>(null)
-    }
-    var jumpRequestToken by remember { mutableIntStateOf(0) }
-    var jumpDialogVisible by rememberSaveable(chapterId, state.preferences.mode) { mutableStateOf(false) }
 
     ImmersiveReaderEffect(darkBackground = state.preferences.theme == ReaderTheme.DARK)
 
@@ -145,9 +131,6 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 hasPreviousChapter = state.chapter?.previousChapterId != null,
                 hasNextChapter = state.chapter?.nextChapterId != null,
                 safeTopPadding = safeTopPadding,
-                jumpRequest = jumpRequest,
-                onJumpConsumed = { consumed -> if (jumpRequest == consumed) jumpRequest = null },
-                onPositionChanged = { current, total -> readerPosition = ReaderPosition(current, total, "页") },
             )
             else -> ScrollingReader(
                 blocks = blocks,
@@ -158,9 +141,6 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
                 onToggleControls = viewModel::toggleControls,
                 safeTopPadding = safeTopPadding,
-                jumpRequest = jumpRequest,
-                onJumpConsumed = { consumed -> if (jumpRequest == consumed) jumpRequest = null },
-                onPositionChanged = { current, total -> readerPosition = ReaderPosition(current, total, "段") },
             )
         }
 
@@ -176,17 +156,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 colors = colors,
                 onBack = onBack,
                 onCatalog = onCatalog,
-                onPrevious = viewModel::previous,
-                onNext = viewModel::next,
                 onSettings = { viewModel.showSettings(true) },
-                previousEnabled = state.chapter?.previousChapterId != null,
-                nextEnabled = state.chapter?.nextChapterId != null,
-                position = readerPosition,
-                onQuickJump = { position ->
-                    jumpRequestToken += 1
-                    jumpRequest = ReaderJumpRequest(position, jumpRequestToken)
-                },
-                onShowJumpDialog = { jumpDialogVisible = true },
             )
         }
     }
@@ -199,17 +169,6 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
         )
     }
 
-    if (jumpDialogVisible) {
-        ReaderJumpDialog(
-            position = readerPosition,
-            onJump = { position ->
-                jumpRequestToken += 1
-                jumpRequest = ReaderJumpRequest(position, jumpRequestToken)
-                jumpDialogVisible = false
-            },
-            onDismiss = { jumpDialogVisible = false },
-        )
-    }
 }
 
 @Composable
@@ -226,9 +185,6 @@ private fun PagedReader(
     hasPreviousChapter: Boolean,
     hasNextChapter: Boolean,
     safeTopPadding: Dp,
-    jumpRequest: ReaderJumpRequest?,
-    onJumpConsumed: (ReaderJumpRequest) -> Unit,
-    onPositionChanged: (Int, Int) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -268,11 +224,6 @@ private fun PagedReader(
                 .coerceAtMost(pages.lastIndex.coerceAtLeast(0))
             if (pagerState.currentPage != target) pagerState.scrollToPage(target)
         }
-        LaunchedEffect(jumpRequest?.token, pages.size) {
-            val request = jumpRequest ?: return@LaunchedEffect
-            pagerState.animateScrollToPage(request.position.coerceIn(1, pages.size) - 1)
-            onJumpConsumed(request)
-        }
         LaunchedEffect(pagerState, pages) {
             snapshotFlow { pagerState.currentPage }
                 .distinctUntilChanged()
@@ -280,7 +231,6 @@ private fun PagedReader(
                     pages.getOrNull(pageIndex)?.firstBlockIndex?.let {
                         onAnchorChanged(it)
                         onProgress(it)
-                        onPositionChanged(pageIndex + 1, pages.size.coerceAtLeast(1))
                     }
                 }
         }
@@ -399,9 +349,6 @@ private fun ScrollingReader(
     onProgress: (Int) -> Unit,
     onToggleControls: () -> Unit,
     safeTopPadding: Dp,
-    jumpRequest: ReaderJumpRequest?,
-    onJumpConsumed: (ReaderJumpRequest) -> Unit,
-    onPositionChanged: (Int, Int) -> Unit,
 ) {
     val listState = rememberLazyListState()
     LaunchedEffect(blocks) {
@@ -409,20 +356,12 @@ private fun ScrollingReader(
             listState.scrollToItem(anchorBlock.coerceIn(0, blocks.lastIndex))
         }
     }
-    LaunchedEffect(jumpRequest?.token, blocks.size) {
-        val request = jumpRequest ?: return@LaunchedEffect
-        if (blocks.isNotEmpty()) {
-            listState.animateScrollToItem(request.position.coerceIn(1, blocks.size) - 1)
-        }
-        onJumpConsumed(request)
-    }
     LaunchedEffect(listState, blocks.size) {
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
             .collect {
                 onAnchorChanged(it)
                 onProgress(it)
-                onPositionChanged(it + 1, blocks.size.coerceAtLeast(1))
             }
     }
 
@@ -500,18 +439,8 @@ private fun BoxScope.ReaderControls(
     colors: ReaderColors,
     onBack: () -> Unit,
     onCatalog: () -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
     onSettings: () -> Unit,
-    previousEnabled: Boolean,
-    nextEnabled: Boolean,
-    position: ReaderPosition,
-    onQuickJump: (Int) -> Unit,
-    onShowJumpDialog: () -> Unit,
 ) {
-    var sliderValue by remember(position.current, position.total) {
-        mutableFloatStateOf(position.current.toFloat())
-    }
     TopAppBar(
         title = { Text(bookTitle) },
         navigationIcon = {
@@ -523,6 +452,9 @@ private fun BoxScope.ReaderControls(
             IconButton(onClick = onCatalog) {
                 Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录")
             }
+            IconButton(onClick = onSettings) {
+                Icon(Icons.Filled.Settings, contentDescription = "阅读设置")
+            }
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = colors.background.copy(alpha = 0.97f),
@@ -530,79 +462,6 @@ private fun BoxScope.ReaderControls(
             navigationIconContentColor = colors.text,
             actionIconContentColor = colors.text,
         ),
-    )
-    Surface(
-        modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-        color = colors.background.copy(alpha = 0.97f),
-        tonalElevation = 4.dp,
-        shadowElevation = 8.dp,
-    ) {
-        Column {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Slider(
-                    value = sliderValue.coerceIn(1f, position.total.coerceAtLeast(2).toFloat()),
-                    onValueChange = { sliderValue = it },
-                    onValueChangeFinished = { onQuickJump(sliderValue.roundToInt()) },
-                    valueRange = 1f..position.total.coerceAtLeast(2).toFloat(),
-                    enabled = position.total > 1,
-                    colors = readerSliderColors(),
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = onShowJumpDialog) {
-                    Text("${position.current}/${position.total}${position.unit}", color = colors.text)
-                }
-            }
-            HorizontalDivider(color = colors.text.copy(alpha = 0.12f))
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onPrevious, enabled = previousEnabled) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "上一章")
-                }
-                IconButton(onClick = onSettings) {
-                    Icon(Icons.Filled.Settings, contentDescription = "阅读设置")
-                }
-                IconButton(onClick = onNext, enabled = nextEnabled) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "下一章")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReaderJumpDialog(
-    position: ReaderPosition,
-    onJump: (Int) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var input by remember(position.current, position.total) { mutableStateOf(position.current.toString()) }
-    val target = input.toIntOrNull()?.takeIf { it in 1..position.total.coerceAtLeast(1) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (position.unit == "页") "跳转页码" else "快速定位") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { value -> input = value.filter(Char::isDigit).take(6) },
-                    label = { Text("${position.unit}码") },
-                    supportingText = { Text("可输入 1 到 ${position.total}") },
-                    isError = input.isNotEmpty() && target == null,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { target?.let(onJump) }, enabled = target != null) { Text("跳转") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
 }
 
@@ -730,14 +589,6 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     is ContextWrapper -> baseContext.findActivity()
     else -> null
 }
-
-private data class ReaderPosition(
-    val current: Int = 1,
-    val total: Int = 1,
-    val unit: String,
-)
-
-private data class ReaderJumpRequest(val position: Int, val token: Int)
 
 private enum class ReaderTurnDirection { PREVIOUS, NEXT }
 
