@@ -27,7 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -80,6 +79,11 @@ fun SourceReaderScreen(
     val blocks = chapter?.let { ReaderContentParser.parse(it.bodyHtml, it.bodyText) }.orEmpty()
     val listState = rememberLazyListState()
 
+    ImmersiveReaderEffect(
+        darkBackground = state.preferences.theme == ReaderTheme.DARK,
+        controlsVisible = state.controlsVisible || state.settingsVisible,
+    )
+
     LaunchedEffect(chapter?.chapter?.key, state.restoredBlock, blocks.size) {
         if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL && blocks.isNotEmpty()) {
             listState.scrollToItem(state.restoredBlock.coerceIn(0, blocks.lastIndex))
@@ -93,10 +97,51 @@ fun SourceReaderScreen(
         }
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = colors.background,
-        topBar = {
+    Box(
+        modifier = Modifier.fillMaxSize().background(colors.background),
+    ) {
+        when {
+            state.loading -> LoadingPane()
+            state.error != null -> ErrorPane(state.error!!, onRetry = viewModel::retry)
+            chapter == null -> EmptyPane("章节不存在或暂不可见")
+            else -> if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.PAGED) {
+                SourcePagedReader(
+                    blocks = blocks,
+                    preferences = state.preferences,
+                    colors = colors,
+                    chapterFontFamily = state.chapterFontFamily,
+                    onPreviousChapter = viewModel::previous,
+                    hasNextChapter = chapter.nextChapterKey != null,
+                    onNextChapter = viewModel::next,
+                    onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
+                    onToggleControls = viewModel::toggleControls,
+                )
+            } else LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(chapter.chapter.key) {
+                        detectTapGestures { position ->
+                            val horizontal = position.x / size.width.toFloat().coerceAtLeast(1f)
+                            val vertical = position.y / size.height.toFloat().coerceAtLeast(1f)
+                            if (horizontal in 0.30f..0.70f && vertical in 0.25f..0.75f) {
+                                viewModel.toggleControls()
+                            }
+                        }
+                    },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = state.preferences.horizontalPadding.dp,
+                    vertical = 18.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                itemsIndexed(blocks, key = { index, _ -> index }) { _, block ->
+                    SourceReaderBlock(block, state.preferences, colors, state.chapterFontFamily)
+                }
+            }
+        }
+
+        if (state.controlsVisible && !state.loading && state.error == null) {
             TopAppBar(
                 title = {
                     Text(
@@ -116,53 +161,12 @@ fun SourceReaderScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = colors.background,
+                    containerColor = colors.background.copy(alpha = 0.97f),
                     titleContentColor = colors.text,
+                    navigationIconContentColor = colors.text,
+                    actionIconContentColor = colors.text,
                 ),
             )
-        },
-    ) { padding ->
-        Box(
-            modifier = Modifier.fillMaxSize().background(colors.background).padding(padding),
-        ) {
-            when {
-                state.loading -> LoadingPane()
-                state.error != null -> ErrorPane(state.error!!, onRetry = viewModel::retry)
-                chapter == null -> EmptyPane("章节不存在或暂不可见")
-                else -> if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.PAGED) {
-                    SourcePagedReader(
-                        blocks = blocks,
-                        preferences = state.preferences,
-                        colors = colors,
-                        chapterFontFamily = state.chapterFontFamily,
-                        onPreviousChapter = viewModel::previous,
-                        hasNextChapter = chapter.nextChapterKey != null,
-                        onNextChapter = viewModel::next,
-                        onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
-                    )
-                } else LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(chapter?.chapter?.key) {
-                            detectTapGestures { position ->
-                                when {
-                                    position.x < size.width * 0.30f && chapter?.previousChapterKey != null -> viewModel.previous()
-                                    position.x > size.width * 0.70f && chapter?.nextChapterKey != null -> viewModel.next()
-                                }
-                            }
-                        },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        horizontal = state.preferences.horizontalPadding.dp,
-                        vertical = 18.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                ) {
-                    itemsIndexed(blocks, key = { index, _ -> index }) { _, block ->
-                        SourceReaderBlock(block, state.preferences, colors, state.chapterFontFamily)
-                    }
-                }
-            }
         }
     }
 
@@ -185,6 +189,7 @@ private fun SourcePagedReader(
     hasNextChapter: Boolean,
     onNextChapter: () -> Unit,
     onProgress: (Int) -> Unit,
+    onToggleControls: () -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -233,6 +238,7 @@ private fun SourcePagedReader(
                                     onNextChapter()
                                 }
                             }
+                            else -> onToggleControls()
                         }
                     }
                 },

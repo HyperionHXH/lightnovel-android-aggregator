@@ -104,7 +104,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
         mutableIntStateOf(state.restoredParagraph.coerceAtLeast(0))
     }
 
-    ImmersiveReaderEffect(darkBackground = state.preferences.theme == ReaderTheme.DARK)
+    ImmersiveReaderEffect(
+        darkBackground = state.preferences.theme == ReaderTheme.DARK,
+        controlsVisible = state.controlsVisible || state.settingsVisible,
+    )
 
     LaunchedEffect(state.chapter?.chapter?.id, state.restoredParagraph) {
         anchorBlock = state.restoredParagraph.coerceAtLeast(0)
@@ -462,7 +465,7 @@ private fun BoxScope.ReaderControls(
 }
 
 @Composable
-private fun ReaderSettingsDialog(
+internal fun ReaderSettingsDialog(
     preferences: ReaderPreferences,
     onChange: (ReaderPreferences) -> Unit,
     onDismiss: () -> Unit,
@@ -563,15 +566,18 @@ private fun readerSliderColors() = SliderDefaults.colors(
 )
 
 @Composable
-private fun ImmersiveReaderEffect(darkBackground: Boolean) {
+internal fun ImmersiveReaderEffect(darkBackground: Boolean, controlsVisible: Boolean) {
     val view = LocalView.current
-    DisposableEffect(view, darkBackground) {
+    DisposableEffect(view, darkBackground, controlsVisible) {
         val window = view.context.findActivity()?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         val previousLightStatusBars = controller?.isAppearanceLightStatusBars
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller?.show(WindowInsetsCompat.Type.statusBars())
-        controller?.hide(WindowInsetsCompat.Type.navigationBars())
+        if (controlsVisible) {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller?.hide(WindowInsetsCompat.Type.systemBars())
+        }
         controller?.isAppearanceLightStatusBars = !darkBackground
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())

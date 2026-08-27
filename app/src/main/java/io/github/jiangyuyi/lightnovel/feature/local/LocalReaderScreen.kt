@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.TopAppBar
@@ -56,6 +57,8 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
+import io.github.jiangyuyi.lightnovel.feature.reader.ImmersiveReaderEffect
+import io.github.jiangyuyi.lightnovel.feature.reader.ReaderSettingsDialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -73,6 +76,9 @@ fun LocalReaderScreen(
     var chapterIndex by remember(record.id) { mutableIntStateOf(0) }
     var content by remember(record.id) { mutableStateOf<LocalChapterContent?>(null) }
     var error by remember(record.id) { mutableStateOf<String?>(null) }
+    var controlsVisible by remember(record.id) { mutableStateOf(false) }
+    var settingsVisible by remember(record.id) { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(record.id) {
         chapterIndex = store.readProgress(record.id)
@@ -90,17 +96,13 @@ fun LocalReaderScreen(
     }
 
     val colors = localReaderColors(preferences.theme)
-    Column(Modifier.fillMaxSize().background(colors.background)) {
-        TopAppBar(
-            title = { Text(record.title, maxLines = 1) },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
-        )
+    ImmersiveReaderEffect(
+        darkBackground = preferences.theme == ReaderTheme.DARK,
+        controlsVisible = controlsVisible || settingsVisible,
+    )
+    Box(Modifier.fillMaxSize().background(colors.background)) {
         when {
-            document == null && error == null -> CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
+            document == null && error == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
             error != null -> Text(error!!, Modifier.padding(24.dp), color = MaterialTheme.colorScheme.error)
             else -> {
                 val loaded = requireNotNull(document)
@@ -113,15 +115,17 @@ fun LocalReaderScreen(
                             onPreviousChapter = { if (chapterIndex > 0) chapterIndex-- },
                             hasNextChapter = chapterIndex < loaded.chapters.lastIndex,
                             onNextChapter = { chapterIndex++ },
+                            onToggleControls = { controlsVisible = !controlsVisible },
                         )
                     } else LazyColumn(
                         Modifier
                             .fillMaxSize()
                             .pointerInput(chapterIndex, loaded.chapters.size) {
                                 detectTapGestures { position ->
-                                    when {
-                                        position.x < size.width * 0.30f && chapterIndex > 0 -> chapterIndex--
-                                        position.x > size.width * 0.70f && chapterIndex < loaded.chapters.lastIndex -> chapterIndex++
+                                    val horizontal = position.x / size.width.toFloat().coerceAtLeast(1f)
+                                    val vertical = position.y / size.height.toFloat().coerceAtLeast(1f)
+                                    if (horizontal in 0.30f..0.70f && vertical in 0.25f..0.75f) {
+                                        controlsVisible = !controlsVisible
                                     }
                                 }
                             },
@@ -144,9 +148,35 @@ fun LocalReaderScreen(
                             }
                         }
                     }
-                } ?: CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
+                } ?: CircularProgressIndicator(Modifier.align(Alignment.Center))
             }
         }
+        if (controlsVisible && document != null && error == null) {
+            TopAppBar(
+                title = { Text(record.title, maxLines = 1) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回", tint = colors.text)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { settingsVisible = true }) {
+                        Icon(Icons.Filled.Settings, contentDescription = "阅读设置", tint = colors.text)
+                    }
+                },
+                colors = androidx.compose.material3.TopAppBarDefaults.topAppBarColors(
+                    containerColor = colors.background.copy(alpha = 0.97f),
+                    titleContentColor = colors.text,
+                ),
+            )
+        }
+    }
+    if (settingsVisible) {
+        ReaderSettingsDialog(
+            preferences = preferences,
+            onChange = { updated -> coroutineScope.launch { preferencesStore.update(updated) } },
+            onDismiss = { settingsVisible = false },
+        )
     }
 }
 
@@ -158,6 +188,7 @@ private fun LocalPagedReader(
     onPreviousChapter: () -> Unit,
     hasNextChapter: Boolean,
     onNextChapter: () -> Unit,
+    onToggleControls: () -> Unit,
 ) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
         val estimatedChars = remember(maxWidth, maxHeight, preferences.fontSize, preferences.lineHeight) {
@@ -196,6 +227,7 @@ private fun LocalPagedReader(
                                     onNextChapter()
                                 }
                             }
+                            else -> onToggleControls()
                         }
                     }
                 },
