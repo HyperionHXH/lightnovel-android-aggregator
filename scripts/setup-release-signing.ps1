@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Repository = "jiangyuyi/lightnovel-android",
+    [string]$Repository = "HyperionHXH/lightnovel-android-aggregator",
     [string]$KeyAlias = "lightnovel-release"
 )
 
