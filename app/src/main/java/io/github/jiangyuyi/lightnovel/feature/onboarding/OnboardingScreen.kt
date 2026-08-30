@@ -191,13 +191,12 @@ private fun ReadyStep() {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         StepHeading(
             title = "准备好了",
-            subtitle = "轻小说聚合器会把两个在线来源和本地书库放在一个阅读体验里。",
+            subtitle = "轻小说聚合器把两个在线来源放在一个阅读体验里。",
         )
         ReadyItem("发现", "在两个来源中分别浏览榜单和新书。")
         ReadyItem("账号", "在“我的”中分别登录轻之国度和轻书架。")
-        ReadyItem("本地", "在“本地”中导入 EPUB、TXT、HTML 或 FB2 文件。")
         Text(
-            "首次加载在线内容需要网络；进入书架或本地阅读后，已保存的内容可以离线使用。",
+            "首次加载在线内容需要网络；已保存的在线章节可以离线使用。",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

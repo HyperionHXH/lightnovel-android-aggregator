@@ -16,7 +16,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
@@ -60,8 +59,6 @@ import io.github.jiangyuyi.lightnovel.feature.history.AggregateHistoryViewModel
 import io.github.jiangyuyi.lightnovel.feature.profile.ProfileScreen
 import io.github.jiangyuyi.lightnovel.feature.profile.ProfileViewModel
 import io.github.jiangyuyi.lightnovel.feature.profile.SettingsScreen
-import io.github.jiangyuyi.lightnovel.feature.local.LocalLibraryScreen
-import io.github.jiangyuyi.lightnovel.feature.local.LocalReaderScreen
 import io.github.jiangyuyi.lightnovel.feature.onboarding.OnboardingScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadViewModel
@@ -135,7 +132,6 @@ private object Routes {
     const val BOOKSHELF = "bookshelf"
     const val SEARCH = "search"
     const val PROFILE = "profile"
-    const val LOCAL = "local"
     const val DOWNLOADS = "downloads"
     const val SETTINGS = "settings"
     const val AUTH = "auth"
@@ -150,7 +146,6 @@ private object Routes {
     const val SOURCE_ACCOUNT = "source-account/{sourceId}"
     const val SOURCE_BOOK = "source-book/{sourceId}/{remoteId}"
     const val SOURCE_READER = "source-reader/{sourceId}/{bookId}/{chapterId}"
-    const val LOCAL_READER = "local-reader/{bookId}"
 
     fun book(id: Long) = "book/$id"
     fun reader(bookId: Long, chapterId: Long) = "reader/$bookId/$chapterId"
@@ -161,7 +156,6 @@ private object Routes {
     fun social(mode: SocialMode) = "social/${mode.name.lowercase()}"
     fun dm(conversation: DmConversation) =
         "dm/${conversation.peerUid}/${Uri.encode(conversation.user.nickname)}"
-    fun localReader(id: String) = "local-reader/${Uri.encode(id)}"
     fun sourceAccounts(sourceId: String) = "source-account/${Uri.encode(sourceId)}"
 }
 
@@ -170,7 +164,6 @@ private data class BottomDestination(val route: String, val label: String, val i
 private val bottomDestinations = listOf(
     BottomDestination(Routes.DISCOVER, "发现", Icons.Filled.Home),
     BottomDestination(Routes.BOOKSHELF, "书架", Icons.AutoMirrored.Filled.List),
-    BottomDestination(Routes.LOCAL, "本地", Icons.Filled.Create),
     BottomDestination(Routes.PROFILE, "我的", Icons.Filled.Person),
 )
 
@@ -270,26 +263,6 @@ private fun LightNovelApp() {
                     onSourceAccount = { sourceId -> navController.navigate(Routes.sourceAccounts(sourceId)) },
                     onDownloads = { navController.navigate(Routes.DOWNLOADS) },
                     onSettings = { navController.navigate(Routes.SETTINGS) },
-                )
-            }
-            composable(Routes.LOCAL) {
-                LocalLibraryScreen(
-                    store = container.localLibrary,
-                    onBook = { book -> navController.navigate(Routes.localReader(book.id)) },
-                )
-            }
-            composable(
-                Routes.LOCAL_READER,
-                arguments = listOf(navArgument("bookId") { type = NavType.StringType }),
-            ) { entry ->
-                val bookId = entry.arguments?.getString("bookId") ?: return@composable
-                val book = container.localLibrary.books.collectAsStateWithLifecycle().value
-                    .firstOrNull { it.id == bookId } ?: return@composable
-                LocalReaderScreen(
-                    store = container.localLibrary,
-                    record = book,
-                    preferencesStore = container.readerPreferences,
-                    onBack = { navController.popBackStack() },
                 )
             }
             composable(Routes.SETTINGS) {

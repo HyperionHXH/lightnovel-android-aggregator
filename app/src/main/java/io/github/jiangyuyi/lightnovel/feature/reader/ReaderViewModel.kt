@@ -58,7 +58,9 @@ class ReaderViewModel(
         val hasCurrentChapter = _state.value.chapter?.chapter?.id == chapterId
         currentChapterId = chapterId
         _state.value = _state.value.copy(
-            chapter = _state.value.chapter.takeIf { hasCurrentChapter },
+            // Keep the previous chapter visible while the next one loads. The
+            // progress indicator communicates the transition without a white flash.
+            chapter = _state.value.chapter,
             loading = !hasCurrentChapter,
             refreshing = hasCurrentChapter && forceRefresh,
             error = null,

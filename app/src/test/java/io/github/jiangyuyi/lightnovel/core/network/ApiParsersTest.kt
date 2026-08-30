@@ -120,6 +120,19 @@ class ApiParsersTest {
     }
 
     @Test
+    fun `chapter parser accepts string and nested coin prices`() {
+        val stringPrice = ApiParsers.chapter(
+            obj("""{"chapter_id": 21, "title": "字符串价格", "coin_price": "7"}"""),
+        )
+        val nestedPrice = ApiParsers.chapter(
+            obj("""{"chapter_id": 22, "title": "嵌套价格", "price": {"amount": 9}}"""),
+        )
+
+        assertEquals(7, stringPrice.coinPrice)
+        assertEquals(9, nestedPrice.coinPrice)
+    }
+
+    @Test
     fun `chapter parser accepts live object navigation and direct ids`() {
         val liveObject = ApiParsers.chapterDetail(
             obj(

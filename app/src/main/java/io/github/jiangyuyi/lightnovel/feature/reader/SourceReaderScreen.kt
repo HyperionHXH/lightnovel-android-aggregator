@@ -21,14 +21,14 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -61,7 +61,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
-import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
@@ -81,8 +80,15 @@ fun SourceReaderScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val colors = state.preferences.sourceReaderColors()
     val chapter = state.chapter
-    val blocks = chapter?.let { ReaderContentParser.parse(it.bodyHtml, it.bodyText) }.orEmpty()
+    val blocks = chapter?.let {
+        buildList {
+            add(ReaderBlock.Heading(it.chapter.title))
+            addAll(ReaderContentParser.parse(it.bodyHtml, it.bodyText))
+        }
+    }.orEmpty()
     val listState = rememberLazyListState()
+    val scrollBoundaryOffset = if (chapter?.previousChapterKey != null) 1 else 0
+    val progressBlockCount = (blocks.size - 1).coerceAtLeast(1)
 
     ImmersiveReaderEffect(
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
@@ -91,14 +97,19 @@ fun SourceReaderScreen(
 
     LaunchedEffect(chapter?.chapter?.key, state.restoredBlock, blocks.size) {
         if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL && blocks.isNotEmpty()) {
-            listState.scrollToItem(state.restoredBlock.coerceIn(0, blocks.lastIndex))
+            listState.scrollToItem((state.restoredBlock + scrollBoundaryOffset + 1).coerceIn(0, blocks.lastIndex + scrollBoundaryOffset))
         }
     }
     LaunchedEffect(chapter?.chapter?.key, blocks.size) {
         if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL && chapter != null && blocks.isNotEmpty()) {
             snapshotFlow { listState.firstVisibleItemIndex }
                 .distinctUntilChanged()
-                .collect { index -> viewModel.saveProgress(index, blocks.size) }
+                .collect { index ->
+                    viewModel.saveProgress(
+                        (index - scrollBoundaryOffset - 1).coerceAtLeast(0),
+                        progressBlockCount,
+                    )
+                }
         }
     }
 
@@ -106,8 +117,8 @@ fun SourceReaderScreen(
         modifier = Modifier.fillMaxSize().background(colors.background),
     ) {
         when {
-            state.loading -> LoadingPane()
-            state.error != null -> ErrorPane(state.error!!, onRetry = viewModel::retry)
+            state.error != null && chapter == null -> ErrorPane(state.error!!, onRetry = viewModel::retry)
+            chapter == null && state.loading -> LoadingPane()
             chapter == null -> EmptyPane("章节不存在或暂不可见")
             else -> if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.PAGED) {
                 SourcePagedReader(
@@ -115,10 +126,12 @@ fun SourceReaderScreen(
                     preferences = state.preferences,
                     colors = colors,
                     chapterFontFamily = state.chapterFontFamily,
+                    anchorBlock = state.restoredBlock + 1,
                     onPreviousChapter = viewModel::previous,
+                    hasPreviousChapter = chapter.previousChapterKey != null,
                     hasNextChapter = chapter.nextChapterKey != null,
                     onNextChapter = viewModel::next,
-                    onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
+                    onProgress = { index -> viewModel.saveProgress((index - 1).coerceAtLeast(0), progressBlockCount) },
                     onToggleControls = viewModel::toggleControls,
                     controlsVisible = state.controlsVisible,
                 )
@@ -144,16 +157,43 @@ fun SourceReaderScreen(
                 ),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                if (chapter.previousChapterKey != null) {
+                    item { SourceChapterBoundary("上一章", viewModel::previous, previous = true) }
+                }
                 itemsIndexed(blocks, key = { index, _ -> index }) { _, block ->
                     SourceReaderBlock(block, state.preferences, colors, state.chapterFontFamily)
                 }
                 if (chapter.nextChapterKey != null) {
-                    item { SourceChapterEnd(viewModel::next) }
+                    item { SourceChapterBoundary("下一章", viewModel::next, previous = false) }
                 }
             }
         }
 
-        if (state.controlsVisible && !state.loading && state.error == null) {
+        if (state.loading && chapter != null) {
+            LinearProgressIndicator(
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+                color = colors.text,
+                trackColor = colors.text.copy(alpha = 0.12f),
+            )
+        }
+
+        if (state.error != null && chapter != null) {
+            Text(
+                text = state.error!!,
+                color = colors.text,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .background(colors.background.copy(alpha = 0.96f))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        }
+
+        if (state.controlsVisible && !state.loading && (state.error == null || chapter != null)) {
             TopAppBar(
                 title = {
                     Text(
@@ -168,8 +208,16 @@ fun SourceReaderScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = onCatalog) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录", tint = colors.text)
+                    }
                     IconButton(onClick = { viewModel.showSettings(true) }) {
                         Icon(Icons.Filled.Settings, contentDescription = "阅读设置", tint = colors.text)
+                    }
+                    if (state.error != null) {
+                        IconButton(onClick = viewModel::retry) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "重试", tint = colors.text)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -183,7 +231,7 @@ fun SourceReaderScreen(
     }
 
     if (state.settingsVisible) {
-        SourceReaderSettings(
+        ReaderSettingsDialog(
             preferences = state.preferences,
             onChange = { updated -> viewModel.updatePreferences { updated } },
             onDismiss = { viewModel.showSettings(false) },
@@ -197,7 +245,9 @@ private fun SourcePagedReader(
     preferences: ReaderPreferences,
     colors: SourceReaderColors,
     chapterFontFamily: FontFamily?,
+    anchorBlock: Int,
     onPreviousChapter: () -> Unit,
+    hasPreviousChapter: Boolean,
     hasNextChapter: Boolean,
     onNextChapter: () -> Unit,
     onProgress: (Int) -> Unit,
@@ -226,6 +276,11 @@ private fun SourcePagedReader(
         }
         val pagerState = rememberPagerState { pages.size.coerceAtLeast(1) }
         val pagerScope = rememberCoroutineScope()
+        LaunchedEffect(pages, anchorBlock) {
+            val target = pages.indexOfFirst { anchorBlock in it.firstBlockIndex..it.lastBlockIndex }
+                .takeIf { it >= 0 } ?: 0
+            pagerState.scrollToPage(target.coerceIn(0, pages.lastIndex.coerceAtLeast(0)))
+        }
         LaunchedEffect(pagerState, pages) {
             snapshotFlow { pagerState.currentPage }.distinctUntilChanged().collect { index ->
                 pages.getOrNull(index)?.let { onProgress(it.firstBlockIndex) }
@@ -245,7 +300,7 @@ private fun SourcePagedReader(
                             position.x < size.width * 0.35f -> {
                                 if (pagerState.currentPage > 0) {
                                     pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-                                } else {
+                                } else if (hasPreviousChapter) {
                                     onPreviousChapter()
                                 }
                             }
@@ -328,11 +383,13 @@ private fun SourceReaderBlock(
 }
 
 @Composable
-private fun SourceChapterEnd(onNextChapter: () -> Unit) {
+private fun SourceChapterBoundary(label: String, onClick: () -> Unit, previous: Boolean) {
     androidx.compose.material3.TextButton(
-        onClick = onNextChapter,
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
-    ) { Text("下一章") }
+    ) {
+        Text(if (previous) "‹  $label" else "$label  ›")
+    }
 }
 
 @Composable
@@ -369,67 +426,6 @@ private fun ReaderRemoteImage(url: String, modifier: Modifier) {
                     modifier = Modifier.fillMaxSize().padding(16.dp),
                     contentScale = ContentScale.Fit,
                 )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SourceReaderSettings(
-    preferences: ReaderPreferences,
-    onChange: (ReaderPreferences) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text("阅读设置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("翻页方式")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReaderMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = preferences.mode == mode,
-                        onClick = { onChange(preferences.copy(mode = mode)) },
-                        label = { Text(mode.label) },
-                    )
-                }
-            }
-            Text("字号 ${preferences.fontSize.toInt()}")
-            Slider(
-                value = preferences.fontSize,
-                onValueChange = { onChange(preferences.copy(fontSize = it)) },
-                valueRange = 14f..32f,
-                steps = 17,
-            )
-            Text("行高 ${"%.1f".format(preferences.lineHeight)}")
-            Slider(
-                value = preferences.lineHeight,
-                onValueChange = { onChange(preferences.copy(lineHeight = it)) },
-                valueRange = 1.2f..2.2f,
-                steps = 9,
-            )
-            Text("字体")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReaderFont.entries.forEach { font ->
-                    FilterChip(
-                        selected = preferences.font == font,
-                        onClick = { onChange(preferences.copy(font = font)) },
-                        label = { Text(font.label) },
-                    )
-                }
-            }
-            Text("背景")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ReaderTheme.entries.forEach { theme ->
-                    FilterChip(
-                        selected = preferences.theme == theme,
-                        onClick = { onChange(preferences.copy(theme = theme)) },
-                        label = { Text(theme.label) },
-                    )
-                }
             }
         }
     }

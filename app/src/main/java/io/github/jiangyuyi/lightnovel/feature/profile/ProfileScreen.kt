@@ -125,7 +125,7 @@ fun ProfileScreen(
                 }
 
                 Text("聚合功能", style = MaterialTheme.typography.titleMedium)
-                ProfileEntry("阅读记录", "两站历史和本地阅读进度", onHistory)
+                ProfileEntry("阅读记录", "两站历史和在线阅读进度", onHistory)
                 ProfileEntry("下载与导出", "查看离线书籍、重试下载和导出 EPUB", onDownloads)
 
                 if (!anySourceLoggedIn) {

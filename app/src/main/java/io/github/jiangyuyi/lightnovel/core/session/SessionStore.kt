@@ -45,7 +45,15 @@ class SessionStore(context: Context) {
     }
 
     fun clear() {
-        preferences.edit().clear().apply()
+        // Keep account-scoped purchase confirmations so a logout/login cycle for
+        // the same account does not make already purchased chapters appear locked.
+        preferences.edit()
+            .remove(KEY_TOKEN)
+            .remove(KEY_IV)
+            .remove(KEY_UID)
+            .remove(KEY_NICKNAME)
+            .remove(KEY_AVATAR)
+            .apply()
         _session.value = Session()
     }
 
@@ -53,7 +61,13 @@ class SessionStore(context: Context) {
         val payload = preferences.getString(KEY_TOKEN, null) ?: return Session()
         val iv = preferences.getString(KEY_IV, null) ?: return Session()
         val token = runCatching { decrypt(payload, iv) }.getOrElse {
-            preferences.edit().clear().apply()
+            preferences.edit()
+                .remove(KEY_TOKEN)
+                .remove(KEY_IV)
+                .remove(KEY_UID)
+                .remove(KEY_NICKNAME)
+                .remove(KEY_AVATAR)
+                .apply()
             return Session()
         }
         if (token.isBlank()) return Session()

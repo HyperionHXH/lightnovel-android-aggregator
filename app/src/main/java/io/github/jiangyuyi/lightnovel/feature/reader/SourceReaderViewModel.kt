@@ -65,8 +65,6 @@ class SourceReaderViewModel(
         progressJob?.cancel()
         currentChapterKey = chapterKey
         _state.value = _state.value.copy(
-            chapter = null,
-            chapterFontFamily = null,
             restoredBlock = 0,
             loading = true,
             settingsVisible = false,

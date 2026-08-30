@@ -34,6 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -119,7 +121,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when {
             state.loading && state.chapter == null -> LoadingPane(Modifier.align(Alignment.Center))
-            state.error != null -> ErrorPane(
+            state.error != null && state.chapter == null -> ErrorPane(
                 message = state.error!!,
                 modifier = Modifier.align(Alignment.Center),
                 onRetry = viewModel::retry,
@@ -147,7 +149,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 onAnchorChanged = { anchorBlock = it },
                 onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
                 onToggleControls = viewModel::toggleControls,
+                onPreviousChapter = viewModel::previous,
                 onNextChapter = viewModel::next,
+                hasPreviousChapter = state.chapter?.previousChapterId != null,
                 hasNextChapter = state.chapter?.nextChapterId != null,
                 safeTopPadding = safeTopPadding,
                 controlsVisible = state.controlsVisible,
@@ -160,13 +164,25 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
             )
         }
 
-        if (state.controlsVisible && !state.loading && state.error == null) {
+        if (state.loading && state.chapter != null) {
+            LinearProgressIndicator(
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = safeTopPadding),
+            )
+        }
+
+        state.refreshError?.let { message ->
+            ReaderStatusBanner(message, colors)
+        }
+
+        if (state.controlsVisible && !state.loading && (state.error == null || state.chapter != null)) {
             ReaderControls(
                 bookTitle = state.chapter?.bookTitle ?: "阅读",
                 colors = colors,
                 onBack = onBack,
                 onCatalog = onCatalog,
                 onSettings = { viewModel.showSettings(true) },
+                onRetry = viewModel::retry,
+                showRetry = state.refreshError != null,
             )
         }
     }
@@ -355,23 +371,26 @@ private fun ScrollingReader(
     onAnchorChanged: (Int) -> Unit,
     onProgress: (Int) -> Unit,
     onToggleControls: () -> Unit,
+    onPreviousChapter: () -> Unit,
     onNextChapter: () -> Unit,
+    hasPreviousChapter: Boolean,
     hasNextChapter: Boolean,
     safeTopPadding: Dp,
     controlsVisible: Boolean,
 ) {
     val listState = rememberLazyListState()
+    val boundaryOffset = if (hasPreviousChapter) 1 else 0
     LaunchedEffect(blocks) {
         if (blocks.isNotEmpty() && listState.firstVisibleItemIndex == 0) {
-            listState.scrollToItem(anchorBlock.coerceIn(0, blocks.lastIndex))
+            listState.scrollToItem((anchorBlock + boundaryOffset).coerceIn(0, blocks.lastIndex + boundaryOffset))
         }
     }
     LaunchedEffect(listState, blocks.size) {
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
             .collect {
-                onAnchorChanged(it)
-                onProgress(it)
+                onAnchorChanged((it - boundaryOffset).coerceAtLeast(0))
+                onProgress((it - boundaryOffset).coerceAtLeast(0))
             }
     }
 
@@ -397,6 +416,10 @@ private fun ScrollingReader(
         ),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        if (blocks.isNotEmpty() && hasPreviousChapter) {
+            item { ReaderChapterEnd("上一章", onPreviousChapter, previous = true) }
+        }
+
         itemsIndexed(blocks) { _, block ->
             when (block) {
                 is ReaderBlock.Heading -> Text(block.text, style = preferences.headingStyle(colors.text))
@@ -411,19 +434,19 @@ private fun ScrollingReader(
         }
         if (blocks.isNotEmpty() && hasNextChapter) {
             item {
-                ReaderChapterEnd(onNextChapter)
+                ReaderChapterEnd("下一章", onNextChapter, previous = false)
             }
         }
     }
 }
 
 @Composable
-private fun ReaderChapterEnd(onNextChapter: () -> Unit) {
+private fun ReaderChapterEnd(label: String, onClick: () -> Unit, previous: Boolean) {
     androidx.compose.material3.TextButton(
-        onClick = onNextChapter,
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
     ) {
-        Text("下一章")
+        Text(if (previous) "‹  $label" else "$label  ›")
     }
 }
 
@@ -485,9 +508,17 @@ private fun BoxScope.ReaderControls(
     onBack: () -> Unit,
     onCatalog: () -> Unit,
     onSettings: () -> Unit,
+    onRetry: () -> Unit,
+    showRetry: Boolean,
 ) {
     TopAppBar(
-        title = { Text(bookTitle) },
+        title = {
+            Text(
+                bookTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
         navigationIcon = {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
@@ -500,6 +531,11 @@ private fun BoxScope.ReaderControls(
             IconButton(onClick = onSettings) {
                 Icon(Icons.Filled.Settings, contentDescription = "阅读设置")
             }
+            if (showRetry) {
+                IconButton(onClick = onRetry) {
+                    Icon(Icons.Filled.Refresh, contentDescription = "重试")
+                }
+            }
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = colors.background,
@@ -507,6 +543,22 @@ private fun BoxScope.ReaderControls(
             navigationIconContentColor = colors.text,
             actionIconContentColor = colors.text,
         ),
+    )
+}
+
+@Composable
+private fun ReaderStatusBanner(message: String, colors: ReaderColors) {
+    Text(
+        text = message,
+        color = colors.text,
+        style = MaterialTheme.typography.bodySmall,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .background(colors.background.copy(alpha = 0.96f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
     )
 }
 

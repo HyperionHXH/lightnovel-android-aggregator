@@ -9,7 +9,6 @@ import io.github.jiangyuyi.lightnovel.core.data.LightNovelRepository
 import io.github.jiangyuyi.lightnovel.core.network.CronetImageFetcher
 import io.github.jiangyuyi.lightnovel.core.network.LightNovelApi
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineLibrary
-import io.github.jiangyuyi.lightnovel.core.local.LocalLibraryStore
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesStore
 import io.github.jiangyuyi.lightnovel.core.preferences.AppPreferencesStore
 import io.github.jiangyuyi.lightnovel.core.reader.ChapterFontRepository
@@ -66,5 +65,4 @@ class AppContainer(application: Application) {
             coverFetcher = { url -> runCatching { api.getBytes(url) }.getOrNull() },
         )
     }
-    val localLibrary: LocalLibraryStore by lazy { LocalLibraryStore(application) }
 }

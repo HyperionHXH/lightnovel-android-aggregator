@@ -734,10 +734,17 @@ class LightNovelRepository(
 
     suspend fun unlockChapter(chapterId: Long) {
         val key = requireSession()
-        api.post(
+        val response = api.post(
             "api/new-content-read/unlock-chapter",
             jsonBody("security_key" to key, "chapter_id" to chapterId),
         )
+        // Some deployments return HTTP 200 with an explicit business failure.
+        // Do not persist a local unlock marker unless the server accepted it.
+        if (response.bool("success", "ok", "unlocked", "purchased") == false) {
+            throw io.github.jiangyuyi.lightnovel.core.network.ApiException(
+                response.string("message", "msg", "error").ifBlank { "章节解锁未完成" },
+            )
+        }
         sessionStore.markChapterUnlocked(chapterId)
         cache.removePrefix(userScope(), cachePrefix("chapter"))
         cache.removePrefix(userScope(), cachePrefix("chapters"))
@@ -778,10 +785,12 @@ class LightNovelRepository(
         val key = auth.string("security_key", "securityKey", "token")
             .ifBlank { data.string("security_key", "securityKey", "token") }
             .ifBlank { fallbackKey }
-        val uid = auth.long("uid").takeIf { it > 0 } ?: data.long("uid")
         val user = ApiParsers.user(data.obj("user"))
+        val uid = auth.long("uid").takeIf { it > 0 }
+            ?: data.long("uid").takeIf { it > 0 }
+            ?: user?.uid?.takeIf { it > 0 }
         if (key.isBlank()) error("登录响应缺少会话令牌")
-        val session = Session(true, key, uid, user)
+        val session = Session(true, key, uid ?: 0L, user)
         sessionStore.save(session)
         return session
     }

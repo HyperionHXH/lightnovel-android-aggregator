@@ -159,8 +159,24 @@ object ApiParsers {
         order = source.int("chapter_no", "order_no", "sort_index"),
         wordCount = source.long("word_count"),
         locked = source.bool("locked") == true || source.bool("unlocked") == false,
-        coinPrice = source.int("coin_price", "coinPrice", "price", "cost").takeIf { it > 0 },
+        coinPrice = source.coinPrice(),
     )
+
+    /** Accepts the scalar and object price shapes returned by different LK API versions. */
+    private fun JsonObject.coinPrice(): Int? {
+        fun parse(element: JsonElement?): Int? = when (element) {
+            is JsonPrimitive -> element.intOrNull
+                ?: element.contentOrNull?.trim()?.toBigDecimalOrNull()?.let { decimal ->
+                    decimal
+                        .takeIf { it.signum() > 0 && it.stripTrailingZeros().scale() <= 0 }
+                        ?.takeIf { it <= Int.MAX_VALUE.toBigDecimal() }
+                        ?.toInt()
+                }
+            is JsonObject -> parse(element.element("value", "amount", "coins", "coin_price", "price", "cost"))
+            else -> null
+        }
+        return parse(element("coin_price", "coinPrice", "price", "cost"))?.takeIf { it > 0 }
+    }
 
     fun chapterDetail(source: JsonObject): ChapterDetail {
         val body = source.obj("body_snapshot", "body", "content")
