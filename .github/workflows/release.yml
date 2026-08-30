@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-release-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -126,14 +126,23 @@ jobs:
               capture { print }
             ' CHANGELOG.md > release-notes.md
             if [[ -s release-notes.md ]]; then
-              gh release create "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256" \
+              if gh release create "$VERSION_TAG" \
                 --target "$GITHUB_SHA" \
                 --title "Mixn $version" \
-                --notes-file release-notes.md
+                --notes-file release-notes.md; then
+                :
+              else
+                gh release view "$VERSION_TAG"
+              fi
             else
-              gh release create "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256" \
+              if gh release create "$VERSION_TAG" \
                 --target "$GITHUB_SHA" \
                 --title "Mixn $version" \
-                --generate-notes
+                --generate-notes; then
+                :
+              else
+                gh release view "$VERSION_TAG"
+              fi
             fi
+            gh release upload "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256" --clobber
           fi

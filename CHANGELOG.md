@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- 新增独立 SwiftUI iOS 开发预览目标，支持轻之国度与轻书架登录、发现、搜索、详情和基础正文阅读；会话令牌使用 iOS 钥匙串保存。
+- 新增 macOS GitHub Actions iOS CI 与签名发布流程，支持 App Store / Ad Hoc IPA、证书和 provisioning profile 校验、SHA-256 校验文件及签名材料清理。
 - 应用品牌更新为“Mixn”，不再沿用旧客户端名称。
 - 移除本地文件导入、EPUB/TXT/HTML/FB2 解析、本地书库和本地阅读路由，保留在线章节下载、离线阅读和 EPUB 导出。
 - 统一两套在线阅读页的沉浸式控制、目录入口、章节前后边界、章节切换进度和失败重试提示。

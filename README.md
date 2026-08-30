@@ -6,6 +6,12 @@
 
 > 当前本地分支是轻之国度与轻书架双源聚合阅读器的开发预览版，已经接通双源独立发现、聚合搜索、统一书架（全部/已下载）、双源账号、通用详情/目录/正文、聚合阅读历史、来源更新快照、下拉刷新、离线下载和轻书架手动签到。在线章节 EPUB 导出已经可用；后台签到与发布级真机兼容性仍在开发和验证中。实施范围、接口边界和阶段进度见 [双源聚合开发大纲](docs/AGGREGATOR_PLAN.md) 与 [来源适配器 ADR](docs/adr/0001-built-in-source-adapters.md)。
 
+## iOS 支持
+
+仓库同时包含一个原生 SwiftUI iOS 开发预览目标，位于 [`iosApp/`](iosApp/)。它使用独立的 Swift 网络层和 iOS 钥匙串接入轻之国度与轻书架，不把 Android 的 Context、Cronet、DataStore 或 WorkManager 带入 iOS。当前预览版已支持双源登录、发现、搜索、详情和基础正文阅读；统一书架、完整章节目录、阅读设置、下载/EPUB 导出和后台签到仍需继续补齐，因此不能视为与 Android 功能等价的正式版。
+
+在 macOS 上打开 `iosApp/Mixn.xcodeproj`，选择 `Mixn` scheme 和 iOS 17 模拟器即可运行。GitHub Actions 的 [`iOS CI`](.github/workflows/ios.yml) 会在 macOS runner 上构建模拟器版本。iOS 发布签名由 [`iOS Release`](.github/workflows/ios-release.yml) 负责，但 Apple 证书、私钥、Team ID 和 provisioning profile 必须来自你自己的 Apple Developer 账号；配置方法和所需 Secrets 见 [`iosApp/README.md`](iosApp/README.md)。没有 Apple Developer 账号时只能运行模拟器或 Xcode 免费签名的个人设备调试版本，不能生成可供他人安装的正式 IPA。
+
 轻之国度（`lightnovel.fun`）的非官方 Android 客户端。项目基于 2026-08-06 实测的站点 Web BFF/API 实现，使用 Kotlin、Jetpack Compose 和 Material 3。
 
 [项目仓库与构建产物](https://github.com/HyperionHXH/lightnovel-android-aggregator)

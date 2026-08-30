@@ -13,3 +13,14 @@ artifacts/
 *.aab
 .signing/
 signing.properties
+
+# iOS/Xcode local build products and user state
+iosApp/DerivedData/
+iosApp/*.xcuserstate
+iosApp/**/*.xcuserstate
+iosApp/xcuserdata/
+iosApp/**/*.xcuserdata/
+iosApp/.swiftpm/
+iosApp/**/*.swiftmodule
+iosApp/*.ipa
+iosApp/*.mobileprovision
