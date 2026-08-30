@@ -49,7 +49,13 @@ struct DiscoverView: View {
                     ProgressView().padding(.top, 20)
                 }
                 if let message = model.message, model.books.isEmpty {
-                    ContentUnavailableView(message, systemImage: "wifi.exclamationmark")
+                    ContentUnavailableView {
+                        Label {
+                            Text(message)
+                        } icon: {
+                            Image(systemName: "wifi.exclamationmark")
+                        }
+                    }
                 } else {
                     List(model.books) { book in
                         NavigationLink(value: book) { BookRow(book: book) }
