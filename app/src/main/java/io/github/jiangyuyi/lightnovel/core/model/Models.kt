@@ -180,6 +180,7 @@ data class ReaderPreferences(
     val horizontalPadding: Int = 22,
     val theme: ReaderTheme = ReaderTheme.SEPIA,
     val mode: ReaderMode = ReaderMode.PAGED,
+    val showProgressBar: Boolean = true,
 )
 
 @Serializable

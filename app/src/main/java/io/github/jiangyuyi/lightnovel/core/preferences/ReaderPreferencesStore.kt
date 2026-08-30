@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.jiangyuyi.lightnovel.core.model.LocalReadingProgress
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
@@ -49,6 +50,7 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
             horizontalPadding = (values[PADDING] ?: 22).coerceIn(12, 40),
             theme = enumValueOrDefault(values[THEME], ReaderTheme.SEPIA),
             mode = enumValueOrDefault(values[MODE], ReaderMode.PAGED),
+            showProgressBar = values[SHOW_PROGRESS_BAR] ?: true,
         )
     }
 
@@ -60,6 +62,7 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
             values[PADDING] = value.horizontalPadding.coerceIn(12, 40)
             values[THEME] = value.theme.name
             values[MODE] = value.mode.name
+            values[SHOW_PROGRESS_BAR] = value.showProgressBar
         }
     }
 
@@ -112,6 +115,7 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
         val PADDING = intPreferencesKey("horizontal_padding")
         val THEME = stringPreferencesKey("theme")
         val MODE = stringPreferencesKey("reader_mode")
+        val SHOW_PROGRESS_BAR = booleanPreferencesKey("show_progress_bar")
 
         const val SOURCE_PROGRESS_PREFIX = "source_progress_"
 

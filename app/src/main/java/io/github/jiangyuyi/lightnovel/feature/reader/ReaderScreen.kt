@@ -28,13 +28,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -53,11 +49,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -88,6 +86,7 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -107,6 +106,11 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
     }
     var anchorBlock by rememberSaveable(state.chapter?.chapter?.id) {
         mutableIntStateOf(state.restoredParagraph.coerceAtLeast(0))
+    }
+    var menuVisible by rememberSaveable { mutableStateOf(false) }
+    val menuProgress = remember(state.restoredParagraph, blocks.size) {
+        val total = (blocks.size - 1).coerceAtLeast(1)
+        "已阅读 ${((state.restoredParagraph.toFloat() / total) * 100).roundToInt().coerceIn(0, 100)}%"
     }
 
     ImmersiveReaderEffect(
@@ -128,6 +132,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
             )
             state.preferences.mode == ReaderMode.PAGED -> PagedReader(
                 blocks = blocks,
+                chapterTitle = state.chapter?.chapter?.title ?: "当前章节",
                 preferences = state.preferences,
                 colors = colors,
                 anchorBlock = anchorBlock,
@@ -140,9 +145,11 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 hasNextChapter = state.chapter?.nextChapterId != null,
                 safeTopPadding = safeTopPadding,
                 controlsVisible = state.controlsVisible,
+                showProgressBar = state.preferences.showProgressBar,
             )
             else -> ScrollingReader(
                 blocks = blocks,
+                chapterTitle = state.chapter?.chapter?.title ?: "当前章节",
                 preferences = state.preferences,
                 colors = colors,
                 anchorBlock = anchorBlock,
@@ -155,6 +162,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 hasNextChapter = state.chapter?.nextChapterId != null,
                 safeTopPadding = safeTopPadding,
                 controlsVisible = state.controlsVisible,
+                showProgressBar = state.preferences.showProgressBar,
             )
         }
 
@@ -179,12 +187,28 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 bookTitle = state.chapter?.bookTitle ?: "阅读",
                 colors = colors,
                 onBack = onBack,
-                onCatalog = onCatalog,
-                onSettings = { viewModel.showSettings(true) },
-                onRetry = viewModel::retry,
-                showRetry = state.refreshError != null,
+                onMenu = { menuVisible = true },
             )
         }
+    }
+
+    if (menuVisible) {
+        ReaderMenuSheet(
+            bookTitle = state.chapter?.bookTitle ?: "阅读",
+            chapterTitle = state.chapter?.chapter?.title ?: "当前章节",
+            mode = state.preferences.mode,
+            progressText = menuProgress,
+            showProgressBar = state.preferences.showProgressBar,
+            background = colors.background,
+            contentColor = colors.text,
+            onDismiss = { menuVisible = false },
+            onCatalog = onCatalog,
+            onSettings = { viewModel.showSettings(true) },
+            onRetry = state.refreshError?.let { viewModel::retry },
+            onToggleProgressBar = {
+                viewModel.updatePreferences { it.copy(showProgressBar = !it.showProgressBar) }
+            },
+        )
     }
 
     if (state.settingsVisible) {
@@ -200,6 +224,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
 @Composable
 private fun PagedReader(
     blocks: List<ReaderBlock>,
+    chapterTitle: String,
     preferences: ReaderPreferences,
     colors: ReaderColors,
     anchorBlock: Int,
@@ -212,6 +237,7 @@ private fun PagedReader(
     hasNextChapter: Boolean,
     safeTopPadding: Dp,
     controlsVisible: Boolean,
+    showProgressBar: Boolean,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -220,7 +246,7 @@ private fun PagedReader(
         val headingStyle = preferences.headingStyle(colors.text)
         val horizontalPadding = preferences.horizontalPadding.dp
         val pageTopPadding = safeTopPadding + 8.dp + if (controlsVisible) 64.dp else 0.dp
-        val pageBottomPadding = 12.dp
+        val pageBottomPadding = if (controlsVisible && showProgressBar) 86.dp else 12.dp
         val pageWidthPx = with(density) { (maxWidth - horizontalPadding * 2).roundToPx().coerceAtLeast(1) }
         val pageHeightPx = with(density) {
             (maxHeight - pageTopPadding - pageBottomPadding).roundToPx().coerceAtLeast(1)
@@ -241,6 +267,9 @@ private fun PagedReader(
         val pagerState = rememberPagerState {
             pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0
         }
+        val pagerScope = rememberCoroutineScope()
+        var scrubValue by remember { mutableFloatStateOf(0f) }
+        var scrubbing by remember { mutableStateOf(false) }
         var turnRequest by remember { mutableStateOf<ReaderTurnRequest?>(null) }
         var turnRequestToken by remember { mutableIntStateOf(0) }
 
@@ -255,6 +284,11 @@ private fun PagedReader(
             snapshotFlow { pagerState.currentPage }
                 .distinctUntilChanged()
                 .collect { pageIndex ->
+                    if (!scrubbing) {
+                        scrubValue = if (pages.size <= 1) 0f else {
+                            pageIndex.coerceIn(0, pages.lastIndex).toFloat() / pages.lastIndex.toFloat()
+                        }
+                    }
                     pages.getOrNull(pageIndex)?.firstBlockIndex?.let {
                         onAnchorChanged(it)
                         onProgress(it)
@@ -341,8 +375,8 @@ private fun PagedReader(
                         when {
                             abs(deltaX) <= viewConfiguration.touchSlop && abs(deltaY) <= viewConfiguration.touchSlop -> {
                                 when (endX / size.width.toFloat().coerceAtLeast(1f)) {
-                                    in 0f..0.30f -> requestTurn(ReaderTurnDirection.PREVIOUS)
-                                    in 0.70f..1f -> requestTurn(ReaderTurnDirection.NEXT)
+                                    in 0f..0.25f -> requestTurn(ReaderTurnDirection.PREVIOUS)
+                                    in 0.75f..1f -> requestTurn(ReaderTurnDirection.NEXT)
                                     else -> onToggleControls()
                                 }
                             }
@@ -359,12 +393,32 @@ private fun PagedReader(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp),
             )
         }
+        if (controlsVisible && showProgressBar) {
+            val visiblePage = pagerState.currentPage.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
+            ReaderProgressBar(
+                label = "$chapterTitle · 第 ${visiblePage + 1} / ${pages.size.coerceAtLeast(1)} 页",
+                value = scrubValue,
+                background = colors.background,
+                contentColor = colors.text,
+                onValueChange = {
+                    scrubbing = true
+                    scrubValue = it
+                },
+                onValueChangeFinished = {
+                    val target = if (pages.size <= 1) 0 else (scrubValue * pages.lastIndex).roundToInt()
+                    scrubbing = false
+                    pagerScope.launch { pagerState.scrollToPage(target.coerceIn(0, pages.lastIndex.coerceAtLeast(0))) }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
     }
 }
 
 @Composable
 private fun ScrollingReader(
     blocks: List<ReaderBlock>,
+    chapterTitle: String,
     preferences: ReaderPreferences,
     colors: ReaderColors,
     anchorBlock: Int,
@@ -377,9 +431,14 @@ private fun ScrollingReader(
     hasNextChapter: Boolean,
     safeTopPadding: Dp,
     controlsVisible: Boolean,
+    showProgressBar: Boolean,
 ) {
     val listState = rememberLazyListState()
+    val listScope = rememberCoroutineScope()
     val boundaryOffset = if (hasPreviousChapter) 1 else 0
+    val progressCount = (blocks.size - 1).coerceAtLeast(1)
+    var scrubValue by remember { mutableFloatStateOf(0f) }
+    var scrubbing by remember { mutableStateOf(false) }
     LaunchedEffect(blocks) {
         if (blocks.isNotEmpty() && listState.firstVisibleItemIndex == 0) {
             listState.scrollToItem((anchorBlock + boundaryOffset).coerceIn(0, blocks.lastIndex + boundaryOffset))
@@ -391,51 +450,78 @@ private fun ScrollingReader(
             .collect {
                 onAnchorChanged((it - boundaryOffset).coerceAtLeast(0))
                 onProgress((it - boundaryOffset).coerceAtLeast(0))
+                if (!scrubbing) {
+                    scrubValue = (it - boundaryOffset).coerceIn(0, progressCount).toFloat() / progressCount.toFloat()
+                }
             }
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(top = safeTopPadding + if (controlsVisible) 64.dp else 0.dp)
-            .pointerInput(onToggleControls) {
-                detectTapGestures { position ->
-                    val horizontalFraction = position.x / size.width.toFloat().coerceAtLeast(1f)
-                    val verticalFraction = position.y / size.height.toFloat().coerceAtLeast(1f)
-                    if (horizontalFraction in 0.30f..0.70f && verticalFraction in 0.25f..0.75f) {
-                        onToggleControls()
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = safeTopPadding + if (controlsVisible) 64.dp else 0.dp)
+                .pointerInput(onToggleControls) {
+                    detectTapGestures { position ->
+                        val horizontalFraction = position.x / size.width.toFloat().coerceAtLeast(1f)
+                        val verticalFraction = position.y / size.height.toFloat().coerceAtLeast(1f)
+                        if (horizontalFraction in 0.30f..0.70f && verticalFraction in 0.25f..0.75f) {
+                            onToggleControls()
+                        }
                     }
-                }
-            },
-        contentPadding = PaddingValues(
-            start = preferences.horizontalPadding.dp,
-            end = preferences.horizontalPadding.dp,
-            top = 8.dp,
-            bottom = 12.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        if (blocks.isNotEmpty() && hasPreviousChapter) {
-            item { ReaderChapterEnd("上一章", onPreviousChapter, previous = true) }
-        }
+                },
+            contentPadding = PaddingValues(
+                start = preferences.horizontalPadding.dp,
+                end = preferences.horizontalPadding.dp,
+                top = 8.dp,
+                bottom = if (controlsVisible && showProgressBar) 86.dp else 12.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (blocks.isNotEmpty() && hasPreviousChapter) {
+                item { ReaderChapterEnd("上一章", onPreviousChapter, previous = true) }
+            }
 
-        itemsIndexed(blocks) { _, block ->
-            when (block) {
-                is ReaderBlock.Heading -> Text(block.text, style = preferences.headingStyle(colors.text))
-                is ReaderBlock.Paragraph -> Text(
-                    block.text,
-                    style = preferences.paragraphStyle(colors.text).copy(
-                        textIndent = if (block.firstLineIndent) TextIndent(firstLine = preferences.fontSize.sp * 2) else TextIndent.None,
-                    ),
-                )
-                is ReaderBlock.Illustration -> ReaderIllustration(block, Modifier.fillMaxWidth(), colors)
+            itemsIndexed(blocks) { _, block ->
+                when (block) {
+                    is ReaderBlock.Heading -> Text(block.text, style = preferences.headingStyle(colors.text))
+                    is ReaderBlock.Paragraph -> Text(
+                        block.text,
+                        style = preferences.paragraphStyle(colors.text).copy(
+                            textIndent = if (block.firstLineIndent) TextIndent(firstLine = preferences.fontSize.sp * 2) else TextIndent.None,
+                        ),
+                    )
+                    is ReaderBlock.Illustration -> ReaderIllustration(block, Modifier.fillMaxWidth(), colors)
+                }
+            }
+            if (blocks.isNotEmpty() && hasNextChapter) {
+                item {
+                    ReaderChapterEnd("下一章", onNextChapter, previous = false)
+                }
             }
         }
-        if (blocks.isNotEmpty() && hasNextChapter) {
-            item {
-                ReaderChapterEnd("下一章", onNextChapter, previous = false)
-            }
+        if (controlsVisible && showProgressBar) {
+            ReaderProgressBar(
+                label = "$chapterTitle · 已读 ${(scrubValue * 100).roundToInt().coerceIn(0, 100)}%",
+                value = scrubValue,
+                background = colors.background,
+                contentColor = colors.text,
+                onValueChange = {
+                    scrubbing = true
+                    scrubValue = it
+                },
+                onValueChangeFinished = {
+                    val targetBlock = (scrubValue * progressCount).roundToInt().coerceIn(0, progressCount)
+                    scrubbing = false
+                    // The first list item is an optional chapter boundary; the heading is block zero.
+                    listScope.launch {
+                        val maxIndex = (blocks.lastIndex + boundaryOffset).coerceAtLeast(0)
+                        listState.scrollToItem((targetBlock + boundaryOffset).coerceIn(0, maxIndex))
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 }
@@ -506,10 +592,7 @@ private fun BoxScope.ReaderControls(
     bookTitle: String,
     colors: ReaderColors,
     onBack: () -> Unit,
-    onCatalog: () -> Unit,
-    onSettings: () -> Unit,
-    onRetry: () -> Unit,
-    showRetry: Boolean,
+    onMenu: () -> Unit,
 ) {
     TopAppBar(
         title = {
@@ -525,16 +608,8 @@ private fun BoxScope.ReaderControls(
             }
         },
         actions = {
-            IconButton(onClick = onCatalog) {
-                Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录")
-            }
-            IconButton(onClick = onSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "阅读设置")
-            }
-            if (showRetry) {
-                IconButton(onClick = onRetry) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "重试")
-                }
+            IconButton(onClick = onMenu) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "阅读菜单")
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(

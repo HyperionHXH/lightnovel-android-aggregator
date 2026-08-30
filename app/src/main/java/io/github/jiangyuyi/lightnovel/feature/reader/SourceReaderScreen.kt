@@ -21,10 +21,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -36,6 +34,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -89,6 +89,13 @@ fun SourceReaderScreen(
     val listState = rememberLazyListState()
     val scrollBoundaryOffset = if (chapter?.previousChapterKey != null) 1 else 0
     val progressBlockCount = (blocks.size - 1).coerceAtLeast(1)
+    val listScope = rememberCoroutineScope()
+    var menuVisible by remember { mutableStateOf(false) }
+    var scrollScrubValue by remember(chapter?.chapter?.key) { mutableFloatStateOf(0f) }
+    var scrollScrubbing by remember { mutableStateOf(false) }
+    val menuProgress = remember(state.restoredBlock, progressBlockCount) {
+        "已阅读 ${((state.restoredBlock.toFloat() / progressBlockCount) * 100).roundToInt().coerceIn(0, 100)}%"
+    }
 
     ImmersiveReaderEffect(
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
@@ -109,6 +116,10 @@ fun SourceReaderScreen(
                         (index - scrollBoundaryOffset - 1).coerceAtLeast(0),
                         progressBlockCount,
                     )
+                    if (!scrollScrubbing) {
+                        val blockIndex = (index - scrollBoundaryOffset - 1).coerceIn(0, progressBlockCount)
+                        scrollScrubValue = blockIndex.toFloat() / progressBlockCount.toFloat()
+                    }
                 }
         }
     }
@@ -123,6 +134,7 @@ fun SourceReaderScreen(
             else -> if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.PAGED) {
                 SourcePagedReader(
                     blocks = blocks,
+                    chapterTitle = chapter.chapter.title,
                     preferences = state.preferences,
                     colors = colors,
                     chapterFontFamily = state.chapterFontFamily,
@@ -134,6 +146,7 @@ fun SourceReaderScreen(
                     onProgress = { index -> viewModel.saveProgress((index - 1).coerceAtLeast(0), progressBlockCount) },
                     onToggleControls = viewModel::toggleControls,
                     controlsVisible = state.controlsVisible,
+                    showProgressBar = state.preferences.showProgressBar,
                 )
             } else LazyColumn(
                 state = listState,
@@ -153,7 +166,7 @@ fun SourceReaderScreen(
                     start = state.preferences.horizontalPadding.dp,
                     end = state.preferences.horizontalPadding.dp,
                     top = 18.dp,
-                    bottom = 18.dp,
+                    bottom = if (state.controlsVisible && state.preferences.showProgressBar) 86.dp else 18.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -208,16 +221,8 @@ fun SourceReaderScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = onCatalog) {
-                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "目录", tint = colors.text)
-                    }
-                    IconButton(onClick = { viewModel.showSettings(true) }) {
-                        Icon(Icons.Filled.Settings, contentDescription = "阅读设置", tint = colors.text)
-                    }
-                    if (state.error != null) {
-                        IconButton(onClick = viewModel::retry) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "重试", tint = colors.text)
-                        }
+                    IconButton(onClick = { menuVisible = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "阅读菜单", tint = colors.text)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -228,6 +233,49 @@ fun SourceReaderScreen(
                 ),
             )
         }
+
+        if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL &&
+            state.controlsVisible && state.preferences.showProgressBar && chapter != null
+        ) {
+            ReaderProgressBar(
+                label = "${chapter.chapter.title} · 已读 ${(scrollScrubValue * 100).roundToInt().coerceIn(0, 100)}%",
+                value = scrollScrubValue,
+                background = colors.background,
+                contentColor = colors.text,
+                onValueChange = {
+                    scrollScrubbing = true
+                    scrollScrubValue = it
+                },
+                onValueChangeFinished = {
+                    val targetBlock = (scrollScrubValue * progressBlockCount).roundToInt().coerceIn(0, progressBlockCount)
+                    scrollScrubbing = false
+                    listScope.launch {
+                        val maxIndex = (blocks.lastIndex + scrollBoundaryOffset).coerceAtLeast(0)
+                        listState.scrollToItem((targetBlock + scrollBoundaryOffset + 1).coerceIn(0, maxIndex))
+                    }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+
+    if (menuVisible) {
+        ReaderMenuSheet(
+            bookTitle = chapter?.novelTitle ?: "阅读",
+            chapterTitle = chapter?.chapter?.title ?: "当前章节",
+            mode = state.preferences.mode,
+            progressText = menuProgress,
+            showProgressBar = state.preferences.showProgressBar,
+            background = colors.background,
+            contentColor = colors.text,
+            onDismiss = { menuVisible = false },
+            onCatalog = onCatalog,
+            onSettings = { viewModel.showSettings(true) },
+            onRetry = state.error?.let { viewModel::retry },
+            onToggleProgressBar = {
+                viewModel.updatePreferences { it.copy(showProgressBar = !it.showProgressBar) }
+            },
+        )
     }
 
     if (state.settingsVisible) {
@@ -242,6 +290,7 @@ fun SourceReaderScreen(
 @Composable
 private fun SourcePagedReader(
     blocks: List<ReaderBlock>,
+    chapterTitle: String,
     preferences: ReaderPreferences,
     colors: SourceReaderColors,
     chapterFontFamily: FontFamily?,
@@ -253,6 +302,7 @@ private fun SourcePagedReader(
     onProgress: (Int) -> Unit,
     onToggleControls: () -> Unit,
     controlsVisible: Boolean,
+    showProgressBar: Boolean,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -260,7 +310,12 @@ private fun SourcePagedReader(
         val horizontalPadding = preferences.horizontalPadding.dp
         val pageWidth = with(density) { (maxWidth - horizontalPadding * 2).roundToPx().coerceAtLeast(1) }
         val pageHeight = with(density) {
-            (maxHeight - 28.dp - if (controlsVisible) 64.dp else 0.dp).roundToPx().coerceAtLeast(1)
+            (
+                maxHeight -
+                    (if (controlsVisible) 64.dp else 0.dp) -
+                    (if (controlsVisible && showProgressBar) 86.dp else 0.dp) -
+                    28.dp
+            ).roundToPx().coerceAtLeast(1)
         }
         val pages = remember(blocks, preferences, pageWidth, pageHeight) {
             paginateReaderBlocks(
@@ -276,14 +331,24 @@ private fun SourcePagedReader(
         }
         val pagerState = rememberPagerState { pages.size.coerceAtLeast(1) }
         val pagerScope = rememberCoroutineScope()
-        LaunchedEffect(pages, anchorBlock) {
-            val target = pages.indexOfFirst { anchorBlock in it.firstBlockIndex..it.lastBlockIndex }
-                .takeIf { it >= 0 } ?: 0
+        var currentAnchor by remember(blocks) { mutableIntStateOf(anchorBlock) }
+        var scrubValue by remember { mutableFloatStateOf(0f) }
+        var scrubbing by remember { mutableStateOf(false) }
+        LaunchedEffect(pages) {
+            val target = pages.indexOfFirst { currentAnchor in it.firstBlockIndex..it.lastBlockIndex }
+                .takeIf { it >= 0 }
+                ?: pages.indexOfLast { it.firstBlockIndex <= currentAnchor }.coerceAtLeast(0)
             pagerState.scrollToPage(target.coerceIn(0, pages.lastIndex.coerceAtLeast(0)))
         }
         LaunchedEffect(pagerState, pages) {
             snapshotFlow { pagerState.currentPage }.distinctUntilChanged().collect { index ->
-                pages.getOrNull(index)?.let { onProgress(it.firstBlockIndex) }
+                if (!scrubbing) {
+                    scrubValue = if (pages.size <= 1) 0f else index.coerceIn(0, pages.lastIndex).toFloat() / pages.lastIndex.toFloat()
+                }
+                pages.getOrNull(index)?.let {
+                    currentAnchor = it.firstBlockIndex
+                    onProgress(it.firstBlockIndex)
+                }
             }
         }
         HorizontalPager(
@@ -292,19 +357,19 @@ private fun SourcePagedReader(
                 .fillMaxSize()
                 .padding(
                     top = 8.dp + if (controlsVisible) 64.dp else 0.dp,
-                    bottom = 12.dp,
+                    bottom = if (controlsVisible && showProgressBar) 86.dp else 12.dp,
                 )
                 .pointerInput(pagerState.currentPage, pages.size, hasNextChapter) {
                     detectTapGestures { position ->
                         when {
-                            position.x < size.width * 0.35f -> {
+                            position.x < size.width * 0.25f -> {
                                 if (pagerState.currentPage > 0) {
                                     pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
                                 } else if (hasPreviousChapter) {
                                     onPreviousChapter()
                                 }
                             }
-                            position.x > size.width * 0.65f -> {
+                            position.x > size.width * 0.75f -> {
                                 if (pagerState.currentPage < pages.lastIndex) {
                                     pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                                 } else if (hasNextChapter) {
@@ -341,6 +406,25 @@ private fun SourcePagedReader(
                     }
                 }
             }
+        }
+        if (controlsVisible && showProgressBar) {
+            val visiblePage = pagerState.currentPage.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
+            ReaderProgressBar(
+                label = "$chapterTitle · 第 ${visiblePage + 1} / ${pages.size.coerceAtLeast(1)} 页",
+                value = scrubValue,
+                background = colors.background,
+                contentColor = colors.text,
+                onValueChange = {
+                    scrubbing = true
+                    scrubValue = it
+                },
+                onValueChangeFinished = {
+                    val target = if (pages.size <= 1) 0 else (scrubValue * pages.lastIndex).roundToInt()
+                    scrubbing = false
+                    pagerScope.launch { pagerState.scrollToPage(target.coerceIn(0, pages.lastIndex.coerceAtLeast(0))) }
+                },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
         }
     }
 }
