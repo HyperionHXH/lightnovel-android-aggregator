@@ -10,6 +10,8 @@ internal object ReaderContentParser {
     private val paragraphRegex = Regex("<p([^>]*)>(.*?)</p>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val imageRegex = Regex("<img\\b([^>]*)>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
     private val tagRegex = Regex("<[^>]+>")
+    private val breakTagRegex = Regex("<br\\s*/?>", RegexOption.IGNORE_CASE)
+    private val htmlEntityRegex = Regex("&#(x[0-9a-f]+|[0-9]+);", RegexOption.IGNORE_CASE)
     private val resourceTagRegex = Regex("\\[res][^]]*?\\[/res]", RegexOption.IGNORE_CASE)
 
     fun parse(bodyHtml: String, bodyText: String): List<ReaderBlock> {
@@ -55,7 +57,7 @@ internal object ReaderContentParser {
 
     private fun MutableList<ReaderBlock>.addText(raw: String, firstLineIndent: Boolean) {
         val text = raw
-            .replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n")
+            .replace(breakTagRegex, "\n")
             .replace(tagRegex, "")
             .decodeHtmlEntities()
             .trim()
@@ -87,7 +89,7 @@ internal object ReaderContentParser {
             .replace("&gt;", ">", ignoreCase = true)
             .replace("&quot;", "\"", ignoreCase = true)
             .replace("&#39;", "'", ignoreCase = true)
-        value = Regex("&#(x[0-9a-f]+|[0-9]+);", RegexOption.IGNORE_CASE).replace(value) { match ->
+        value = htmlEntityRegex.replace(value) { match ->
             val raw = match.groupValues[1]
             val codePoint = if (raw.startsWith("x", ignoreCase = true)) raw.drop(1).toIntOrNull(16) else raw.toIntOrNull()
             codePoint?.takeIf(Character::isValidCodePoint)?.let { String(Character.toChars(it)) } ?: match.value
