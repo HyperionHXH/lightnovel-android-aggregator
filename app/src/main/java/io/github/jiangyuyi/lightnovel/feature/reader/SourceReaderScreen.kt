@@ -356,7 +356,16 @@ private fun SourcePagedReader(
                     28.dp
             ).roundToPx().coerceAtLeast(1)
         }
-        val pages = remember(blocks, preferences, pageWidth, pageHeight) {
+        val pages = remember(
+            blocks,
+            preferences.font,
+            preferences.fontSize,
+            preferences.lineHeight,
+            preferences.horizontalPadding,
+            chapterFontFamily,
+            pageWidth,
+            pageHeight,
+        ) {
             paginateReaderBlocks(
                 blocks = blocks,
                 textMeasurer = textMeasurer,
