@@ -3,7 +3,7 @@
 更新时间：2026-09-09  
 仓库：`https://github.com/HyperionHXH/lightnovel-android-aggregator.git`  
 当前分支：`feature/multi-source-foundation`  
-当前提交：`517e92e perf: reuse reader parser regular expressions`
+当前提交：`2001c43 perf: narrow source reader pagination keys`（后续认证修正与交互增强已继续推送）
 
 ## 项目定位
 
@@ -74,6 +74,7 @@ git clone -b feature/multi-source-foundation https://github.com/HyperionHXH/ligh
 - Android 图片绘制性能受模拟器渲染后端影响；应在真实设备和 GPU 模式 AVD 上复测。
 - 桌面端仍为 Swing/JVM，功能已覆盖基础流程，但视觉细节和与 Android 的完全一致性仍可继续优化。
 - Java Android API 的 deprecated warning（如 `statusBarColor`）目前不阻断构建。
+- 最近阅读体验增强提交：`105a36c`（文字样式分组）、`9a5589b`（控制栏分层）、`9960815`（点击区域）、`5fa1c96`（音量键/常亮）、`5ff43c4`（认证错误解释）、`2001c43`（分页缓存键收窄）。
 
 ## 后续建议
 
@@ -81,4 +82,3 @@ git clone -b feature/multi-source-foundation https://github.com/HyperionHXH/ligh
 - 为来源适配器补充请求 fixture/契约测试，接口变更时先更新 fixture 再改解析器。
 - 对阅读器增加 Macrobenchmark 或 Android Studio Frame Timeline，重点观察图片密集章节和控制栏动画。
 - 继续统一 Android/桌面端的加载、错误、分页和键鼠/触控交互，但不要重新引入已移除的本地 EPUB 阅读功能。
-
