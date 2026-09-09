@@ -70,7 +70,6 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
-import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -159,7 +158,10 @@ fun SourceReaderScreen(
     ) {
         when {
             state.error != null && chapter == null -> ErrorPane(state.error!!, onRetry = viewModel::retry)
-            chapter == null && state.loading -> LoadingPane()
+            chapter == null && state.loading -> ReaderLoadingPane(
+                background = colors.background,
+                contentColor = colors.text,
+            )
             chapter == null -> EmptyPane("章节不存在或暂不可见")
             else -> if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.PAGED) {
                 SourcePagedReader(

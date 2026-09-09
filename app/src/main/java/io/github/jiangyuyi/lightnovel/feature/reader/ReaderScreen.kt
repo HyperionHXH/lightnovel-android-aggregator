@@ -92,7 +92,6 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderTapInversion
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTapZone
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
-import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -134,7 +133,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
 
     Box(modifier = Modifier.fillMaxSize().background(colors.background)) {
         when {
-            state.loading && state.chapter == null -> LoadingPane(Modifier.align(Alignment.Center))
+            state.loading && state.chapter == null -> ReaderLoadingPane(
+                background = colors.background,
+                contentColor = colors.text,
+            )
             state.error != null && state.chapter == null -> ErrorPane(
                 message = state.error!!,
                 modifier = Modifier.align(Alignment.Center),
