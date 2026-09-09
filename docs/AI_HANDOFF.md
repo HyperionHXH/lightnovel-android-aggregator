@@ -3,7 +3,7 @@
 更新时间：2026-09-09  
 仓库：`https://github.com/HyperionHXH/lightnovel-android-aggregator.git`  
 当前分支：`feature/multi-source-foundation`  
-当前提交：`2001c43 perf: narrow source reader pagination keys`（后续认证修正与交互增强已继续推送）
+当前分支最新提交以 `git log -1` 为准；本文件记录的最近认证与阅读交互增强均已随分支提交推送。
 
 ## 项目定位
 
@@ -38,6 +38,8 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 最近提交：`694d0b5`、`e21c6d0`、`517e92e`。修复重点是阅读页控制栏卡顿：系统 Insets 只在进入阅读页或主题变化时配置，双源章节正文按章节 `remember`，解析器正则静态复用。
 
 已在本机 AVD `noval_api35`（Android API 35）安装启动验证：可进入在线章节，正文/封面/插图显示，无 Mixn ANR 或崩溃；首次展开约 32ms，收起约 11ms，连续滚动非 legacy jank 约 4.5%。`swiftshader_indirect` 软件渲染下大图会掉帧，宿主 GPU 模式更适合性能测试。偶发 `UiAutomationService already registered` 属测试工具重复注册，不是应用崩溃。
+
+本轮（2026-09-09）新增：阅读字体增加系统默认；阅读设置增加反转点击区域、屏幕方向和图片缩放，并持久化到 DataStore；方向切换通过 `configChanges` 保持当前阅读栈。来源账号登录支持密码显示切换、错误字段高亮和更明确的官网注册/改密文案。桌面端同步点击区域、反转和图片缩放，新增 `DesktopReaderInteractionTest`。
 
 ## 构建与测试
 

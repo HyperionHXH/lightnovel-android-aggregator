@@ -153,6 +153,7 @@ enum class DiscoverChannel(val label: String) {
 
 @Serializable
 enum class ReaderFont(val label: String) {
+    DEFAULT("系统默认"),
     SANS("无衬线"),
     SERIF("衬线"),
     MONO("等宽"),
@@ -183,6 +184,31 @@ enum class ReaderTapZone(val label: String) {
 }
 
 @Serializable
+enum class ReaderTapInversion(val label: String) {
+    NONE("无"),
+    LEFT_RIGHT("左右"),
+    UP_DOWN("上下"),
+    ALL("全部"),
+}
+
+@Serializable
+enum class ReaderOrientation(val label: String) {
+    DEFAULT("跟随系统"),
+    PORTRAIT("竖屏"),
+    LANDSCAPE("横屏"),
+}
+
+@Serializable
+enum class ReaderImageScale(val label: String) {
+    FIT("适应屏幕"),
+    FILL("拉伸"),
+    FIT_WIDTH("适应宽度"),
+    FIT_HEIGHT("适应高度"),
+    ORIGINAL("原始大小"),
+    SMART("智能填充"),
+}
+
+@Serializable
 data class ReaderPreferences(
     val font: ReaderFont = ReaderFont.SERIF,
     val fontSize: Float = 21f,
@@ -191,6 +217,9 @@ data class ReaderPreferences(
     val theme: ReaderTheme = ReaderTheme.SEPIA,
     val mode: ReaderMode = ReaderMode.PAGED,
     val tapZone: ReaderTapZone = ReaderTapZone.DEFAULT,
+    val tapInversion: ReaderTapInversion = ReaderTapInversion.NONE,
+    val orientation: ReaderOrientation = ReaderOrientation.DEFAULT,
+    val imageScale: ReaderImageScale = ReaderImageScale.FIT,
     val volumeKeys: Boolean = false,
     val keepScreenOn: Boolean = true,
     val showProgressBar: Boolean = true,

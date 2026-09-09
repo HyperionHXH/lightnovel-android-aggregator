@@ -2,11 +2,16 @@ package io.github.jiangyuyi.lightnovel.feature.reader
 
 import android.view.KeyEvent
 import android.view.View
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import io.github.jiangyuyi.lightnovel.core.model.ReaderOrientation
 
 @Composable
 internal fun ReaderKeepScreenOnEffect(enabled: Boolean) {
@@ -15,6 +20,23 @@ internal fun ReaderKeepScreenOnEffect(enabled: Boolean) {
         val previous = view.keepScreenOn
         view.keepScreenOn = enabled
         onDispose { view.keepScreenOn = previous }
+    }
+}
+
+@Composable
+internal fun ReaderOrientationEffect(orientation: ReaderOrientation) {
+    val context = LocalContext.current
+    DisposableEffect(context, orientation) {
+        val activity = context.findReaderActivity()
+        val previous = activity?.requestedOrientation
+        activity?.requestedOrientation = when (orientation) {
+            ReaderOrientation.DEFAULT -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            ReaderOrientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            ReaderOrientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+        onDispose {
+            previous?.let { activity?.requestedOrientation = it }
+        }
     }
 }
 
@@ -48,4 +70,10 @@ internal fun ReaderVolumeKeyEffect(
             if (!hadFocus) view.clearFocus()
         }
     }
+}
+
+private tailrec fun Context.findReaderActivity(): android.app.Activity? = when (this) {
+    is android.app.Activity -> this
+    is ContextWrapper -> baseContext.findReaderActivity()
+    else -> null
 }

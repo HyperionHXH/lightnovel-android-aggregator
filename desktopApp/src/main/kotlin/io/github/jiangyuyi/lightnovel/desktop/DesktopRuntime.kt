@@ -61,6 +61,18 @@ class DesktopPreferencesStore(
         get() = preferences.get("readerTheme", "sepia")
         set(value) = preferences.put("readerTheme", value)
 
+    var tapZone: String
+        get() = preferences.get("tapZone", "default")
+        set(value) = preferences.put("tapZone", value)
+
+    var tapInversion: String
+        get() = preferences.get("tapInversion", "none")
+        set(value) = preferences.put("tapInversion", value)
+
+    var imageScale: String
+        get() = preferences.get("imageScale", "fit")
+        set(value) = preferences.put("imageScale", value)
+
     var showProgressBar: Boolean
         get() = preferences.getBoolean("showProgressBar", true)
         set(value) = preferences.putBoolean("showProgressBar", value)

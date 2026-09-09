@@ -1,6 +1,7 @@
 package io.github.jiangyuyi.lightnovel.feature.reader
 
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTapZone
+import io.github.jiangyuyi.lightnovel.core.model.ReaderTapInversion
 
 internal enum class ReaderTapAction {
     PREVIOUS,
@@ -10,9 +11,16 @@ internal enum class ReaderTapAction {
 }
 
 /** Maps a normalized tap position to a reader action without touching UI state. */
-internal fun readerTapAction(zone: ReaderTapZone, xFraction: Float, yFraction: Float): ReaderTapAction {
-    val x = xFraction.coerceIn(0f, 1f)
-    val y = yFraction.coerceIn(0f, 1f)
+internal fun readerTapAction(
+    zone: ReaderTapZone,
+    xFraction: Float,
+    yFraction: Float,
+    inversion: ReaderTapInversion = ReaderTapInversion.NONE,
+): ReaderTapAction {
+    var x = xFraction.coerceIn(0f, 1f)
+    var y = yFraction.coerceIn(0f, 1f)
+    if (inversion == ReaderTapInversion.LEFT_RIGHT || inversion == ReaderTapInversion.ALL) x = 1f - x
+    if (inversion == ReaderTapInversion.UP_DOWN || inversion == ReaderTapInversion.ALL) y = 1f - y
     return when (zone) {
         ReaderTapZone.DEFAULT -> when {
             x < 0.25f -> ReaderTapAction.PREVIOUS

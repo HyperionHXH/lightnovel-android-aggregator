@@ -65,6 +65,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.SubcomposeAsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
+import io.github.jiangyuyi.lightnovel.core.model.ReaderImageScale
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
@@ -109,6 +110,7 @@ fun SourceReaderScreen(
         barColor = colors.background,
     )
     ReaderKeepScreenOnEffect(state.preferences.keepScreenOn)
+    ReaderOrientationEffect(state.preferences.orientation)
     if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL) {
         ReaderVolumeKeyEffect(
             enabled = state.preferences.volumeKeys && !state.controlsVisible &&
@@ -422,12 +424,19 @@ private fun SourcePagedReader(
                     top = safeTopPadding + 8.dp,
                     bottom = 12.dp,
                 )
-                .pointerInput(pagerState.currentPage, pages.size, hasNextChapter, preferences.tapZone) {
+                .pointerInput(
+                    pagerState.currentPage,
+                    pages.size,
+                    hasNextChapter,
+                    preferences.tapZone,
+                    preferences.tapInversion,
+                ) {
                     detectTapGestures { position ->
                         when (readerTapAction(
                             preferences.tapZone,
                             position.x / size.width.toFloat().coerceAtLeast(1f),
                             position.y / size.height.toFloat().coerceAtLeast(1f),
+                            preferences.tapInversion,
                         )) {
                             ReaderTapAction.PREVIOUS -> {
                                 if (pagerState.currentPage > 0) {
@@ -470,6 +479,7 @@ private fun SourcePagedReader(
                         is ReaderPageElement.Illustration -> ReaderRemoteImage(
                             url = element.block.url,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).height(with(density) { element.heightPx.toDp() }),
+                            imageScale = preferences.imageScale,
                         )
                     }
                 }
@@ -529,7 +539,7 @@ private fun SourceReaderBlock(
             } else {
                 modifier.heightIn(min = 180.dp, max = 520.dp)
             }
-            ReaderRemoteImage(block.url, modifier)
+            ReaderRemoteImage(block.url, modifier, preferences.imageScale)
         }
     }
 }
@@ -545,13 +555,17 @@ private fun SourceChapterBoundary(label: String, onClick: () -> Unit, previous: 
 }
 
 @Composable
-private fun ReaderRemoteImage(url: String, modifier: Modifier) {
+private fun ReaderRemoteImage(
+    url: String,
+    modifier: Modifier,
+    imageScale: ReaderImageScale = ReaderImageScale.FIT,
+) {
     var zoomed by remember(url) { mutableStateOf(false) }
     SubcomposeAsyncImage(
         model = url,
         contentDescription = "插图",
         modifier = modifier.clickable { zoomed = true },
-        contentScale = ContentScale.Fit,
+        contentScale = imageScale.contentScale(),
         loading = {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 androidx.compose.material3.CircularProgressIndicator(strokeWidth = 2.dp)
@@ -576,7 +590,7 @@ private fun ReaderRemoteImage(url: String, modifier: Modifier) {
                     model = url,
                     contentDescription = "放大插图",
                     modifier = Modifier.fillMaxSize().padding(16.dp),
-                    contentScale = ContentScale.Fit,
+                    contentScale = imageScale.contentScale(),
                 )
             }
         }
@@ -598,6 +612,7 @@ private fun ReaderPreferences.sourceTextStyle(
 ) = TextStyle(
     color = color,
     fontFamily = chapterFontFamily ?: when (font) {
+        ReaderFont.DEFAULT -> FontFamily.Default
         ReaderFont.SANS -> FontFamily.SansSerif
         ReaderFont.SERIF -> FontFamily.Serif
         ReaderFont.MONO -> FontFamily.Monospace
@@ -605,3 +620,12 @@ private fun ReaderPreferences.sourceTextStyle(
     fontSize = fontSize.sp,
     lineHeight = (fontSize * lineHeight).sp,
 )
+
+private fun ReaderImageScale.contentScale(): ContentScale = when (this) {
+    ReaderImageScale.FIT -> ContentScale.Fit
+    ReaderImageScale.FILL -> ContentScale.FillBounds
+    ReaderImageScale.FIT_WIDTH -> ContentScale.FillWidth
+    ReaderImageScale.FIT_HEIGHT -> ContentScale.FillHeight
+    ReaderImageScale.ORIGINAL -> ContentScale.Inside
+    ReaderImageScale.SMART -> ContentScale.Crop
+}

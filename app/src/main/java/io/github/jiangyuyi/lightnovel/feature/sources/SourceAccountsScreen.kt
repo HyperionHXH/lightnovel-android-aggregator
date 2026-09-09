@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.source.AccountIdentifierKind
@@ -106,6 +107,7 @@ private fun SourceAccountCard(
 ) {
     var identifier by remember(account.descriptor.id) { mutableStateOf("") }
     var password by remember(account.descriptor.id) { mutableStateOf("") }
+    var passwordVisible by remember(account.descriptor.id) { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val context = LocalContext.current
     val identifierIsEmail = account.descriptor.accountIdentifierKind == AccountIdentifierKind.EMAIL
@@ -215,6 +217,7 @@ private fun SourceAccountCard(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     label = { Text(if (identifierIsEmail) "邮箱" else "用户名 / 邮箱") },
+                    isError = account.error != null,
                     keyboardOptions = KeyboardOptions(
                         keyboardType = if (identifierIsEmail) KeyboardType.Email else KeyboardType.Text,
                         imeAction = ImeAction.Next,
@@ -226,7 +229,17 @@ private fun SourceAccountCard(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     label = { Text("密码") },
-                    visualTransformation = PasswordVisualTransformation(),
+                    isError = account.error != null,
+                    visualTransformation = if (passwordVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        TextButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Text(if (passwordVisible) "隐藏" else "显示")
+                        }
+                    },
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done,
@@ -267,12 +280,18 @@ private fun SourceAccountCard(
                     }
                     account.descriptor.passwordResetUrl?.let { url ->
                         TextButton(onClick = { context.openSourcePage(url) }) {
-                            Text("找回密码")
+                            Text("找回 / 改密")
                         }
                     }
                     account.descriptor.websiteUrl?.let { url ->
                         TextButton(onClick = { context.openSourcePage(url) }) {
-                            Text("网页登录")
+                            Text(
+                                if (account.descriptor.registrationUrl == null && account.descriptor.passwordResetUrl == null) {
+                                    "官网注册 / 改密"
+                                } else {
+                                    "网页登录"
+                                },
+                            )
                         }
                     }
                 }

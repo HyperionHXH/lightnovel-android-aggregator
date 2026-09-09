@@ -44,8 +44,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
+import io.github.jiangyuyi.lightnovel.core.model.ReaderImageScale
 import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
+import io.github.jiangyuyi.lightnovel.core.model.ReaderOrientation
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
+import io.github.jiangyuyi.lightnovel.core.model.ReaderTapInversion
+import io.github.jiangyuyi.lightnovel.core.model.ReaderTapZone
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineLibraryAccess
 import io.github.jiangyuyi.lightnovel.core.preferences.AppPreferences
@@ -320,8 +324,67 @@ private fun ReaderSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(theme = it)) },
                 )
+                Text("点击区域", fontWeight = FontWeight.SemiBold)
+                ChipRow(
+                    values = ReaderTapZone.entries,
+                    selected = preferences.tapZone,
+                    label = { it.label },
+                    onSelected = { onChange(preferences.copy(tapZone = it)) },
+                )
+                Text("反转点击区域", fontWeight = FontWeight.SemiBold)
+                ChipRow(
+                    values = ReaderTapInversion.entries,
+                    selected = preferences.tapInversion,
+                    label = { it.label },
+                    onSelected = { onChange(preferences.copy(tapInversion = it)) },
+                )
+                Text("屏幕方向", fontWeight = FontWeight.SemiBold)
+                ChipRow(
+                    values = ReaderOrientation.entries,
+                    selected = preferences.orientation,
+                    label = { it.label },
+                    onSelected = { onChange(preferences.copy(orientation = it)) },
+                )
+                Text("图片缩放", fontWeight = FontWeight.SemiBold)
+                ChipRow(
+                    values = ReaderImageScale.entries,
+                    selected = preferences.imageScale,
+                    label = { it.label },
+                    onSelected = { onChange(preferences.copy(imageScale = it)) },
+                )
+                ReaderSwitchRow(
+                    label = "音量键翻页",
+                    checked = preferences.volumeKeys,
+                    onCheckedChange = { onChange(preferences.copy(volumeKeys = it)) },
+                )
+                ReaderSwitchRow(
+                    label = "保持屏幕常亮",
+                    checked = preferences.keepScreenOn,
+                    onCheckedChange = { onChange(preferences.copy(keepScreenOn = it)) },
+                )
+                ReaderSwitchRow(
+                    label = "显示阅读进度条",
+                    checked = preferences.showProgressBar,
+                    onCheckedChange = { onChange(preferences.copy(showProgressBar = it)) },
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun ReaderSwitchRow(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label)
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

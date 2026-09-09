@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -82,8 +84,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.graphics.toArgb
 import coil.compose.SubcomposeAsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
+import io.github.jiangyuyi.lightnovel.core.model.ReaderImageScale
 import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
+import io.github.jiangyuyi.lightnovel.core.model.ReaderOrientation
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
+import io.github.jiangyuyi.lightnovel.core.model.ReaderTapInversion
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTapZone
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
@@ -121,6 +126,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
         barColor = colors.background,
     )
     ReaderKeepScreenOnEffect(state.preferences.keepScreenOn)
+    ReaderOrientationEffect(state.preferences.orientation)
 
     LaunchedEffect(state.chapter?.chapter?.id, state.restoredParagraph) {
         anchorBlock = state.restoredParagraph.coerceAtLeast(0)
@@ -361,6 +367,7 @@ private fun PagedReader(
                                 block = element.block,
                                 modifier = Modifier.fillMaxWidth().height(with(density) { element.heightPx.toDp() }),
                                 colors = colors,
+                                imageScale = preferences.imageScale,
                             )
                         }
                     }
@@ -375,7 +382,13 @@ private fun PagedReader(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(pages.size, hasPreviousChapter, hasNextChapter, preferences.tapZone) {
+                .pointerInput(
+                    pages.size,
+                    hasPreviousChapter,
+                    hasNextChapter,
+                    preferences.tapZone,
+                    preferences.tapInversion,
+                ) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val start = down.position
@@ -406,6 +419,7 @@ private fun PagedReader(
                                     preferences.tapZone,
                                     endX / size.width.toFloat().coerceAtLeast(1f),
                                     endY / size.height.toFloat().coerceAtLeast(1f),
+                                    preferences.tapInversion,
                                 )) {
                                     ReaderTapAction.PREVIOUS -> requestTurn(ReaderTurnDirection.PREVIOUS)
                                     ReaderTapAction.NEXT -> requestTurn(ReaderTurnDirection.NEXT)
@@ -542,7 +556,12 @@ private fun ScrollingReader(
                             textIndent = if (block.firstLineIndent) TextIndent(firstLine = preferences.fontSize.sp * 2) else TextIndent.None,
                         ),
                     )
-                    is ReaderBlock.Illustration -> ReaderIllustration(block, Modifier.fillMaxWidth(), colors)
+                    is ReaderBlock.Illustration -> ReaderIllustration(
+                        block,
+                        Modifier.fillMaxWidth(),
+                        colors,
+                        preferences.imageScale,
+                    )
                 }
             }
             if (blocks.isNotEmpty() && hasNextChapter) {
@@ -598,12 +617,17 @@ private fun ReaderTextElement(element: ReaderPageElement.Text, preferences: Read
 }
 
 @Composable
-private fun ReaderIllustration(block: ReaderBlock.Illustration, modifier: Modifier, colors: ReaderColors) {
+private fun ReaderIllustration(
+    block: ReaderBlock.Illustration,
+    modifier: Modifier,
+    colors: ReaderColors,
+    imageScale: ReaderImageScale,
+) {
     var zoomed by remember(block.url) { mutableStateOf(false) }
     SubcomposeAsyncImage(
         model = block.url,
         contentDescription = "正文插图",
-        contentScale = ContentScale.Fit,
+        contentScale = imageScale.contentScale(),
         modifier = modifier.clickable { zoomed = true },
         loading = {
             Box(Modifier.fillMaxSize().background(colors.text.copy(alpha = 0.04f)), contentAlignment = Alignment.Center) {
@@ -629,7 +653,7 @@ private fun ReaderIllustration(block: ReaderBlock.Illustration, modifier: Modifi
                     model = block.url,
                     contentDescription = "放大插图",
                     modifier = Modifier.fillMaxSize().padding(16.dp),
-                    contentScale = ContentScale.Fit,
+                    contentScale = imageScale.contentScale(),
                 )
             }
         }
@@ -698,7 +722,10 @@ internal fun ReaderSettingsDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
         title = { Text("阅读设置") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text("翻页方式")
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ReaderMode.entries.forEach { mode ->
@@ -717,6 +744,38 @@ internal fun ReaderSettingsDialog(
                                 selected = preferences.tapZone == zone,
                                 onClick = { onChange(preferences.copy(tapZone = zone)) },
                                 label = zone.label,
+                            )
+                        }
+                    }
+                }
+                Text("反转点击区域")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ReaderTapInversion.entries.forEach { inversion ->
+                        ReaderOptionChip(
+                            selected = preferences.tapInversion == inversion,
+                            onClick = { onChange(preferences.copy(tapInversion = inversion)) },
+                            label = inversion.label,
+                        )
+                    }
+                }
+                Text("屏幕方向")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ReaderOrientation.entries.forEach { orientation ->
+                        ReaderOptionChip(
+                            selected = preferences.orientation == orientation,
+                            onClick = { onChange(preferences.copy(orientation = orientation)) },
+                            label = orientation.label,
+                        )
+                    }
+                }
+                Text("图片缩放")
+                ReaderImageScale.entries.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { scale ->
+                            ReaderOptionChip(
+                                selected = preferences.imageScale == scale,
+                                onClick = { onChange(preferences.copy(imageScale = scale)) },
+                                label = scale.label,
                             )
                         }
                     }
@@ -760,7 +819,10 @@ internal fun ReaderTextSettingsDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
         title = { Text("文字样式") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text("字体")
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ReaderFont.entries.forEach { font ->
@@ -914,7 +976,17 @@ private fun ReaderPreferences.headingStyle(color: Color) = TextStyle(
 )
 
 private fun ReaderFont.family(): FontFamily = when (this) {
+    ReaderFont.DEFAULT -> FontFamily.Default
     ReaderFont.SANS -> FontFamily.SansSerif
     ReaderFont.SERIF -> FontFamily.Serif
     ReaderFont.MONO -> FontFamily.Monospace
+}
+
+private fun ReaderImageScale.contentScale(): ContentScale = when (this) {
+    ReaderImageScale.FIT -> ContentScale.Fit
+    ReaderImageScale.FILL -> ContentScale.FillBounds
+    ReaderImageScale.FIT_WIDTH -> ContentScale.FillWidth
+    ReaderImageScale.FIT_HEIGHT -> ContentScale.FillHeight
+    ReaderImageScale.ORIGINAL -> ContentScale.Inside
+    ReaderImageScale.SMART -> ContentScale.Crop
 }

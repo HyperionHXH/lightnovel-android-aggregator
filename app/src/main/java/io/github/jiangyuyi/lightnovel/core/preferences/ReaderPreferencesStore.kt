@@ -13,6 +13,9 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTapZone
+import io.github.jiangyuyi.lightnovel.core.model.ReaderTapInversion
+import io.github.jiangyuyi.lightnovel.core.model.ReaderOrientation
+import io.github.jiangyuyi.lightnovel.core.model.ReaderImageScale
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.ReadingProgress
 import kotlinx.coroutines.flow.Flow
@@ -57,6 +60,9 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
             theme = enumValueOrDefault(values[THEME], ReaderTheme.SEPIA),
             mode = enumValueOrDefault(values[MODE], ReaderMode.PAGED),
             tapZone = enumValueOrDefault(values[TAP_ZONE], ReaderTapZone.DEFAULT),
+            tapInversion = enumValueOrDefault(values[TAP_INVERSION], ReaderTapInversion.NONE),
+            orientation = enumValueOrDefault(values[ORIENTATION], ReaderOrientation.DEFAULT),
+            imageScale = enumValueOrDefault(values[IMAGE_SCALE], ReaderImageScale.FIT),
             volumeKeys = values[VOLUME_KEYS] ?: false,
             keepScreenOn = values[KEEP_SCREEN_ON] ?: true,
             showProgressBar = values[SHOW_PROGRESS_BAR] ?: true,
@@ -72,6 +78,9 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
             values[THEME] = value.theme.name
             values[MODE] = value.mode.name
             values[TAP_ZONE] = value.tapZone.name
+            values[TAP_INVERSION] = value.tapInversion.name
+            values[ORIENTATION] = value.orientation.name
+            values[IMAGE_SCALE] = value.imageScale.name
             values[VOLUME_KEYS] = value.volumeKeys
             values[KEEP_SCREEN_ON] = value.keepScreenOn
             values[SHOW_PROGRESS_BAR] = value.showProgressBar
@@ -128,6 +137,9 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
         val THEME = stringPreferencesKey("theme")
         val MODE = stringPreferencesKey("reader_mode")
         val TAP_ZONE = stringPreferencesKey("reader_tap_zone")
+        val TAP_INVERSION = stringPreferencesKey("reader_tap_inversion")
+        val ORIENTATION = stringPreferencesKey("reader_orientation")
+        val IMAGE_SCALE = stringPreferencesKey("reader_image_scale")
         val VOLUME_KEYS = booleanPreferencesKey("reader_volume_keys")
         val KEEP_SCREEN_ON = booleanPreferencesKey("reader_keep_screen_on")
         val SHOW_PROGRESS_BAR = booleanPreferencesKey("show_progress_bar")

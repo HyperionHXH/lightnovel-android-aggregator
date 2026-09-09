@@ -1041,6 +1041,34 @@ private class SettingsPanel(
             DesktopChoice("深色", "dark"),
         ))
         themes.selectedItem = (0 until themes.itemCount).map { themes.getItemAt(it) }.firstOrNull { it.value == state.preferences.readerTheme }
+        val tapZones = JComboBox(arrayOf(
+            DesktopChoice("默认", "default"),
+            DesktopChoice("L 形", "l_shape"),
+            DesktopChoice("Kindle", "kindle"),
+            DesktopChoice("两侧", "both_sides"),
+            DesktopChoice("左右", "left_right"),
+            DesktopChoice("关闭", "disabled"),
+        ))
+        tapZones.selectedItem = (0 until tapZones.itemCount).map { tapZones.getItemAt(it) }
+            .firstOrNull { it.value == state.preferences.tapZone }
+        val tapInversions = JComboBox(arrayOf(
+            DesktopChoice("无", "none"),
+            DesktopChoice("左右", "left_right"),
+            DesktopChoice("上下", "up_down"),
+            DesktopChoice("全部", "all"),
+        ))
+        tapInversions.selectedItem = (0 until tapInversions.itemCount).map { tapInversions.getItemAt(it) }
+            .firstOrNull { it.value == state.preferences.tapInversion }
+        val imageScales = JComboBox(arrayOf(
+            DesktopChoice("适应屏幕", "fit"),
+            DesktopChoice("拉伸", "fill"),
+            DesktopChoice("适应宽度", "fit_width"),
+            DesktopChoice("适应高度", "fit_height"),
+            DesktopChoice("原始大小", "original"),
+            DesktopChoice("智能填充", "smart"),
+        ))
+        imageScales.selectedItem = (0 until imageScales.itemCount).map { imageScales.getItemAt(it) }
+            .firstOrNull { it.value == state.preferences.imageScale }
         val showProgress = JCheckBox("显示阅读进度条", state.preferences.showProgressBar).apply { isOpaque = false }
         val directory = JTextField(state.preferences.downloadDirectory, 30)
         directory.preferredSize = Dimension(360, 34)
@@ -1054,8 +1082,11 @@ private class SettingsPanel(
         addRow(3, "行高", lineHeight)
         addRow(4, "正文边距", horizontalPadding)
         addRow(5, "阅读背景", themes)
-        addRow(6, "阅读进度", showProgress)
-        addRow(7, "下载目录", JPanel(BorderLayout(8, 0)).apply {
+        addRow(6, "点击区域", tapZones)
+        addRow(7, "反转点击", tapInversions)
+        addRow(8, "图片缩放", imageScales)
+        addRow(9, "阅读进度", showProgress)
+        addRow(10, "下载目录", JPanel(BorderLayout(8, 0)).apply {
             add(directory, BorderLayout.CENTER)
             add(JButton("选择").apply { addActionListener { chooseDirectory(directory) } }, BorderLayout.EAST)
         })
@@ -1069,13 +1100,16 @@ private class SettingsPanel(
             state.preferences.lineHeight = (lineHeight.value as Number).toDouble()
             state.preferences.horizontalPadding = (horizontalPadding.value as Number).toInt()
             state.preferences.readerTheme = (themes.selectedItem as? DesktopChoice)?.value ?: "sepia"
+            state.preferences.tapZone = (tapZones.selectedItem as? DesktopChoice)?.value ?: "default"
+            state.preferences.tapInversion = (tapInversions.selectedItem as? DesktopChoice)?.value ?: "none"
+            state.preferences.imageScale = (imageScales.selectedItem as? DesktopChoice)?.value ?: "fit"
             state.preferences.showProgressBar = showProgress.isSelected
             state.preferences.downloadDirectory = directory.text.trim()
             state.preferences.flush()
             saveStatus.text = "已保存"
         }
-        constraints.gridy = 8; constraints.gridx = 1; constraints.weightx = 1.0; form.add(save, constraints)
-        constraints.gridy = 9; constraints.gridx = 1; constraints.weightx = 1.0; form.add(saveStatus, constraints)
+        constraints.gridy = 11; constraints.gridx = 1; constraints.weightx = 1.0; form.add(save, constraints)
+        constraints.gridy = 12; constraints.gridx = 1; constraints.weightx = 1.0; form.add(saveStatus, constraints)
         val settingsCard = RoundedSurfacePanel(MIXN_CARD, 8).apply {
             layout = BorderLayout()
             border = BorderFactory.createEmptyBorder(12, 16, 12, 16)
@@ -1338,15 +1372,23 @@ private class ReaderDialog(
                 if (event.button != MouseEvent.BUTTON1) return
                 val width = (event.component.width).coerceAtLeast(1)
                 val fraction = event.x.toDouble() / width
-                if (state.preferences.readerMode == "page" && fraction < 0.25) {
-                    pageTurn(-1)
-                } else if (state.preferences.readerMode == "page" && fraction > 0.75) {
-                    pageTurn(1)
-                } else {
-                    chromeVisible = !chromeVisible
-                    chrome.isVisible = chromeVisible
-                    footer.isVisible = chromeVisible
-                    revalidate(); repaint()
+                val action = if (state.preferences.readerMode == "page") {
+                    desktopTapAction(
+                        state.preferences.tapZone,
+                        fraction,
+                        event.y.toDouble() / event.component.height.coerceAtLeast(1),
+                        state.preferences.tapInversion,
+                    )
+                } else DesktopTapAction.CONTROLS
+                when (action) {
+                    DesktopTapAction.PREVIOUS -> pageTurn(-1)
+                    DesktopTapAction.NEXT -> pageTurn(1)
+                    DesktopTapAction.CONTROLS -> {
+                        chromeVisible = !chromeVisible
+                        chrome.isVisible = chromeVisible
+                        footer.isVisible = chromeVisible
+                        revalidate(); repaint()
+                    }
                 }
             }
         }
@@ -1432,7 +1474,8 @@ private class ReaderDialog(
                 val text = this@ReaderDialog.palette.css(this@ReaderDialog.palette.text)
                 val horizontalPadding = preferences.horizontalPadding
                 val lineHeight = "%.2f".format(java.util.Locale.ROOT, preferences.lineHeight)
-                editor.text = "<html><head><style>html,body{background:$background;color:$text;}body{font-family:${preferences.fontName};font-size:${preferences.fontSize}pt;line-height:$lineHeight;max-width:760px;margin:0 auto;padding:18px ${horizontalPadding}px 72px;color:$text;background:$background;}p{margin:0 0 1.18em;text-indent:2em;}h1,h2,h3{text-align:center;margin:0 0 1.5em;font-weight:600;}img{display:block;max-width:100%;height:auto;margin:1.25em auto;border-radius:4px;}</style></head><body>$body</body></html>"
+                val imageCss = desktopImageCss(preferences.imageScale)
+                editor.text = "<html><head><style>html,body{background:$background;color:$text;}body{font-family:${preferences.fontName};font-size:${preferences.fontSize}pt;line-height:$lineHeight;max-width:760px;margin:0 auto;padding:18px ${horizontalPadding}px 72px;color:$text;background:$background;}p{margin:0 0 1.18em;text-indent:2em;}h1,h2,h3{text-align:center;margin:0 0 1.5em;font-weight:600;}img{display:block;$imageCss;margin:1.25em auto;border-radius:4px;}</style></head><body>$body</body></html>"
                 editor.caretPosition = 0
                 saveOffline.isEnabled = true
                 progressBar.value = 0
