@@ -84,12 +84,14 @@ fun SourceReaderScreen(
     val colors = state.preferences.sourceReaderColors()
     val safeTopPadding = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
     val chapter = state.chapter
-    val blocks = chapter?.let {
-        buildList {
-            add(ReaderBlock.Heading(it.chapter.title))
-            addAll(ReaderContentParser.parse(it.bodyHtml, it.bodyText))
-        }
-    }.orEmpty()
+    val blocks = remember(chapter) {
+        chapter?.let {
+            buildList {
+                add(ReaderBlock.Heading(it.chapter.title))
+                addAll(ReaderContentParser.parse(it.bodyHtml, it.bodyText))
+            }
+        }.orEmpty()
+    }
     val listState = rememberLazyListState()
     val scrollBoundaryOffset = if (chapter?.previousChapterKey != null) 1 else 0
     val progressBlockCount = (blocks.size - 1).coerceAtLeast(1)
@@ -104,7 +106,6 @@ fun SourceReaderScreen(
     ImmersiveReaderEffect(
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
         barColor = colors.background,
-        controlsVisible = state.controlsVisible || state.settingsVisible,
     )
 
     LaunchedEffect(chapter?.chapter?.key, state.restoredBlock, blocks.size) {

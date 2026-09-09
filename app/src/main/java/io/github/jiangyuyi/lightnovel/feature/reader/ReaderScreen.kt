@@ -117,7 +117,6 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
     ImmersiveReaderEffect(
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
         barColor = colors.background,
-        controlsVisible = state.controlsVisible || state.settingsVisible,
     )
 
     LaunchedEffect(state.chapter?.chapter?.id, state.restoredParagraph) {
@@ -744,9 +743,9 @@ private fun readerSliderColors() = SliderDefaults.colors(
 )
 
 @Composable
-internal fun ImmersiveReaderEffect(darkBackground: Boolean, barColor: Color, controlsVisible: Boolean) {
+internal fun ImmersiveReaderEffect(darkBackground: Boolean, barColor: Color) {
     val view = LocalView.current
-    DisposableEffect(view, darkBackground, controlsVisible) {
+    DisposableEffect(view, darkBackground, barColor) {
         val window = view.context.findActivity()?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         val previousLightStatusBars = controller?.isAppearanceLightStatusBars
@@ -755,15 +754,12 @@ internal fun ImmersiveReaderEffect(darkBackground: Boolean, barColor: Color, con
         window?.statusBarColor = barColor.toArgb()
         window?.navigationBarColor = barColor.toArgb()
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        if (controlsVisible) {
-            controller?.show(WindowInsetsCompat.Type.systemBars())
-        } else {
-            // Keep the status bar visible so display cutouts/camera areas never
-            // overlap the first line of the reader. Only the navigation bar is
-            // hidden for the immersive reading surface.
-            controller?.show(WindowInsetsCompat.Type.statusBars())
-            controller?.hide(WindowInsetsCompat.Type.navigationBars())
-        }
+        // Configure system bars once for the reader surface. Toggling the
+        // in-app controls must not reconfigure Insets or trigger a window
+        // relayout; the title/progress controls are Compose overlays.
+        // Keeping the status bar visible protects display cutouts/camera areas.
+        controller?.show(WindowInsetsCompat.Type.statusBars())
+        controller?.hide(WindowInsetsCompat.Type.navigationBars())
         controller?.isAppearanceLightStatusBars = !darkBackground
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
