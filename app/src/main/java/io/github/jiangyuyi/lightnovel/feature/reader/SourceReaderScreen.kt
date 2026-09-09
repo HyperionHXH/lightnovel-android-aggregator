@@ -376,24 +376,29 @@ private fun SourcePagedReader(
                     top = safeTopPadding + 8.dp,
                     bottom = 12.dp,
                 )
-                .pointerInput(pagerState.currentPage, pages.size, hasNextChapter) {
+                .pointerInput(pagerState.currentPage, pages.size, hasNextChapter, preferences.tapZone) {
                     detectTapGestures { position ->
-                        when {
-                            position.x < size.width * 0.25f -> {
+                        when (readerTapAction(
+                            preferences.tapZone,
+                            position.x / size.width.toFloat().coerceAtLeast(1f),
+                            position.y / size.height.toFloat().coerceAtLeast(1f),
+                        )) {
+                            ReaderTapAction.PREVIOUS -> {
                                 if (pagerState.currentPage > 0) {
                                     pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
                                 } else if (hasPreviousChapter) {
                                     onPreviousChapter()
                                 }
                             }
-                            position.x > size.width * 0.75f -> {
+                            ReaderTapAction.NEXT -> {
                                 if (pagerState.currentPage < pages.lastIndex) {
                                     pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
                                 } else if (hasNextChapter) {
                                     onNextChapter()
                                 }
                             }
-                            else -> onToggleControls()
+                            ReaderTapAction.CONTROLS -> onToggleControls()
+                            ReaderTapAction.NONE -> Unit
                         }
                     }
                 },

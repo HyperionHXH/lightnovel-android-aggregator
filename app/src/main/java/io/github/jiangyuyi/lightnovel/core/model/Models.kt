@@ -173,6 +173,16 @@ enum class ReaderMode(val label: String) {
 }
 
 @Serializable
+enum class ReaderTapZone(val label: String) {
+    DEFAULT("默认"),
+    L_SHAPE("L 形"),
+    KINDLE("Kindle"),
+    BOTH_SIDES("两侧"),
+    LEFT_RIGHT("左右"),
+    DISABLED("关闭"),
+}
+
+@Serializable
 data class ReaderPreferences(
     val font: ReaderFont = ReaderFont.SERIF,
     val fontSize: Float = 21f,
@@ -180,6 +190,7 @@ data class ReaderPreferences(
     val horizontalPadding: Int = 28,
     val theme: ReaderTheme = ReaderTheme.SEPIA,
     val mode: ReaderMode = ReaderMode.PAGED,
+    val tapZone: ReaderTapZone = ReaderTapZone.DEFAULT,
     val showProgressBar: Boolean = true,
 )
 

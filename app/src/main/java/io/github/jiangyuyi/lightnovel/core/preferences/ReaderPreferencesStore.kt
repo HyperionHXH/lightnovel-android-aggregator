@@ -12,6 +12,7 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
 import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
+import io.github.jiangyuyi.lightnovel.core.model.ReaderTapZone
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.ReadingProgress
 import kotlinx.coroutines.flow.Flow
@@ -55,6 +56,7 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
             horizontalPadding = (if (legacyCompactDefaults) 28 else values[PADDING] ?: 28).coerceIn(12, 40),
             theme = enumValueOrDefault(values[THEME], ReaderTheme.SEPIA),
             mode = enumValueOrDefault(values[MODE], ReaderMode.PAGED),
+            tapZone = enumValueOrDefault(values[TAP_ZONE], ReaderTapZone.DEFAULT),
             showProgressBar = values[SHOW_PROGRESS_BAR] ?: true,
         )
     }
@@ -67,6 +69,7 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
             values[PADDING] = value.horizontalPadding.coerceIn(12, 40)
             values[THEME] = value.theme.name
             values[MODE] = value.mode.name
+            values[TAP_ZONE] = value.tapZone.name
             values[SHOW_PROGRESS_BAR] = value.showProgressBar
         }
     }
@@ -120,6 +123,7 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
         val PADDING = intPreferencesKey("horizontal_padding")
         val THEME = stringPreferencesKey("theme")
         val MODE = stringPreferencesKey("reader_mode")
+        val TAP_ZONE = stringPreferencesKey("reader_tap_zone")
         val SHOW_PROGRESS_BAR = booleanPreferencesKey("show_progress_bar")
 
         const val SOURCE_PROGRESS_PREFIX = "source_progress_"

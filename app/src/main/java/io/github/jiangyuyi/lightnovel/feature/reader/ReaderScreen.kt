@@ -83,6 +83,7 @@ import coil.compose.SubcomposeAsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
 import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
+import io.github.jiangyuyi.lightnovel.core.model.ReaderTapZone
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
@@ -360,7 +361,7 @@ private fun PagedReader(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(pages.size, hasPreviousChapter, hasNextChapter) {
+                .pointerInput(pages.size, hasPreviousChapter, hasNextChapter, preferences.tapZone) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
                         val start = down.position
@@ -387,10 +388,15 @@ private fun PagedReader(
 
                         when {
                             abs(deltaX) <= viewConfiguration.touchSlop && abs(deltaY) <= viewConfiguration.touchSlop -> {
-                                when (endX / size.width.toFloat().coerceAtLeast(1f)) {
-                                    in 0f..0.25f -> requestTurn(ReaderTurnDirection.PREVIOUS)
-                                    in 0.75f..1f -> requestTurn(ReaderTurnDirection.NEXT)
-                                    else -> onToggleControls()
+                                when (readerTapAction(
+                                    preferences.tapZone,
+                                    endX / size.width.toFloat().coerceAtLeast(1f),
+                                    endY / size.height.toFloat().coerceAtLeast(1f),
+                                )) {
+                                    ReaderTapAction.PREVIOUS -> requestTurn(ReaderTurnDirection.PREVIOUS)
+                                    ReaderTapAction.NEXT -> requestTurn(ReaderTurnDirection.NEXT)
+                                    ReaderTapAction.CONTROLS -> onToggleControls()
+                                    ReaderTapAction.NONE -> Unit
                                 }
                             }
                         }
@@ -670,6 +676,18 @@ internal fun ReaderSettingsDialog(
                             onClick = { onChange(preferences.copy(mode = mode)) },
                             label = mode.label,
                         )
+                    }
+                }
+                Text("点击区域")
+                ReaderTapZone.entries.chunked(3).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { zone ->
+                            ReaderOptionChip(
+                                selected = preferences.tapZone == zone,
+                                onClick = { onChange(preferences.copy(tapZone = zone)) },
+                                label = zone.label,
+                            )
+                        }
                     }
                 }
                 Text("背景")
