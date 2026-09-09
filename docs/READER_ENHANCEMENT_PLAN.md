@@ -39,7 +39,7 @@
 
 - `noval_api35` AVD：Debug APK 安装、启动和 `MainActivity` 恢复成功；测试结束后已关闭模拟器。
 - Android 单元测试、Lint、Debug APK 和桌面端测试全部通过。
-- Windows `Mixn-1.5.0` app-image 打包成功。
+- Windows `Mixn-1.6.0` app-image 将在本轮构建中重新验证。
 - 模拟器使用宿主 GPU 模式；软件渲染下大图掉帧仍属于环境限制，不应作为真实设备性能结论。
 
 ## 实现约束
