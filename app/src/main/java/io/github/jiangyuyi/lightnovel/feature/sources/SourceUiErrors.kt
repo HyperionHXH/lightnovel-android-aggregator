@@ -4,23 +4,28 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import kotlinx.coroutines.CancellationException
 
-internal fun Throwable.toSourceUiMessage(default: String): String = when (this) {
-    is SourceException -> when (kind) {
-        SourceErrorKind.AUTHENTICATION -> authenticationMessage(default, message)
-        SourceErrorKind.TIMEOUT -> "请求超时，请稍后重试"
-        SourceErrorKind.RATE_LIMITED -> "请求过于频繁，请稍后再试"
-        SourceErrorKind.NETWORK -> "网络连接失败，请检查网络"
-        SourceErrorKind.SERVER -> "来源服务暂时不可用"
-        SourceErrorKind.PARSING -> "来源数据格式已变化"
-        SourceErrorKind.UNKNOWN -> message.orEmpty().ifBlank { default }
+internal fun Throwable.toSourceUiMessage(default: String): String {
+    if (default.contains("登录") && message.orEmpty().lineSequence().firstOrNull().orEmpty().isOpaqueAuthCode()) {
+        return "账号或密码错误，请检查后重试"
     }
+    return when (this) {
+        is SourceException -> when (kind) {
+            SourceErrorKind.AUTHENTICATION -> authenticationMessage(default, message)
+            SourceErrorKind.TIMEOUT -> "请求超时，请稍后重试"
+            SourceErrorKind.RATE_LIMITED -> "请求过于频繁，请稍后再试"
+            SourceErrorKind.NETWORK -> "网络连接失败，请检查网络"
+            SourceErrorKind.SERVER -> "来源服务暂时不可用"
+            SourceErrorKind.PARSING -> "来源数据格式已变化"
+            SourceErrorKind.UNKNOWN -> message.orEmpty().ifBlank { default }
+        }
 
-    else -> {
-        val detail = message.orEmpty().lineSequence().firstOrNull().orEmpty().take(160)
-        if (detail.isOpaqueAuthCode() && default.contains("登录")) {
-            "账号或密码错误，请检查后重试"
-        } else {
-            detail.ifBlank { default }
+        else -> {
+            val detail = message.orEmpty().lineSequence().firstOrNull().orEmpty().take(160)
+            if (detail.isOpaqueAuthCode() && default.contains("登录")) {
+                "账号或密码错误，请检查后重试"
+            } else {
+                detail.ifBlank { default }
+            }
         }
     }
 }

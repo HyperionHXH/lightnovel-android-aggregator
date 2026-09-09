@@ -276,6 +276,11 @@ private fun SourceAccountCard(
                         }
                     }
                 }
+                Text(
+                    "注册、找回密码和验证码由官方网页完成；完成后返回这里输入账号密码，浏览器登录不会自动导入 Mixn。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

@@ -299,7 +299,7 @@ internal fun JsonObject.throwIfFailed() {
     val success = value("Success", "success")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()
     if (success != false) return
     val status = value("Status", "status")?.jsonPrimitive?.intOrNull
-    val kind = if (status == 401 || status == -100) {
+    val kind = if (status == 401 || status == -100 || status == 1001) {
         SourceErrorKind.AUTHENTICATION
     } else {
         SourceErrorKind.SERVER

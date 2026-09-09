@@ -130,8 +130,6 @@ class LightNovelKingdomSource internal constructor(
             SourceCapability.HISTORY,
         ),
         websiteUrl = "https://www.lightnovel.fun/",
-        registrationUrl = "https://www.lightnovel.fun/register",
-        passwordResetUrl = "https://www.lightnovel.fun/forgot-password",
     )
 
     override val discoverFeeds = listOf(

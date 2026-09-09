@@ -19,7 +19,7 @@ internal fun authErrorMessage(action: AuthAction, error: Throwable): String = wh
 private fun ApiException.toFriendlyMessage(action: AuthAction): String {
     if (httpCode == 429) return "操作过于频繁，请稍后再试"
 
-    if (action == AuthAction.LOGIN && (businessCode == 2 || httpCode == 401)) {
+    if (action == AuthAction.LOGIN && (businessCode == 2 || businessCode == 1001 || httpCode == 401)) {
         return "账号或密码错误，请检查后重试"
     }
 

@@ -14,6 +14,13 @@ class SourceUiErrorsTest {
     }
 
     @Test
+    fun `server-shaped opaque login status also becomes credential message`() {
+        val error = SourceException(SourceErrorKind.SERVER, "1001")
+
+        assertEquals("账号或密码错误，请检查后重试", error.toSourceUiMessage("登录失败"))
+    }
+
+    @Test
     fun `source login detail is preserved when it explains the failure`() {
         val error = SourceException(SourceErrorKind.AUTHENTICATION, "邮箱或密码错误")
 

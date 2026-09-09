@@ -14,6 +14,13 @@ class AuthErrorMessageTest {
     }
 
     @Test
+    fun `login business code 1001 identifies invalid credentials`() {
+        val error = ApiException(message = "1001", httpCode = 200, businessCode = 1001)
+
+        assertEquals("账号或密码错误，请检查后重试", authErrorMessage(AuthAction.LOGIN, error))
+    }
+
+    @Test
     fun `network internals are hidden from users`() {
         val error = IOException("Exception in CronetUrlRequest: net::ERR_CONNECTION_RESET")
 
