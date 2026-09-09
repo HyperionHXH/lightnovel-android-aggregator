@@ -626,7 +626,7 @@ private fun BoxScope.ReaderControls(
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = colors.background,
+            containerColor = readerControlPanelColor(colors.background),
             titleContentColor = colors.text,
             navigationIconContentColor = colors.text,
             actionIconContentColor = colors.text,

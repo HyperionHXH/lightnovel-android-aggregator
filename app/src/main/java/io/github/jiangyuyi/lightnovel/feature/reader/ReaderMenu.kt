@@ -48,7 +48,7 @@ internal fun ReaderMenuSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = background,
+        containerColor = readerControlPanelColor(background),
         contentColor = contentColor,
     ) {
         Column(
@@ -150,7 +150,7 @@ internal fun ReaderProgressBar(
         modifier = modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .background(background.copy(alpha = 0.97f))
+            .background(readerControlPanelColor(background).copy(alpha = 0.98f))
             .padding(horizontal = 16.dp, vertical = 4.dp),
     ) {
         Text(
@@ -172,4 +172,16 @@ internal fun ReaderProgressBar(
             ),
         )
     }
+}
+
+/** A subtle but stable contrast layer for reader controls over the page. */
+internal fun readerControlPanelColor(background: Color): Color {
+    val luminance = background.red * 0.2126f + background.green * 0.7152f + background.blue * 0.0722f
+    val factor = if (luminance > 0.5f) 0.92f else 1.12f
+    return Color(
+        red = (background.red * factor).coerceIn(0f, 1f),
+        green = (background.green * factor).coerceIn(0f, 1f),
+        blue = (background.blue * factor).coerceIn(0f, 1f),
+        alpha = background.alpha,
+    )
 }
