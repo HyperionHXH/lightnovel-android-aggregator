@@ -2,6 +2,7 @@ package io.github.jiangyuyi.lightnovel.feature.reader
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -107,6 +108,27 @@ fun SourceReaderScreen(
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
         barColor = colors.background,
     )
+    ReaderKeepScreenOnEffect(state.preferences.keepScreenOn)
+    if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL) {
+        ReaderVolumeKeyEffect(
+            enabled = state.preferences.volumeKeys && !state.controlsVisible &&
+                !state.settingsVisible && !state.textSettingsVisible && !menuVisible,
+            onPrevious = {
+                listScope.launch {
+                    val amount = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
+                        .coerceAtLeast(1)
+                    listState.animateScrollBy(-amount.toFloat())
+                }
+            },
+            onNext = {
+                listScope.launch {
+                    val amount = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
+                        .coerceAtLeast(1)
+                    listState.animateScrollBy(amount.toFloat())
+                }
+            },
+        )
+    }
 
     LaunchedEffect(chapter?.chapter?.key, state.restoredBlock, blocks.size) {
         if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL && blocks.isNotEmpty()) {
@@ -351,6 +373,21 @@ private fun SourcePagedReader(
         var currentAnchor by remember(blocks) { mutableIntStateOf(anchorBlock) }
         var scrubValue by remember { mutableFloatStateOf(0f) }
         var scrubbing by remember { mutableStateOf(false) }
+        ReaderVolumeKeyEffect(
+            enabled = preferences.volumeKeys && !controlsVisible,
+            onPrevious = {
+                pagerScope.launch {
+                    if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                    else if (hasPreviousChapter) onPreviousChapter()
+                }
+            },
+            onNext = {
+                pagerScope.launch {
+                    if (pagerState.currentPage < pages.lastIndex) pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                    else if (hasNextChapter) onNextChapter()
+                }
+            },
+        )
         LaunchedEffect(pages) {
             val target = pages.indexOfFirst { currentAnchor in it.firstBlockIndex..it.lastBlockIndex }
                 .takeIf { it >= 0 }

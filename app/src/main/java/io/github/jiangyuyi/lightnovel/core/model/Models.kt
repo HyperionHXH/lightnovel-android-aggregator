@@ -191,6 +191,8 @@ data class ReaderPreferences(
     val theme: ReaderTheme = ReaderTheme.SEPIA,
     val mode: ReaderMode = ReaderMode.PAGED,
     val tapZone: ReaderTapZone = ReaderTapZone.DEFAULT,
+    val volumeKeys: Boolean = false,
+    val keepScreenOn: Boolean = true,
     val showProgressBar: Boolean = true,
 )
 

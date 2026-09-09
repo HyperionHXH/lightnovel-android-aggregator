@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -119,6 +120,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
         barColor = colors.background,
     )
+    ReaderKeepScreenOnEffect(state.preferences.keepScreenOn)
 
     LaunchedEffect(state.chapter?.chapter?.id, state.restoredParagraph) {
         anchorBlock = state.restoredParagraph.coerceAtLeast(0)
@@ -286,6 +288,18 @@ private fun PagedReader(
         var scrubbing by remember { mutableStateOf(false) }
         var turnRequest by remember { mutableStateOf<ReaderTurnRequest?>(null) }
         var turnRequestToken by remember { mutableIntStateOf(0) }
+
+        ReaderVolumeKeyEffect(
+            enabled = preferences.volumeKeys && !controlsVisible,
+            onPrevious = {
+                turnRequestToken += 1
+                turnRequest = ReaderTurnRequest(ReaderTurnDirection.PREVIOUS, turnRequestToken)
+            },
+            onNext = {
+                turnRequestToken += 1
+                turnRequest = ReaderTurnRequest(ReaderTurnDirection.NEXT, turnRequestToken)
+            },
+        )
 
         LaunchedEffect(pages) {
             val containingPage = pages.indexOfFirst { anchorBlock in it.firstBlockIndex..it.lastBlockIndex }
@@ -458,6 +472,23 @@ private fun ScrollingReader(
     val progressCount = (blocks.size - 1).coerceAtLeast(1)
     var scrubValue by remember { mutableFloatStateOf(0f) }
     var scrubbing by remember { mutableStateOf(false) }
+    ReaderVolumeKeyEffect(
+        enabled = preferences.volumeKeys && !controlsVisible,
+        onPrevious = {
+            listScope.launch {
+                val amount = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
+                    .coerceAtLeast(1)
+                listState.animateScrollBy(-amount.toFloat())
+            }
+        },
+        onNext = {
+            listScope.launch {
+                val amount = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
+                    .coerceAtLeast(1)
+                listState.animateScrollBy(amount.toFloat())
+            }
+        },
+    )
     LaunchedEffect(blocks) {
         if (blocks.isNotEmpty() && listState.firstVisibleItemIndex == 0) {
             listState.scrollToItem((anchorBlock + boundaryOffset).coerceIn(0, blocks.lastIndex + boundaryOffset))
@@ -690,6 +721,16 @@ internal fun ReaderSettingsDialog(
                         }
                     }
                 }
+                ReaderSettingSwitch(
+                    label = "音量键翻页",
+                    checked = preferences.volumeKeys,
+                    onCheckedChange = { onChange(preferences.copy(volumeKeys = it)) },
+                )
+                ReaderSettingSwitch(
+                    label = "保持屏幕常亮",
+                    checked = preferences.keepScreenOn,
+                    onCheckedChange = { onChange(preferences.copy(keepScreenOn = it)) },
+                )
                 Text("背景")
                 ReaderTheme.entries.chunked(2).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -785,6 +826,22 @@ private fun ReaderOptionChip(selected: Boolean, onClick: () -> Unit, label: Stri
             selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary,
         ),
     )
+}
+
+@Composable
+private fun ReaderSettingSwitch(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label)
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }
 
 @Composable
