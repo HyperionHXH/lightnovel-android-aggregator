@@ -44,6 +44,10 @@ data class SourceDescriptor(
     val displayName: String,
     val capabilities: Set<SourceCapability>,
     val accountIdentifierKind: AccountIdentifierKind = AccountIdentifierKind.USERNAME_OR_EMAIL,
+    /** Official web pages used when a source requires browser-based auth flows. */
+    val websiteUrl: String? = null,
+    val registrationUrl: String? = null,
+    val passwordResetUrl: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "source id must not be blank" }

@@ -70,6 +70,9 @@ class LightNovelShelfSource internal constructor(
             SourceCapability.HISTORY,
         ),
         accountIdentifierKind = AccountIdentifierKind.EMAIL,
+        websiteUrl = "https://www.lightnovel.life/",
+        registrationUrl = "https://www.lightnovel.life/register",
+        passwordResetUrl = "https://www.lightnovel.life/forgot-password",
     )
 
     override val discoverFeeds = listOf(

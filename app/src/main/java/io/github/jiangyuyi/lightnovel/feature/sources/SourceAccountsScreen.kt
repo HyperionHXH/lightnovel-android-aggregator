@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -43,6 +44,8 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.source.AccountIdentifierKind
+import android.content.Intent
+import android.net.Uri
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,6 +107,7 @@ private fun SourceAccountCard(
     var identifier by remember(account.descriptor.id) { mutableStateOf("") }
     var password by remember(account.descriptor.id) { mutableStateOf("") }
     val focus = LocalFocusManager.current
+    val context = LocalContext.current
     val identifierIsEmail = account.descriptor.accountIdentifierKind == AccountIdentifierKind.EMAIL
 
     Card(
@@ -252,7 +256,32 @@ private fun SourceAccountCard(
                         Text("登录")
                     }
                 }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    account.descriptor.registrationUrl?.let { url ->
+                        TextButton(onClick = { context.openSourcePage(url) }) {
+                            Text("注册账号")
+                        }
+                    }
+                    account.descriptor.passwordResetUrl?.let { url ->
+                        TextButton(onClick = { context.openSourcePage(url) }) {
+                            Text("找回密码")
+                        }
+                    }
+                    account.descriptor.websiteUrl?.let { url ->
+                        TextButton(onClick = { context.openSourcePage(url) }) {
+                            Text("网页登录")
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+private fun android.content.Context.openSourcePage(url: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+    runCatching { startActivity(intent) }
 }
