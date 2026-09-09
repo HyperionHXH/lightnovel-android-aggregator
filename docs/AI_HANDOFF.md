@@ -51,7 +51,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.6.1`、`versionCode 11`；桌面和 jpackage 默认版本也是 `1.6.1`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.6.0`，本轮完成后发布 `v1.6.1`，含 Android APK 和 SHA256。上一份 `v1.4.2` 仍含 Windows 压缩包：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.4.2>。
+Android 默认版本：`versionName 1.6.1`、`versionCode 11`；桌面和 jpackage 默认版本也是 `1.6.1`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.6.1`，含 Android APK 和 SHA256：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.6.1>。上一份 `v1.4.2` 仍含 Windows 压缩包：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.4.2>。
 
 ## 发布流程
 
@@ -75,7 +75,7 @@ git clone -b feature/multi-source-foundation https://github.com/HyperionHXH/ligh
 - 没有真实 LK/LNS 账号时无法验证登录、签到和付费章节；付费解锁依赖站点接口和账号余额，接口变更需在对应适配器修复。
 - 两站接口、SignalR/BFF 字段和专用字体可能变化，需保留来源级错误和超时处理。
 - Android 图片绘制性能受模拟器渲染后端影响；应在真实设备和 GPU 模式 AVD 上复测。
-- `v1.6.0` Debug APK 已在本机 `noval_api35` AVD 安装启动，应用进程和首页恢复正常；真实账号登录、签到、付费解锁及实体音量键仍需人工回归。
+- `v1.6.1` Debug APK 已在本机 `noval_api35` AVD 安装启动，应用进程和首页恢复正常；阅读加载/菜单 Compose instrumentation 已通过；真实账号登录、签到、付费解锁及实体音量键仍需人工回归。
 - 桌面端仍为 Swing/JVM，功能已覆盖基础流程，但视觉细节和与 Android 的完全一致性仍可继续优化。
 - Java Android API 的 deprecated warning（如 `statusBarColor`）目前不阻断构建。
 - 最近阅读体验增强提交：`105a36c`（文字样式分组）、`9a5589b`（控制栏分层）、`9960815`（点击区域）、`5fa1c96`（音量键/常亮）、`5ff43c4`（认证错误解释）、`2001c43`（分页缓存键收窄）。
