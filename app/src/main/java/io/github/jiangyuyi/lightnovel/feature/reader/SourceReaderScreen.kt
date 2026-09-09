@@ -278,6 +278,7 @@ fun SourceReaderScreen(
             onDismiss = { menuVisible = false },
             onCatalog = onCatalog,
             onSettings = { viewModel.showSettings(true) },
+            onTextSettings = { viewModel.showTextSettings(true) },
             onRetry = state.error?.let { viewModel::retry },
             onToggleProgressBar = {
                 viewModel.updatePreferences { it.copy(showProgressBar = !it.showProgressBar) }
@@ -290,6 +291,15 @@ fun SourceReaderScreen(
             preferences = state.preferences,
             onChange = { updated -> viewModel.updatePreferences { updated } },
             onDismiss = { viewModel.showSettings(false) },
+        )
+    }
+
+    if (state.textSettingsVisible) {
+        ReaderTextSettingsDialog(
+            preferences = state.preferences,
+            onChange = { updated -> viewModel.updatePreferences { updated } },
+            onDismiss = { viewModel.showTextSettings(false) },
+            sourceFontRequired = state.chapterFontFamily != null,
         )
     }
 }

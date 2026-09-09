@@ -40,6 +40,7 @@ internal fun ReaderMenuSheet(
     onDismiss: () -> Unit,
     onCatalog: () -> Unit,
     onSettings: () -> Unit,
+    onTextSettings: () -> Unit,
     onRetry: (() -> Unit)?,
     onToggleProgressBar: () -> Unit,
 ) {
@@ -84,8 +85,14 @@ internal fun ReaderMenuSheet(
                 onClick = { onDismiss(); onCatalog() },
             )
             ReaderMenuItem(
+                headline = "文字样式",
+                supporting = "字体、字号、行距和页边距",
+                icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
+                onClick = { onDismiss(); onTextSettings() },
+            )
+            ReaderMenuItem(
                 headline = "阅读设置",
-                supporting = "字体、背景和翻页方式",
+                supporting = "翻页方式和阅读背景",
                 icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                 onClick = { onDismiss(); onSettings() },
             )

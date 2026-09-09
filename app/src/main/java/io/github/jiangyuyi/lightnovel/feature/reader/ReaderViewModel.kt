@@ -22,6 +22,7 @@ data class ReaderState(
     val restoredParagraph: Int = 0,
     val controlsVisible: Boolean = false,
     val settingsVisible: Boolean = false,
+    val textSettingsVisible: Boolean = false,
     val loading: Boolean = true,
     val refreshing: Boolean = false,
     val error: String? = null,
@@ -66,6 +67,7 @@ class ReaderViewModel(
             error = null,
             refreshError = null,
             settingsVisible = false,
+            textSettingsVisible = false,
             controlsVisible = false,
         )
         chapterLoadJob = viewModelScope.launch {
@@ -108,7 +110,11 @@ class ReaderViewModel(
     }
 
     fun showSettings(show: Boolean) {
-        _state.value = _state.value.copy(settingsVisible = show, controlsVisible = true)
+        _state.value = _state.value.copy(settingsVisible = show, textSettingsVisible = false, controlsVisible = true)
+    }
+
+    fun showTextSettings(show: Boolean) {
+        _state.value = _state.value.copy(textSettingsVisible = show, settingsVisible = false, controlsVisible = true)
     }
 
     fun updatePreferences(transform: (ReaderPreferences) -> ReaderPreferences) {

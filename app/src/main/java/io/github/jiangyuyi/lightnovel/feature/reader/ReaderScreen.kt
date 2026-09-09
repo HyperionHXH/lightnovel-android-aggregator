@@ -205,6 +205,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
             onDismiss = { menuVisible = false },
             onCatalog = onCatalog,
             onSettings = { viewModel.showSettings(true) },
+            onTextSettings = { viewModel.showTextSettings(true) },
             onRetry = state.refreshError?.let { viewModel::retry },
             onToggleProgressBar = {
                 viewModel.updatePreferences { it.copy(showProgressBar = !it.showProgressBar) }
@@ -217,6 +218,14 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
             preferences = state.preferences,
             onChange = { value -> viewModel.updatePreferences { value } },
             onDismiss = { viewModel.showSettings(false) },
+        )
+    }
+
+    if (state.textSettingsVisible) {
+        ReaderTextSettingsDialog(
+            preferences = state.preferences,
+            onChange = { value -> viewModel.updatePreferences { value } },
+            onDismiss = { viewModel.showTextSettings(false) },
         )
     }
 
@@ -663,6 +672,36 @@ internal fun ReaderSettingsDialog(
                         )
                     }
                 }
+                Text("背景")
+                ReaderTheme.entries.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { theme ->
+                            ReaderOptionChip(
+                                selected = preferences.theme == theme,
+                                onClick = { onChange(preferences.copy(theme = theme)) },
+                                label = theme.label,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+internal fun ReaderTextSettingsDialog(
+    preferences: ReaderPreferences,
+    onChange: (ReaderPreferences) -> Unit,
+    onDismiss: () -> Unit,
+    sourceFontRequired: Boolean = false,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("完成") } },
+        title = { Text("文字样式") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("字体")
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     ReaderFont.entries.forEach { font ->
@@ -672,6 +711,13 @@ internal fun ReaderSettingsDialog(
                             label = font.label,
                         )
                     }
+                }
+                if (sourceFontRequired) {
+                    Text(
+                        "当前章节使用来源字体以保证文字编码正确；字体选择将在不需要专用字体的章节生效。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Text("字号 ${preferences.fontSize.toInt()}")
                 Slider(
@@ -697,18 +743,6 @@ internal fun ReaderSettingsDialog(
                     steps = 13,
                     colors = readerSliderColors(),
                 )
-                Text("背景")
-                ReaderTheme.entries.chunked(2).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { theme ->
-                            ReaderOptionChip(
-                                selected = preferences.theme == theme,
-                                onClick = { onChange(preferences.copy(theme = theme)) },
-                                label = theme.label,
-                            )
-                        }
-                    }
-                }
             }
         },
     )

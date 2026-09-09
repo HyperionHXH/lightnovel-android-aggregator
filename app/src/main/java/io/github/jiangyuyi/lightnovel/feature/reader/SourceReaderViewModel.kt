@@ -31,6 +31,7 @@ data class SourceReaderState(
     val restoredBlock: Int = 0,
     val loading: Boolean = true,
     val settingsVisible: Boolean = false,
+    val textSettingsVisible: Boolean = false,
     val controlsVisible: Boolean = false,
     val error: String? = null,
 )
@@ -68,6 +69,7 @@ class SourceReaderViewModel(
             restoredBlock = 0,
             loading = true,
             settingsVisible = false,
+            textSettingsVisible = false,
             controlsVisible = false,
             error = null,
         )
@@ -109,7 +111,19 @@ class SourceReaderViewModel(
     fun next() = _state.value.chapter?.nextChapterKey?.let(::loadChapter)
 
     fun showSettings(show: Boolean) {
-        _state.value = _state.value.copy(settingsVisible = show, controlsVisible = show || _state.value.controlsVisible)
+        _state.value = _state.value.copy(
+            settingsVisible = show,
+            textSettingsVisible = false,
+            controlsVisible = show || _state.value.controlsVisible,
+        )
+    }
+
+    fun showTextSettings(show: Boolean) {
+        _state.value = _state.value.copy(
+            textSettingsVisible = show,
+            settingsVisible = false,
+            controlsVisible = show || _state.value.controlsVisible,
+        )
     }
 
     fun toggleControls() {
