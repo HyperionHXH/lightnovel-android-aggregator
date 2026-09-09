@@ -53,7 +53,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.6.2`、`versionCode 12`；桌面和 jpackage 默认版本也是 `1.6.2`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.6.2`，含 Android APK 和 SHA256；上一份 `v1.4.2` 仍含 Windows 压缩包：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.4.2>。
+Android 默认版本：`versionName 1.6.2`、`versionCode 12`；桌面和 jpackage 默认版本也是 `1.6.2`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.6.2`，含 Android APK 和 SHA256：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.6.2>。上一份 `v1.4.2` 仍含 Windows 压缩包：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.4.2>。
 
 ## 发布流程
 
