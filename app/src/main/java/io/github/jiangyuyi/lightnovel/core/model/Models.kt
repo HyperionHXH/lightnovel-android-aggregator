@@ -175,9 +175,9 @@ enum class ReaderMode(val label: String) {
 @Serializable
 data class ReaderPreferences(
     val font: ReaderFont = ReaderFont.SERIF,
-    val fontSize: Float = 19f,
-    val lineHeight: Float = 1.7f,
-    val horizontalPadding: Int = 22,
+    val fontSize: Float = 21f,
+    val lineHeight: Float = 1.75f,
+    val horizontalPadding: Int = 28,
     val theme: ReaderTheme = ReaderTheme.SEPIA,
     val mode: ReaderMode = ReaderMode.PAGED,
     val showProgressBar: Boolean = true,

@@ -90,8 +90,18 @@ class LightNovelShelfSource internal constructor(
             else -> null
         }
         if (rankedDays != null) {
-            val items = if (page == 1) gateway.rank(rankedDays).take(pageSize) else emptyList()
-            return SourcePage(items.map(ShelfBookItem::toSource), page, total = items.size, hasMore = false)
+            val ranked = gateway.rank(rankedDays)
+            val effectivePage = page.coerceAtLeast(1)
+            val effectiveSize = pageSize.coerceIn(1, 50)
+            val fromIndex = ((effectivePage - 1) * effectiveSize).coerceAtMost(ranked.size)
+            val toIndex = (fromIndex + effectiveSize).coerceAtMost(ranked.size)
+            val items = ranked.subList(fromIndex, toIndex)
+            return SourcePage(
+                items = items.map(ShelfBookItem::toSource),
+                page = effectivePage,
+                total = ranked.size,
+                hasMore = toIndex < ranked.size,
+            )
         }
         val order = when (feed) {
             DiscoverFeed.POPULAR -> ShelfBookOrder.VIEWED

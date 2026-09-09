@@ -14,6 +14,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -79,6 +82,7 @@ fun SourceReaderScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val colors = state.preferences.sourceReaderColors()
+    val safeTopPadding = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
     val chapter = state.chapter
     val blocks = chapter?.let {
         buildList {
@@ -99,6 +103,7 @@ fun SourceReaderScreen(
 
     ImmersiveReaderEffect(
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
+        barColor = colors.background,
         controlsVisible = state.controlsVisible || state.settingsVisible,
     )
 
@@ -147,12 +152,13 @@ fun SourceReaderScreen(
                     onToggleControls = viewModel::toggleControls,
                     controlsVisible = state.controlsVisible,
                     showProgressBar = state.preferences.showProgressBar,
+                    safeTopPadding = safeTopPadding,
                 )
             } else LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = if (state.controlsVisible) 64.dp else 0.dp)
+                    .padding(top = safeTopPadding + if (state.controlsVisible) 64.dp else 0.dp)
                     .pointerInput(chapter.chapter.key) {
                         detectTapGestures { position ->
                             val horizontal = position.x / size.width.toFloat().coerceAtLeast(1f)
@@ -165,7 +171,7 @@ fun SourceReaderScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = state.preferences.horizontalPadding.dp,
                     end = state.preferences.horizontalPadding.dp,
-                    top = 18.dp,
+                    top = 8.dp,
                     bottom = if (state.controlsVisible && state.preferences.showProgressBar) 86.dp else 18.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -184,7 +190,7 @@ fun SourceReaderScreen(
 
         if (state.loading && chapter != null) {
             LinearProgressIndicator(
-                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth(),
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = safeTopPadding),
                 color = colors.text,
                 trackColor = colors.text.copy(alpha = 0.12f),
             )
@@ -303,6 +309,7 @@ private fun SourcePagedReader(
     onToggleControls: () -> Unit,
     controlsVisible: Boolean,
     showProgressBar: Boolean,
+    safeTopPadding: androidx.compose.ui.unit.Dp,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
@@ -312,6 +319,7 @@ private fun SourcePagedReader(
         val pageHeight = with(density) {
             (
                 maxHeight -
+                    safeTopPadding -
                     (if (controlsVisible) 64.dp else 0.dp) -
                     (if (controlsVisible && showProgressBar) 86.dp else 0.dp) -
                     28.dp
@@ -356,7 +364,7 @@ private fun SourcePagedReader(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
-                    top = 8.dp + if (controlsVisible) 64.dp else 0.dp,
+                    top = safeTopPadding + 8.dp + if (controlsVisible) 64.dp else 0.dp,
                     bottom = if (controlsVisible && showProgressBar) 86.dp else 12.dp,
                 )
                 .pointerInput(pagerState.currentPage, pages.size, hasNextChapter) {

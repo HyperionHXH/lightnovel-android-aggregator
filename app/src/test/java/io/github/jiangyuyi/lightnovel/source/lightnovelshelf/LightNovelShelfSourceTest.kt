@@ -45,6 +45,21 @@ class LightNovelShelfSourceTest {
     }
 
     @Test
+    fun `rank discover pages the complete ranked response`() = runTest {
+        val source = LightNovelShelfSource(object : StubGateway() {
+            override suspend fun rank(days: Int): List<ShelfBookItem> =
+                (1L..45L).map { id -> ShelfBookItem(id, "周榜书$id", null, null) }
+        })
+
+        val result = source.discover(DiscoverFeed.WEEKLY_RANK, page = 2, pageSize = 20)
+
+        assertEquals(listOf("周榜书21", "周榜书22"), result.items.take(2).map { it.title })
+        assertEquals(20, result.items.size)
+        assertEquals(45, result.total)
+        assertTrue(result.hasMore)
+    }
+
+    @Test
     fun `search maps result to shelf scoped key`() = runTest {
         val source = LightNovelShelfSource(object : StubGateway() {
             override suspend fun search(query: String, page: Int, pageSize: Int) = ShelfBookPage(

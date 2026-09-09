@@ -27,7 +27,12 @@ data class DiscoverSourceOption(
 data class DiscoverSourceUiState(
     val descriptor: SourceDescriptor,
     val items: List<NovelSummary> = emptyList(),
+    val page: Int = 0,
+    val total: Int = 0,
+    val hasMore: Boolean = false,
     val loading: Boolean = false,
+    val refreshing: Boolean = false,
+    val loadingMore: Boolean = false,
     val loaded: Boolean = false,
     val errorKind: SourceErrorKind? = null,
     val errorMessage: String? = null,
@@ -64,7 +69,7 @@ class AggregateDiscoverViewModel(
 
     init {
         require(perSourceTimeoutMillis > 0) { "discover timeout must be positive" }
-        load()
+        load(append = false)
     }
 
     fun selectSource(sourceId: String) {
@@ -77,37 +82,60 @@ class AggregateDiscoverViewModel(
             selectedFeed = selectedFeed,
             sources = emptyList(),
         )
-        load()
+        load(append = false)
     }
 
     fun selectFeed(feed: DiscoverFeed) {
         if (feed !in _state.value.feeds || feed == _state.value.selectedFeed) return
         _state.value = _state.value.copy(selectedFeed = feed, sources = emptyList())
-        load()
+        load(append = false)
     }
 
-    fun refresh() = load()
+    fun refresh() = load(append = false)
 
-    fun retry() = load()
+    fun retry() = load(append = false)
 
-    private fun load() {
+    fun loadMore() = load(append = true)
+
+    private fun load(append: Boolean) {
         val state = _state.value
         val feed = state.selectedFeed ?: return
+        val currentSource = state.sources.singleOrNull()
+        if (append && (currentSource == null || !currentSource.hasMore ||
+                currentSource.loading || currentSource.refreshing || currentSource.loadingMore)) {
+            return
+        }
         val targets = providers.filter { provider ->
             feed in provider.discoverFeeds &&
                 provider.descriptor.id == state.selectedSourceId
         }
+        if (targets.isEmpty()) return
         loadJob?.cancel()
-        val currentRequestId = ++requestId
+        val currentRequestId = if (append) requestId else ++requestId
+        val targetIds = targets.mapTo(mutableSetOf()) { it.descriptor.id }
         _state.value = state.copy(
-            sources = targets.map { provider ->
-                DiscoverSourceUiState(descriptor = provider.descriptor, loading = true)
+            sources = if (append) {
+                state.sources.map { source ->
+                    if (source.descriptor.id in targetIds) {
+                        source.copy(loadingMore = true, errorKind = null, errorMessage = null)
+                    } else source
+                }
+            } else {
+                targets.map { provider ->
+                    val previous = state.sources.firstOrNull { it.descriptor.id == provider.descriptor.id }
+                    DiscoverSourceUiState(
+                        descriptor = provider.descriptor,
+                        items = previous?.items.orEmpty(),
+                        loading = previous?.items.isNullOrEmpty(),
+                        refreshing = !previous?.items.isNullOrEmpty(),
+                    )
+                }
             },
         )
         loadJob = viewModelScope.launch {
             supervisorScope {
                 targets.forEach { provider ->
-                    launch { loadSource(provider, feed, currentRequestId) }
+                    launch { loadSource(provider, feed, append, currentRequestId) }
                 }
             }
         }
@@ -116,16 +144,26 @@ class AggregateDiscoverViewModel(
     private suspend fun loadSource(
         provider: DiscoverProvider,
         feed: DiscoverFeed,
+        append: Boolean,
         currentRequestId: Long,
     ) {
+        val current = _state.value.sources.firstOrNull { it.descriptor.id == provider.descriptor.id }
+        val pageNumber = if (append) current?.page?.plus(1) ?: return else 1
         try {
             val page = withTimeout(perSourceTimeoutMillis) {
-                provider.discover(feed = feed, page = 1, pageSize = 20)
+                provider.discover(feed = feed, page = pageNumber, pageSize = PAGE_SIZE)
             }
             updateSource(provider.descriptor.id, currentRequestId) { current ->
                 current.copy(
-                    items = page.items,
+                    items = if (append) {
+                        (current.items + page.items).distinctBy { it.key }
+                    } else page.items.distinctBy { it.key },
+                    page = page.page,
+                    total = page.total,
+                    hasMore = page.hasMore,
                     loading = false,
+                    refreshing = false,
+                    loadingMore = false,
                     loaded = true,
                     errorKind = null,
                     errorMessage = null,
@@ -150,6 +188,8 @@ class AggregateDiscoverViewModel(
         updateSource(provider.descriptor.id, currentRequestId) { current ->
             current.copy(
                 loading = false,
+                refreshing = false,
+                loadingMore = false,
                 loaded = true,
                 errorKind = kind,
                 errorMessage = message,
@@ -168,6 +208,10 @@ class AggregateDiscoverViewModel(
                 if (source.descriptor.id == sourceId) transform(source) else source
             },
         )
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 20
     }
 }
 

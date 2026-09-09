@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,8 +47,9 @@ fun AggregateDiscoverScreen(
     val allLoaded = state.sources.isNotEmpty() && state.sources.all { it.loaded }
 
     RefreshableLazyColumn(
-        isRefreshing = state.sources.any { it.loading },
+        isRefreshing = state.sources.any { it.loading || it.refreshing },
         onRefresh = viewModel::refresh,
+        onLoadMore = viewModel::loadMore,
         modifier = Modifier.fillMaxSize(),
     ) {
         item {
@@ -124,6 +126,23 @@ fun AggregateDiscoverScreen(
                     onClick = { onBook(novel.key) },
                     modifier = Modifier.padding(horizontal = 14.dp),
                 )
+            }
+        }
+
+        activeSource?.takeIf { it.hasMore || it.loadingMore }?.let { source ->
+            item(key = "load-more-${source.descriptor.id}") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (source.loadingMore) {
+                        CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp), strokeWidth = 2.dp)
+                        Text("正在加载更多", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        TextButton(onClick = viewModel::loadMore) { Text("加载更多") }
+                    }
+                }
             }
         }
     }

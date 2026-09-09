@@ -78,6 +78,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.compose.ui.graphics.toArgb
 import coil.compose.SubcomposeAsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
 import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
@@ -115,6 +116,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
 
     ImmersiveReaderEffect(
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
+        barColor = colors.background,
         controlsVisible = state.controlsVisible || state.settingsVisible,
     )
 
@@ -184,7 +186,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
 
         if (state.controlsVisible && !state.loading && (state.error == null || state.chapter != null)) {
             ReaderControls(
-                bookTitle = state.chapter?.bookTitle ?: "阅读",
+                title = state.chapter?.chapter?.title ?: "阅读",
                 colors = colors,
                 onBack = onBack,
                 onMenu = { menuVisible = true },
@@ -589,7 +591,7 @@ private fun ReaderIllustration(block: ReaderBlock.Illustration, modifier: Modifi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BoxScope.ReaderControls(
-    bookTitle: String,
+    title: String,
     colors: ReaderColors,
     onBack: () -> Unit,
     onMenu: () -> Unit,
@@ -597,7 +599,7 @@ private fun BoxScope.ReaderControls(
     TopAppBar(
         title = {
             Text(
-                bookTitle,
+                title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -739,22 +741,32 @@ private fun readerSliderColors() = SliderDefaults.colors(
 )
 
 @Composable
-internal fun ImmersiveReaderEffect(darkBackground: Boolean, controlsVisible: Boolean) {
+internal fun ImmersiveReaderEffect(darkBackground: Boolean, barColor: Color, controlsVisible: Boolean) {
     val view = LocalView.current
     DisposableEffect(view, darkBackground, controlsVisible) {
         val window = view.context.findActivity()?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         val previousLightStatusBars = controller?.isAppearanceLightStatusBars
+        val previousStatusBarColor = window?.statusBarColor
+        val previousNavigationBarColor = window?.navigationBarColor
+        window?.statusBarColor = barColor.toArgb()
+        window?.navigationBarColor = barColor.toArgb()
         controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         if (controlsVisible) {
             controller?.show(WindowInsetsCompat.Type.systemBars())
         } else {
-            controller?.hide(WindowInsetsCompat.Type.systemBars())
+            // Keep the status bar visible so display cutouts/camera areas never
+            // overlap the first line of the reader. Only the navigation bar is
+            // hidden for the immersive reading surface.
+            controller?.show(WindowInsetsCompat.Type.statusBars())
+            controller?.hide(WindowInsetsCompat.Type.navigationBars())
         }
         controller?.isAppearanceLightStatusBars = !darkBackground
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
             previousLightStatusBars?.let { controller?.isAppearanceLightStatusBars = it }
+            previousStatusBarColor?.let { window?.statusBarColor = it }
+            previousNavigationBarColor?.let { window?.navigationBarColor = it }
         }
     }
 }

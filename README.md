@@ -66,6 +66,15 @@ Windows：
 ./gradlew.bat testDebugUnitTest lintDebug assembleDebug
 ```
 
+Windows 桌面端预览：
+
+```powershell
+./gradlew.bat :desktopApp:run
+./scripts/package-windows.ps1
+```
+
+桌面端目前是可运行的 Mixn 预览版，包含发现、聚合搜索、统一书架、阅读历史、双源账号、详情/目录/正文、章节进度、离线章节保存、EPUB 导出和设置入口，并已接入轻之国度与轻书架的来源适配器及触底分页。桌面端与 Android 共享三项主导航（发现 / 书架 / 我的）、青绿色主题、来源与榜单标签、横向封面卡片和阅读信息层级，同时保留宽屏网格、鼠标和键盘交互；两端仍按平台分别实现窗口/触控适配以及 Android 独有的 WorkManager 后台任务、通知、社交资料和消息中心。
+
 默认单元测试不访问外网。需要手动运行轻书架匿名 SignalR 冒烟测试时，显式设置环境变量：
 
 ```powershell

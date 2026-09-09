@@ -35,5 +35,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Noyue"
+rootProject.name = "Mixn"
 include(":app")
+include(":desktopApp")

@@ -43,11 +43,16 @@ object EmptyReaderPreferencesAccess : ReaderPreferencesAccess {
 
 class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAccess {
     override val preferences: Flow<ReaderPreferences> = context.readerDataStore.data.map { values ->
+        // Older builds persisted the original compact defaults. Upgrade only that
+        // untouched combination so explicit reader customizations are preserved.
+        val legacyCompactDefaults = values[FONT_SIZE] == 19f &&
+            values[LINE_HEIGHT] == 1.7f &&
+            values[PADDING] == 22
         ReaderPreferences(
             font = enumValueOrDefault(values[FONT], ReaderFont.SERIF),
-            fontSize = (values[FONT_SIZE] ?: 19f).coerceIn(14f, 32f),
-            lineHeight = (values[LINE_HEIGHT] ?: 1.7f).coerceIn(1.2f, 2.2f),
-            horizontalPadding = (values[PADDING] ?: 22).coerceIn(12, 40),
+            fontSize = (if (legacyCompactDefaults) 21f else values[FONT_SIZE] ?: 21f).coerceIn(14f, 32f),
+            lineHeight = (if (legacyCompactDefaults) 1.75f else values[LINE_HEIGHT] ?: 1.75f).coerceIn(1.2f, 2.2f),
+            horizontalPadding = (if (legacyCompactDefaults) 28 else values[PADDING] ?: 28).coerceIn(12, 40),
             theme = enumValueOrDefault(values[THEME], ReaderTheme.SEPIA),
             mode = enumValueOrDefault(values[MODE], ReaderMode.PAGED),
             showProgressBar = values[SHOW_PROGRESS_BAR] ?: true,

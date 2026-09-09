@@ -79,6 +79,52 @@ class AggregateSearchViewModelTest {
         assertEquals("请先登录该来源", protectedState.errorMessage)
     }
 
+    @Test
+    fun `search appends the next page for each source and stops when exhausted`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val firstPages = mutableListOf<Int>()
+            val secondPages = mutableListOf<Int>()
+            val first = PagedFakeSearchSource("first") { _, page ->
+                firstPages += page
+                SourcePage(
+                    items = listOf(pagedNovel("first", page)),
+                    page = page,
+                    total = 2,
+                    hasMore = page == 1,
+                )
+            }
+            val second = PagedFakeSearchSource("second") { _, page ->
+                secondPages += page
+                SourcePage(
+                    items = listOf(pagedNovel("second", page)),
+                    page = page,
+                    total = 2,
+                    hasMore = page == 1,
+                )
+            }
+            val registry = SourceRegistry(listOf(first, second))
+            val viewModel = AggregateSearchViewModel(
+                AggregateSearchCoordinator(registry),
+                registry,
+                debounceMillis = 0,
+            )
+
+            viewModel.setQuery("测试")
+            advanceUntilIdle()
+            viewModel.loadMore()
+            advanceUntilIdle()
+            viewModel.loadMore()
+            advanceUntilIdle()
+
+            assertEquals(listOf(1, 2), firstPages)
+            assertEquals(listOf(1, 2), secondPages)
+            assertEquals(
+                listOf("第1", "第2"),
+                viewModel.state.value.sources.first { it.descriptor.id == "first" }.items.map { it.title },
+            )
+            assertTrue(viewModel.state.value.sources.none { it.hasMore || it.loadingMore })
+        }
+
     private class FakeSearchSource(
         id: String,
         private val response: suspend (String) -> SourcePage<NovelSummary>,
@@ -89,8 +135,23 @@ class AggregateSearchViewModelTest {
             response(query)
     }
 
+    private class PagedFakeSearchSource(
+        id: String,
+        private val response: suspend (String, Int) -> SourcePage<NovelSummary>,
+    ) : NovelSource, SearchProvider {
+        override val descriptor = SourceDescriptor(id, id, setOf(SourceCapability.SEARCH))
+
+        override suspend fun search(query: String, page: Int, pageSize: Int): SourcePage<NovelSummary> =
+            response(query, page)
+    }
+
     private fun novel(sourceId: String, title: String) = NovelSummary(
         key = NovelKey(sourceId, "1"),
         title = title,
+    )
+
+    private fun pagedNovel(sourceId: String, page: Int) = NovelSummary(
+        key = NovelKey(sourceId, page.toString()),
+        title = "第$page",
     )
 }

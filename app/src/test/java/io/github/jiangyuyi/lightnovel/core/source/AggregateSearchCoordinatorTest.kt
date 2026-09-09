@@ -91,6 +91,47 @@ class AggregateSearchCoordinatorTest {
         assertTrue(cancelled.isCompleted)
     }
 
+    @Test
+    fun `source filter limits pagination request to selected providers`() = runTest {
+        val calls = mutableListOf<String>()
+        val first = FakeSearchSource("first") {
+            calls += "first"
+            SourcePage(emptyList(), page = 2)
+        }
+        val second = FakeSearchSource("second") {
+            calls += "second"
+            SourcePage(emptyList(), page = 2)
+        }
+        val coordinator = AggregateSearchCoordinator(SourceRegistry(listOf(first, second)))
+
+        val events = coordinator.search("test", page = 2, sourceIds = setOf("second")).toList()
+
+        assertEquals(listOf("second"), calls)
+        assertEquals(listOf("second"), events.map { it.source.id }.distinct())
+    }
+
+    @Test
+    fun `source page overrides allow each provider to advance independently`() = runTest {
+        val pages = mutableMapOf<String, Int>()
+        val first = PagedFakeSearchSource("first") { _, page ->
+            pages["first"] = page
+            SourcePage(emptyList(), page = page)
+        }
+        val second = PagedFakeSearchSource("second") { _, page ->
+            pages["second"] = page
+            SourcePage(emptyList(), page = page)
+        }
+        val coordinator = AggregateSearchCoordinator(SourceRegistry(listOf(first, second)))
+
+        coordinator.search(
+            query = "test",
+            page = 1,
+            pageBySourceId = mapOf("first" to 3, "second" to 2),
+        ).toList()
+
+        assertEquals(mapOf("first" to 3, "second" to 2), pages)
+    }
+
     private class FakeSearchSource(
         id: String,
         private val response: suspend () -> SourcePage<NovelSummary>,
@@ -98,6 +139,16 @@ class AggregateSearchCoordinatorTest {
         override val descriptor = SourceDescriptor(id, id, setOf(SourceCapability.SEARCH))
 
         override suspend fun search(query: String, page: Int, pageSize: Int): SourcePage<NovelSummary> = response()
+    }
+
+    private class PagedFakeSearchSource(
+        id: String,
+        private val response: suspend (String, Int) -> SourcePage<NovelSummary>,
+    ) : NovelSource, SearchProvider {
+        override val descriptor = SourceDescriptor(id, id, setOf(SourceCapability.SEARCH))
+
+        override suspend fun search(query: String, page: Int, pageSize: Int): SourcePage<NovelSummary> =
+            response(query, page)
     }
 
     private fun novel(sourceId: String, remoteId: String, title: String) = NovelSummary(

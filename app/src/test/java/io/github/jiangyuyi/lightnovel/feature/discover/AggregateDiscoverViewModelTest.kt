@@ -121,6 +121,47 @@ class AggregateDiscoverViewModelTest {
         assertEquals("请求超时，请稍后重试", source.errorMessage)
     }
 
+    @Test
+    fun `discover appends pages, removes duplicates, and stops at the end`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val requestedPages = mutableListOf<Int>()
+            val source = FakeDiscoverSource("paged") { _, page, pageSize ->
+                requestedPages += page
+                when (page) {
+                    1 -> SourcePage(
+                        items = listOf(novel("paged", "1"), novel("paged", "2")),
+                        page = page,
+                        total = 3,
+                        hasMore = true,
+                    )
+
+                    2 -> SourcePage(
+                        items = listOf(novel("paged", "2"), novel("paged", "3")),
+                        page = page,
+                        total = 3,
+                        hasMore = false,
+                    )
+
+                    else -> error("unexpected page $page (size=$pageSize)")
+                }
+            }
+            val viewModel = AggregateDiscoverViewModel(SourceRegistry(listOf(source)))
+            advanceUntilIdle()
+
+            viewModel.loadMore()
+            advanceUntilIdle()
+            viewModel.loadMore()
+            advanceUntilIdle()
+
+            val state = viewModel.state.value.sources.single()
+            assertEquals(listOf(1, 2), requestedPages)
+            assertEquals(listOf("paged-1", "paged-2", "paged-3"), state.items.map { it.title })
+            assertEquals(2, state.page)
+            assertEquals(3, state.total)
+            assertFalse(state.hasMore)
+            assertFalse(state.loadingMore)
+        }
+
     private class FakeDiscoverSource(
         id: String,
         override val discoverFeeds: List<DiscoverFeed> = listOf(

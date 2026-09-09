@@ -19,7 +19,12 @@ import kotlinx.coroutines.launch
 data class SourceSearchUiState(
     val descriptor: SourceDescriptor,
     val items: List<NovelSummary> = emptyList(),
+    val page: Int = 0,
+    val total: Int = 0,
+    val hasMore: Boolean = false,
     val loading: Boolean = false,
+    val refreshing: Boolean = false,
+    val loadingMore: Boolean = false,
     val searched: Boolean = false,
     val errorKind: SourceErrorKind? = null,
     val errorMessage: String? = null,
@@ -76,50 +81,110 @@ class AggregateSearchViewModel(
 
     fun retry() = searchNow()
 
+    fun loadMore() {
+        val query = _state.value.searchedQuery.trim()
+        if (query.isEmpty() || _state.value.query.trim() != query) return
+        if (_state.value.sources.any { it.loading || it.refreshing || it.loadingMore }) return
+        val targets = _state.value.sources.filter {
+            it.hasMore
+        }
+        if (targets.isEmpty()) return
+        val pageBySourceId = targets.associate { it.descriptor.id to (it.page + 1).coerceAtLeast(1) }
+        searchJob?.cancel()
+        val targetIds = targets.mapTo(mutableSetOf()) { it.descriptor.id }
+        _state.value = _state.value.copy(
+            sources = _state.value.sources.map { source ->
+                if (source.descriptor.id in targetIds) {
+                    source.copy(loadingMore = true, errorKind = null, errorMessage = null)
+                } else source
+            },
+        )
+        searchJob = viewModelScope.launch {
+            collectSearch(
+                query,
+                page = 1,
+                sourceIds = targetIds,
+                pageBySourceId = pageBySourceId,
+                append = true,
+            )
+        }
+    }
+
     private fun startSearch(query: String) {
         searchJob?.cancel()
         _state.value = _state.value.copy(
             searchedQuery = query,
-            sources = initialSources.map { it.copy(loading = true) },
+            sources = initialSources.map { it.copy(loading = true, refreshing = true) },
         )
         searchJob = viewModelScope.launch {
-            try {
-                coordinator.search(query).collect { event ->
-                    if (_state.value.query.trim() != query) return@collect
-                    updateSource(event.source.id) { current ->
-                        when (event) {
-                            is SourceSearchEvent.Loading -> current.copy(
-                                loading = true,
-                                searched = false,
-                                errorKind = null,
-                                errorMessage = null,
-                            )
+            collectSearch(query, page = 1, sourceIds = null, pageBySourceId = emptyMap(), append = false)
+        }
+    }
 
-                            is SourceSearchEvent.Success -> current.copy(
-                                items = event.page.items,
-                                loading = false,
-                                searched = true,
-                                errorKind = null,
-                                errorMessage = null,
-                            )
+    private suspend fun collectSearch(
+        query: String,
+        page: Int,
+        sourceIds: Set<String>?,
+        pageBySourceId: Map<String, Int>,
+        append: Boolean,
+    ) {
+        try {
+            coordinator.search(
+                query,
+                page = page,
+                pageSize = PAGE_SIZE,
+                sourceIds = sourceIds,
+                pageBySourceId = pageBySourceId,
+            ).collect { event ->
+                if (_state.value.query.trim() != query) return@collect
+                updateSource(event.source.id) { current ->
+                    when (event) {
+                        is SourceSearchEvent.Loading -> current.copy(
+                            loading = true,
+                            refreshing = !append,
+                            loadingMore = append,
+                            searched = if (append) current.searched else false,
+                            errorKind = null,
+                            errorMessage = null,
+                        )
 
-                            is SourceSearchEvent.Failure -> current.copy(
-                                loading = false,
-                                searched = true,
-                                errorKind = event.kind,
-                                errorMessage = event.toUiMessage(),
-                            )
-                        }
+                        is SourceSearchEvent.Success -> current.copy(
+                            items = if (append) {
+                                (current.items + event.page.items).distinctBy { it.key }
+                            } else event.page.items.distinctBy { it.key },
+                            page = event.page.page,
+                            total = event.page.total,
+                            hasMore = event.page.hasMore,
+                            loading = false,
+                            refreshing = false,
+                            loadingMore = false,
+                            searched = true,
+                            errorKind = null,
+                            errorMessage = null,
+                        )
+
+                        is SourceSearchEvent.Failure -> current.copy(
+                            loading = false,
+                            refreshing = false,
+                            loadingMore = false,
+                            searched = true,
+                            errorKind = event.kind,
+                            errorMessage = event.toUiMessage(),
+                        )
                     }
                 }
-            } catch (error: CancellationException) {
-                throw error
-            } finally {
-                if (_state.value.query.trim() == query) {
-                    _state.value = _state.value.copy(
-                        sources = _state.value.sources.map { it.copy(loading = false) },
-                    )
-                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } finally {
+            if (_state.value.query.trim() == query) {
+                _state.value = _state.value.copy(
+                    sources = _state.value.sources.map { source ->
+                        if (sourceIds == null || source.descriptor.id in sourceIds) {
+                            source.copy(loading = false, refreshing = false, loadingMore = false)
+                        } else source
+                    },
+                )
             }
         }
     }
@@ -133,6 +198,10 @@ class AggregateSearchViewModel(
                 if (source.descriptor.id == sourceId) transform(source) else source
             },
         )
+    }
+
+    private companion object {
+        const val PAGE_SIZE = 20
     }
 }
 

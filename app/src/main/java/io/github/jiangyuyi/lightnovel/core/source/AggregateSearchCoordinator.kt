@@ -50,18 +50,28 @@ class AggregateSearchCoordinator(
         require(perSourceTimeoutMillis > 0) { "search timeout must be positive" }
     }
 
-    fun search(query: String, page: Int = 1, pageSize: Int = 20): Flow<SourceSearchEvent> = channelFlow {
+    fun search(
+        query: String,
+        page: Int = 1,
+        pageSize: Int = 20,
+        sourceIds: Set<String>? = null,
+        pageBySourceId: Map<String, Int> = emptyMap(),
+    ): Flow<SourceSearchEvent> = channelFlow {
         val normalizedQuery = query.trim()
         require(normalizedQuery.isNotEmpty()) { "search query must not be blank" }
         require(page > 0) { "page must be positive" }
         require(pageSize > 0) { "page size must be positive" }
+        require(pageBySourceId.values.all { it > 0 }) { "source pages must be positive" }
 
-        registry.searchProviders().forEach { provider ->
+        registry.searchProviders()
+            .filter { sourceIds == null || it.descriptor.id in sourceIds }
+            .forEach { provider ->
             launch {
                 send(SourceSearchEvent.Loading(provider.descriptor))
                 try {
+                    val sourcePage = pageBySourceId[provider.descriptor.id] ?: page
                     val result = withTimeout(perSourceTimeoutMillis) {
-                        provider.search(normalizedQuery, page, pageSize)
+                        provider.search(normalizedQuery, sourcePage, pageSize)
                     }
                     send(SourceSearchEvent.Success(provider.descriptor, result))
                 } catch (error: TimeoutCancellationException) {

@@ -52,8 +52,9 @@ fun AggregateSearchScreen(
     val interleavedResults = interleaveSourceResults(state.sources)
 
     RefreshableLazyColumn(
-        isRefreshing = state.sources.any { it.loading },
+        isRefreshing = state.sources.any { it.loading || it.refreshing },
         onRefresh = viewModel::searchNow,
+        onLoadMore = viewModel::loadMore,
         modifier = Modifier.fillMaxSize(),
     ) {
         item {
@@ -143,6 +144,23 @@ fun AggregateSearchScreen(
                     onClick = { onBook(result.novel.key) },
                     modifier = Modifier.padding(horizontal = 14.dp),
                 )
+            }
+
+            if (state.sources.any { it.hasMore || it.loadingMore }) {
+                item(key = "search-load-more") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (state.sources.any { it.loadingMore }) {
+                            CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp), strokeWidth = 2.dp)
+                            Text("正在加载更多", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            TextButton(onClick = viewModel::loadMore) { Text("加载更多") }
+                        }
+                    }
+                }
             }
         }
     }
