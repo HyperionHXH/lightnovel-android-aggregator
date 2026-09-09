@@ -31,6 +31,8 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 - 发现/搜索触底分页、缓存 stale-while-revalidate、磁盘 LRU、章节正文缓存和来源更新快照。
 - 阅读控制栏为 Compose 覆盖层；正文使用固定安全区，避免刘海/摄像头遮挡。展开/收起不再调用系统栏 API，也不触发整章重新解析或重新分页。
 - 阅读页加载状态统一使用安全区域内的居中进度指示器；阅读菜单使用居中限宽可滚动面板，避免底部弹层和顶部偏移。
+- 音量键翻页通过 `MainActivity.dispatchKeyEvent` 统一拦截，只有阅读器开启选项且控件隐藏时生效；菜单外部 scrim 可点击关闭，面板内部事件不会误关闭。
+- 文字样式提供系统默认、无衬线、衬线、等宽和手写体；Android 系统字体的实际字形随设备变化，来源专用字体章节仍会优先加载服务端字体。
 - Windows 客户端具备发现、搜索、书架、设置、登录、详情、章节、在线阅读、历史和 EPUB 导出等基础流程。
 - 应用品牌为 `Mixn`，图标素材为 `docs/mixn-icon.png`；iOS 目标已移除。
 
@@ -51,7 +53,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.6.1`、`versionCode 11`；桌面和 jpackage 默认版本也是 `1.6.1`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.6.1`，含 Android APK 和 SHA256：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.6.1>。上一份 `v1.4.2` 仍含 Windows 压缩包：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.4.2>。
+Android 默认版本：`versionName 1.6.2`、`versionCode 12`；桌面和 jpackage 默认版本也是 `1.6.2`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.6.2`，含 Android APK 和 SHA256；上一份 `v1.4.2` 仍含 Windows 压缩包：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.4.2>。
 
 ## 发布流程
 
@@ -75,7 +77,7 @@ git clone -b feature/multi-source-foundation https://github.com/HyperionHXH/ligh
 - 没有真实 LK/LNS 账号时无法验证登录、签到和付费章节；付费解锁依赖站点接口和账号余额，接口变更需在对应适配器修复。
 - 两站接口、SignalR/BFF 字段和专用字体可能变化，需保留来源级错误和超时处理。
 - Android 图片绘制性能受模拟器渲染后端影响；应在真实设备和 GPU 模式 AVD 上复测。
-- `v1.6.1` Debug APK 已在本机 `noval_api35` AVD 安装启动，应用进程和首页恢复正常；阅读加载/菜单 Compose instrumentation 已通过；真实账号登录、签到、付费解锁及实体音量键仍需人工回归。
+- `v1.6.2` Debug APK 已在本机 `noval_api35` AVD 安装启动，阅读加载/菜单/Activity 音量键 instrumentation 已通过；真实设备仍需确认厂商对音量键、媒体会话和系统辅助功能的特殊处理。
 - 桌面端仍为 Swing/JVM，功能已覆盖基础流程，但视觉细节和与 Android 的完全一致性仍可继续优化。
 - Java Android API 的 deprecated warning（如 `statusBarColor`）目前不阻断构建。
 - 最近阅读体验增强提交：`105a36c`（文字样式分组）、`9a5589b`（控制栏分层）、`9960815`（点击区域）、`5fa1c96`（音量键/常亮）、`5ff43c4`（认证错误解释）、`2001c43`（分页缓存键收窄）。

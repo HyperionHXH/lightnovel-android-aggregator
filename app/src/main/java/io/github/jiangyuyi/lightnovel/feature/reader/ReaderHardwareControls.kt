@@ -13,6 +13,40 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import io.github.jiangyuyi.lightnovel.core.model.ReaderOrientation
 
+internal interface ReaderVolumeKeyHost {
+    fun setReaderVolumeKeyHandler(handler: ((keyCode: Int, action: Int, repeatCount: Int) -> Boolean)?)
+}
+
+internal enum class ReaderVolumeKeyDirection {
+    PREVIOUS,
+    NEXT,
+}
+
+/** Returns the reader action for a volume event, or null when it is not a volume key. */
+internal fun readerVolumeKeyDirection(keyCode: Int): ReaderVolumeKeyDirection? = when (keyCode) {
+    KeyEvent.KEYCODE_VOLUME_UP -> ReaderVolumeKeyDirection.PREVIOUS
+    KeyEvent.KEYCODE_VOLUME_DOWN -> ReaderVolumeKeyDirection.NEXT
+    else -> null
+}
+
+/** Consumes volume events while enabled and emits one page turn per physical key press. */
+internal fun consumeReaderVolumeKey(
+    keyCode: Int,
+    action: Int,
+    repeatCount: Int,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+): Boolean {
+    val direction = readerVolumeKeyDirection(keyCode) ?: return false
+    if (action == KeyEvent.ACTION_DOWN && repeatCount == 0) {
+        when (direction) {
+            ReaderVolumeKeyDirection.PREVIOUS -> onPrevious()
+            ReaderVolumeKeyDirection.NEXT -> onNext()
+        }
+    }
+    return true
+}
+
 @Composable
 internal fun ReaderKeepScreenOnEffect(enabled: Boolean) {
     val view = LocalView.current
@@ -48,26 +82,32 @@ internal fun ReaderVolumeKeyEffect(
     onNext: () -> Unit,
 ) {
     val view = LocalView.current
+    val activity = view.context.findReaderActivity()
+    val host = activity as? ReaderVolumeKeyHost
     val previous by rememberUpdatedState(onPrevious)
     val next by rememberUpdatedState(onNext)
-    DisposableEffect(view, enabled) {
+    DisposableEffect(view, activity, enabled) {
         if (!enabled) return@DisposableEffect onDispose { }
         val listener = View.OnKeyListener { _, keyCode, event ->
-            if (keyCode != KeyEvent.KEYCODE_VOLUME_UP && keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) {
-                return@OnKeyListener false
-            }
-            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
-                if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) previous() else next()
-            }
-            true
+            consumeReaderVolumeKey(keyCode, event.action, event.repeatCount, previous, next)
         }
-        val hadFocus = view.hasFocus()
-        view.isFocusableInTouchMode = true
-        view.requestFocus()
-        view.setOnKeyListener(listener)
-        onDispose {
-            view.setOnKeyListener(null)
-            if (!hadFocus) view.clearFocus()
+        val handler: (Int, Int, Int) -> Boolean = { keyCode, action, repeatCount ->
+            consumeReaderVolumeKey(keyCode, action, repeatCount, previous, next)
+        }
+        if (host != null) {
+            host.setReaderVolumeKeyHandler(handler)
+            onDispose {
+                host.setReaderVolumeKeyHandler(null)
+            }
+        } else {
+            val hadFocus = view.hasFocus()
+            view.isFocusableInTouchMode = true
+            view.requestFocus()
+            view.setOnKeyListener(listener)
+            onDispose {
+                view.setOnKeyListener(null)
+                if (!hadFocus) view.clearFocus()
+            }
         }
     }
 }

@@ -37,8 +37,8 @@ android {
         applicationId = "io.github.jiangyuyi.lightnovel"
         minSdk = 26
         targetSdk = 35
-        versionCode = providers.environmentVariable("APP_VERSION_CODE").orNull?.toIntOrNull() ?: 11
-        versionName = providers.environmentVariable("APP_VERSION_NAME").orNull ?: "1.6.1"
+        versionCode = providers.environmentVariable("APP_VERSION_CODE").orNull?.toIntOrNull() ?: 12
+        versionName = providers.environmentVariable("APP_VERSION_NAME").orNull ?: "1.6.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

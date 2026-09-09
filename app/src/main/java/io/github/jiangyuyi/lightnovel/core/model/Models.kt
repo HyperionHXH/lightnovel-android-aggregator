@@ -157,6 +157,7 @@ enum class ReaderFont(val label: String) {
     SANS("无衬线"),
     SERIF("衬线"),
     MONO("等宽"),
+    CURSIVE("手写体"),
 }
 
 @Serializable

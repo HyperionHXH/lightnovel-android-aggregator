@@ -1,7 +1,9 @@
 package io.github.jiangyuyi.lightnovel
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.net.Uri
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.PaddingValues
@@ -70,6 +72,7 @@ import io.github.jiangyuyi.lightnovel.feature.reader.ReaderScreen
 import io.github.jiangyuyi.lightnovel.feature.reader.ReaderViewModel
 import io.github.jiangyuyi.lightnovel.feature.reader.SourceReaderScreen
 import io.github.jiangyuyi.lightnovel.feature.reader.SourceReaderViewModel
+import io.github.jiangyuyi.lightnovel.feature.reader.ReaderVolumeKeyHost
 import io.github.jiangyuyi.lightnovel.feature.search.AggregateSearchScreen
 import io.github.jiangyuyi.lightnovel.feature.search.AggregateSearchViewModel
 import io.github.jiangyuyi.lightnovel.feature.sources.SourceAccountsScreen
@@ -80,10 +83,27 @@ import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), ReaderVolumeKeyHost {
+    private var readerVolumeKeyHandler: ((keyCode: Int, action: Int, repeatCount: Int) -> Boolean)? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { LightNovelAppRoot() }
+    }
+
+    @SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val handler = readerVolumeKeyHandler
+        if (handler != null && handler(event.keyCode, event.action, event.repeatCount)) {
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun setReaderVolumeKeyHandler(
+        handler: ((keyCode: Int, action: Int, repeatCount: Int) -> Boolean)?,
+    ) {
+        readerVolumeKeyHandler = handler
     }
 }
 

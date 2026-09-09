@@ -841,6 +841,12 @@ internal fun ReaderTextSettingsDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                } else {
+                    Text(
+                        "可选字体来自 Android 系统，具体字形会随设备系统版本变化。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 Text("字号 ${preferences.fontSize.toInt()}")
                 Slider(
@@ -982,6 +988,7 @@ private fun ReaderFont.family(): FontFamily = when (this) {
     ReaderFont.SANS -> FontFamily.SansSerif
     ReaderFont.SERIF -> FontFamily.Serif
     ReaderFont.MONO -> FontFamily.Monospace
+    ReaderFont.CURSIVE -> FontFamily.Cursive
 }
 
 private fun ReaderImageScale.contentScale(): ContentScale = when (this) {

@@ -618,6 +618,7 @@ private fun ReaderPreferences.sourceTextStyle(
         ReaderFont.SANS -> FontFamily.SansSerif
         ReaderFont.SERIF -> FontFamily.Serif
         ReaderFont.MONO -> FontFamily.Monospace
+        ReaderFont.CURSIVE -> FontFamily.Cursive
     },
     fontSize = fontSize.sp,
     lineHeight = (fontSize * lineHeight).sp,
