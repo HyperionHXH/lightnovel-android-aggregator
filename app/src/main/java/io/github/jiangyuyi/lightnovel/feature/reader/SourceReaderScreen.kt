@@ -158,7 +158,7 @@ fun SourceReaderScreen(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = safeTopPadding + if (state.controlsVisible) 64.dp else 0.dp)
+                    .padding(top = safeTopPadding)
                     .pointerInput(chapter.chapter.key) {
                         detectTapGestures { position ->
                             val horizontal = position.x / size.width.toFloat().coerceAtLeast(1f)
@@ -172,7 +172,7 @@ fun SourceReaderScreen(
                     start = state.preferences.horizontalPadding.dp,
                     end = state.preferences.horizontalPadding.dp,
                     top = 8.dp,
-                    bottom = if (state.controlsVisible && state.preferences.showProgressBar) 86.dp else 18.dp,
+                    bottom = 18.dp,
                 ),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -320,8 +320,6 @@ private fun SourcePagedReader(
             (
                 maxHeight -
                     safeTopPadding -
-                    (if (controlsVisible) 64.dp else 0.dp) -
-                    (if (controlsVisible && showProgressBar) 86.dp else 0.dp) -
                     28.dp
             ).roundToPx().coerceAtLeast(1)
         }
@@ -364,8 +362,8 @@ private fun SourcePagedReader(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(
-                    top = safeTopPadding + 8.dp + if (controlsVisible) 64.dp else 0.dp,
-                    bottom = if (controlsVisible && showProgressBar) 86.dp else 12.dp,
+                    top = safeTopPadding + 8.dp,
+                    bottom = 12.dp,
                 )
                 .pointerInput(pagerState.currentPage, pages.size, hasNextChapter) {
                     detectTapGestures { position ->

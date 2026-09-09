@@ -247,8 +247,11 @@ private fun PagedReader(
         val paragraphStyle = preferences.paragraphStyle(colors.text)
         val headingStyle = preferences.headingStyle(colors.text)
         val horizontalPadding = preferences.horizontalPadding.dp
-        val pageTopPadding = safeTopPadding + 8.dp + if (controlsVisible) 64.dp else 0.dp
-        val pageBottomPadding = if (controlsVisible && showProgressBar) 86.dp else 12.dp
+        // Keep pagination stable while the title bar/progress overlay toggles.
+        // The status-bar inset is permanent; reader controls are intentionally
+        // drawn over the page, matching Lithium's no-reflow behavior.
+        val pageTopPadding = safeTopPadding + 8.dp
+        val pageBottomPadding = 12.dp
         val pageWidthPx = with(density) { (maxWidth - horizontalPadding * 2).roundToPx().coerceAtLeast(1) }
         val pageHeightPx = with(density) {
             (maxHeight - pageTopPadding - pageBottomPadding).roundToPx().coerceAtLeast(1)
@@ -463,7 +466,7 @@ private fun ScrollingReader(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(top = safeTopPadding + if (controlsVisible) 64.dp else 0.dp)
+                .padding(top = safeTopPadding)
                 .pointerInput(onToggleControls) {
                     detectTapGestures { position ->
                         val horizontalFraction = position.x / size.width.toFloat().coerceAtLeast(1f)
@@ -477,7 +480,7 @@ private fun ScrollingReader(
                 start = preferences.horizontalPadding.dp,
                 end = preferences.horizontalPadding.dp,
                 top = 8.dp,
-                bottom = if (controlsVisible && showProgressBar) 86.dp else 12.dp,
+                bottom = 12.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {

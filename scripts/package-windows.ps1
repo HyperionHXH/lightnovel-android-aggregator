@@ -48,7 +48,7 @@ if ([string]::IsNullOrWhiteSpace($jpackage)) {
 $jpackageArgs = @(
     "--type", "app-image",
     "--name", "Mixn",
-    "--app-version", "1.3.1",
+    "--app-version", $(if ([string]::IsNullOrWhiteSpace($env:APP_VERSION_NAME)) { "1.4.1" } else { $env:APP_VERSION_NAME }),
     "--input", (Join-Path $resolvedInstallDir "lib"),
     "--main-jar", $mainJar,
     "--main-class", "io.github.jiangyuyi.lightnovel.desktop.MainKt",
