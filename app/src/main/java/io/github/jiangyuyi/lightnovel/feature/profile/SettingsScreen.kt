@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.documentfile.provider.DocumentFile
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -231,9 +232,41 @@ private fun SettingsSectionHeading(
 @Composable
 private fun SettingsDivider() {
     HorizontalDivider(
-        modifier = Modifier.padding(vertical = 2.dp),
-        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
+        modifier = Modifier.padding(vertical = 6.dp),
+        thickness = 1.dp,
+        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.48f),
     )
+}
+
+@Composable
+private fun SettingsGroup(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            ),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+            ),
+        ) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                content = content,
+            )
+        }
+    }
 }
 
 @Composable
@@ -276,13 +309,7 @@ private fun AppearanceSettingsSection(
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsSectionHeading("外观", onReset)
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            ),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SettingsGroup("界面", content = {
                 Text("主题", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = AppThemeMode.entries,
@@ -306,8 +333,7 @@ private fun AppearanceSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(iconScale = it)) },
                 )
-            }
-        }
+            })
     }
 }
 
@@ -321,13 +347,7 @@ private fun ReaderSettingsSection(
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingsSectionHeading("阅读", onReset)
-        Card(
-            Modifier.fillMaxWidth(),
-            colors = androidx.compose.material3.CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            ),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SettingsGroup("文字排版", content = {
                 Text("字体", fontWeight = FontWeight.SemiBold)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -361,7 +381,8 @@ private fun ReaderSettingsSection(
                     valueRange = 12f..40f,
                     steps = 13,
                 )
-                SettingsDivider()
+            })
+        SettingsGroup("阅读交互", content = {
                 Text("阅读方式", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = ReaderMode.entries,
@@ -393,7 +414,8 @@ private fun ReaderSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(tapInversion = it)) },
                 )
-                SettingsDivider()
+            })
+        SettingsGroup("设备行为", content = {
                 Text("屏幕方向", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = ReaderOrientation.entries,
@@ -427,8 +449,7 @@ private fun ReaderSettingsSection(
                     checked = preferences.showProgressBar,
                     onCheckedChange = { onChange(preferences.copy(showProgressBar = it)) },
                 )
-            }
-        }
+            })
     }
 }
 

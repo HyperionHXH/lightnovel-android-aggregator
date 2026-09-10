@@ -35,10 +35,8 @@ class FontSelectionScreenTest {
         }
 
         compose.onNodeWithText("字体预览与选择").assertIsDisplayed()
-        compose.onNodeWithText("系统字体").assertIsDisplayed()
-        compose.onNodeWithText("系统默认").assertIsDisplayed()
-        compose.onNodeWithText("系统黑体").assertIsDisplayed()
-        compose.onNodeWithText("系统宋体").assertIsDisplayed()
+        compose.onNodeWithText("中文阅读字体").assertIsDisplayed()
+        compose.onNodeWithText("思源宋体").assertIsDisplayed()
 
         val labels = ReaderFont.entries.map { it.label }
         assertEquals(7, labels.size)

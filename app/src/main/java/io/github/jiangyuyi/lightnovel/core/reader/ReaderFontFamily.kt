@@ -21,4 +21,4 @@ fun ReaderPreferences.fontLabel(): String = customFontId
     ?.let { id -> UserFontRepository.catalog.firstOrNull { it.id == id }?.name }
     ?: font.label
 
-const val READER_FONT_PREVIEW = "春风拂过窗棂，檐下灯影轻晃。她翻过一页书，低声读道：‘山川入梦，灯火可亲。’"
+const val READER_FONT_PREVIEW = "春风拂过窗棂，檐下灯影轻晃。她翻过一页书，低声读道：“山川入梦，灯火可亲。” Mixn Reader 2026 — Aa Bb 0123 !?"

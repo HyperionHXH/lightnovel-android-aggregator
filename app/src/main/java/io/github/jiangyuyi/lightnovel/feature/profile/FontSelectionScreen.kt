@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
+import io.github.jiangyuyi.lightnovel.R
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
 import io.github.jiangyuyi.lightnovel.core.reader.READER_FONT_PREVIEW
 import io.github.jiangyuyi.lightnovel.core.reader.UserFontDefinition
@@ -90,9 +92,9 @@ fun FontSelectionScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text("把系统字体和已下载字体放在一起比较", style = MaterialTheme.typography.titleMedium)
+                Text("用同一段正文比较真实字形", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "中文、英文字母、数字和标点会一起显示。下载字体后才会使用它的真实字形。",
+                    "中文、英文、数字和标点保持一致，避免不同示例文字干扰判断。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -100,23 +102,7 @@ fun FontSelectionScreen(
         }
         item {
             Text(
-                "系统字体",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        items(ReaderFont.entries, key = { it.name }) { font ->
-            SystemFontCard(
-                font = font,
-                selected = preferences.customFontId == null && preferences.font == font,
-                onSelect = { select(font) },
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-        }
-        item {
-            Text(
-                "可下载字体",
+                "中文阅读字体",
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary,
@@ -156,6 +142,22 @@ fun FontSelectionScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
         }
+        item {
+            Text(
+                "设备字体（中文字形可能相同）",
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        items(ReaderFont.entries, key = { it.name }) { font ->
+            SystemFontCard(
+                font = font,
+                selected = preferences.customFontId == null && preferences.font == font,
+                onSelect = { select(font) },
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
         error?.let { message ->
             item {
                 Text(
@@ -183,6 +185,7 @@ private fun SystemFontCard(
         family = font.fontFamily(),
         selected = selected,
         supporting = "Android 系统字体",
+        note = "中文字形由设备字体决定，部分选项在当前手机上可能相同",
         action = {
             TextButton(onClick = onSelect) {
                 if (selected) Icon(Icons.Filled.Check, contentDescription = null)
@@ -207,8 +210,8 @@ private fun UserFontCard(
     FontPreviewCard(
         modifier = modifier,
         title = definition.name,
-        preview = if (installed) READER_FONT_PREVIEW else definition.preview,
-        family = family,
+        preview = READER_FONT_PREVIEW,
+        family = family ?: definition.previewFontFamily(),
         selected = selected,
         supporting = "${definition.sizeLabel} · ${definition.license}",
         action = {
@@ -217,7 +220,7 @@ private fun UserFontCard(
             } else if (!installed) {
                 TextButton(onClick = onDownload) {
                     Icon(Icons.Filled.Download, contentDescription = null)
-                    Text("下载并预览")
+                    Text("下载完整字体")
                 }
             } else {
                 TextButton(onClick = onUse) {
@@ -229,8 +232,19 @@ private fun UserFontCard(
                 }
             }
         },
-        note = if (!installed) "下载后将用真实字形显示这段中文示例" else null,
+        note = if (!installed) "内置子集仅用于真实预览；下载完整字体后才能用于阅读" else null,
     )
+}
+
+private fun UserFontDefinition.previewFontFamily(): FontFamily? {
+    val resource = when (id) {
+        "source-han-serif-cn" -> R.font.preview_source_han_serif_cn
+        "source-han-sans-cn" -> R.font.preview_source_han_sans_cn
+        "lxgw-wenkai" -> R.font.preview_wenkai
+        "lxgw-wenkai-mono" -> R.font.preview_wenkai_mono
+        else -> return null
+    }
+    return FontFamily(Font(resource))
 }
 
 @Composable
