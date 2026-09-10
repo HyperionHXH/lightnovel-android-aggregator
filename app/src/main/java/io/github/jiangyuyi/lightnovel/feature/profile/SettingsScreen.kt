@@ -11,6 +11,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -123,6 +125,11 @@ fun SettingsScreen(
         onChooseDownloadDirectory = { downloadDirectoryLauncher.launch(null) },
         onResetDownloadDirectory = { offlineLibrary.setDownloadDirectory(null) },
         onBackgroundUpdatesChange = onBackgroundUpdatesChange,
+        onResetDownloadSettings = {
+            offlineLibrary.setWifiOnly(true)
+            offlineLibrary.setDownloadDirectory(null)
+            updateNotifications.setEnabled(false)
+        },
         onReaderPreferencesChange = { value -> scope.launch { readerPreferences.update(value) } },
         onAppPreferencesChange = { value -> scope.launch { appPreferences.update(value) } },
         onBack = onBack,
@@ -143,6 +150,7 @@ internal fun SettingsScreenContent(
     onChooseDownloadDirectory: () -> Unit = {},
     onResetDownloadDirectory: () -> Unit = {},
     onBackgroundUpdatesChange: (Boolean) -> Unit,
+    onResetDownloadSettings: () -> Unit = {},
     onReaderPreferencesChange: (ReaderPreferences) -> Unit = {},
     onAppPreferencesChange: (AppPreferences) -> Unit = {},
     onBack: () -> Unit,
@@ -167,6 +175,7 @@ internal fun SettingsScreenContent(
             AppearanceSettingsSection(
                 preferences = appPreferences,
                 onChange = onAppPreferencesChange,
+                onReset = { onAppPreferencesChange(AppPreferences()) },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
@@ -175,6 +184,7 @@ internal fun SettingsScreenContent(
                 preferences = readerPreferences,
                 onChange = onReaderPreferencesChange,
                 onFontSelection = onFontSelection,
+                onReset = { onReaderPreferencesChange(ReaderPreferences()) },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
@@ -187,6 +197,7 @@ internal fun SettingsScreenContent(
                 onResetDownloadDirectory = onResetDownloadDirectory,
                 backgroundUpdatesEnabled = backgroundUpdatesEnabled,
                 onBackgroundUpdatesChange = onBackgroundUpdatesChange,
+                onReset = onResetDownloadSettings,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
@@ -197,6 +208,32 @@ internal fun SettingsScreenContent(
             )
         }
     }
+}
+
+@Composable
+private fun SettingsSectionHeading(
+    title: String,
+    onReset: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = onReset) {
+            Icon(Icons.Default.Refresh, contentDescription = "恢复默认")
+            Text("恢复默认")
+        }
+    }
+}
+
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(
+        modifier = Modifier.padding(vertical = 2.dp),
+        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f),
+    )
 }
 
 @Composable
@@ -234,10 +271,11 @@ private fun OtherSettingsSection(
 private fun AppearanceSettingsSection(
     preferences: AppPreferences,
     onChange: (AppPreferences) -> Unit,
+    onReset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("外观", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        SettingsSectionHeading("外观", onReset)
         Card(
             Modifier.fillMaxWidth(),
             colors = androidx.compose.material3.CardDefaults.cardColors(
@@ -252,6 +290,7 @@ private fun AppearanceSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(themeMode = it)) },
                 )
+                SettingsDivider()
                 Text("界面字号", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = AppScale.entries,
@@ -259,6 +298,7 @@ private fun AppearanceSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(uiScale = it)) },
                 )
+                SettingsDivider()
                 Text("图标大小", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = AppScale.entries,
@@ -276,10 +316,11 @@ private fun ReaderSettingsSection(
     preferences: ReaderPreferences,
     onChange: (ReaderPreferences) -> Unit,
     onFontSelection: () -> Unit,
+    onReset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("阅读", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        SettingsSectionHeading("阅读", onReset)
         Card(
             Modifier.fillMaxWidth(),
             colors = androidx.compose.material3.CardDefaults.cardColors(
@@ -296,6 +337,7 @@ private fun ReaderSettingsSection(
                     Text(preferences.fontLabel(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     TextButton(onClick = onFontSelection) { Text("预览与选择") }
                 }
+                SettingsDivider()
                 Text("字号 ${preferences.fontSize.toInt()}", fontWeight = FontWeight.SemiBold)
                 Slider(
                     value = preferences.fontSize,
@@ -303,6 +345,7 @@ private fun ReaderSettingsSection(
                     valueRange = 14f..32f,
                     steps = 17,
                 )
+                SettingsDivider()
                 Text("行高 ${"%.1f".format(preferences.lineHeight)}", fontWeight = FontWeight.SemiBold)
                 Slider(
                     value = preferences.lineHeight,
@@ -310,6 +353,7 @@ private fun ReaderSettingsSection(
                     valueRange = 1.2f..2.2f,
                     steps = 9,
                 )
+                SettingsDivider()
                 Text("页边距 ${preferences.horizontalPadding} dp", fontWeight = FontWeight.SemiBold)
                 Slider(
                     value = preferences.horizontalPadding.toFloat(),
@@ -317,6 +361,7 @@ private fun ReaderSettingsSection(
                     valueRange = 12f..40f,
                     steps = 13,
                 )
+                SettingsDivider()
                 Text("阅读方式", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = ReaderMode.entries,
@@ -324,6 +369,7 @@ private fun ReaderSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(mode = it)) },
                 )
+                SettingsDivider()
                 Text("阅读背景", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = ReaderTheme.entries,
@@ -331,6 +377,7 @@ private fun ReaderSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(theme = it)) },
                 )
+                SettingsDivider()
                 Text("点击区域", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = ReaderTapZone.entries,
@@ -338,6 +385,7 @@ private fun ReaderSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(tapZone = it)) },
                 )
+                SettingsDivider()
                 Text("反转点击区域", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = ReaderTapInversion.entries,
@@ -345,6 +393,7 @@ private fun ReaderSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(tapInversion = it)) },
                 )
+                SettingsDivider()
                 Text("屏幕方向", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = ReaderOrientation.entries,
@@ -352,6 +401,7 @@ private fun ReaderSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(orientation = it)) },
                 )
+                SettingsDivider()
                 Text("图片缩放", fontWeight = FontWeight.SemiBold)
                 ChipRow(
                     values = ReaderImageScale.entries,
@@ -359,16 +409,19 @@ private fun ReaderSettingsSection(
                     label = { it.label },
                     onSelected = { onChange(preferences.copy(imageScale = it)) },
                 )
+                SettingsDivider()
                 ReaderSwitchRow(
                     label = "音量键翻页",
                     checked = preferences.volumeKeys,
                     onCheckedChange = { onChange(preferences.copy(volumeKeys = it)) },
                 )
+                SettingsDivider()
                 ReaderSwitchRow(
                     label = "保持屏幕常亮",
                     checked = preferences.keepScreenOn,
                     onCheckedChange = { onChange(preferences.copy(keepScreenOn = it)) },
                 )
+                SettingsDivider()
                 ReaderSwitchRow(
                     label = "显示阅读进度条",
                     checked = preferences.showProgressBar,
@@ -425,13 +478,14 @@ internal fun DownloadSettingsSection(
     onResetDownloadDirectory: () -> Unit = {},
     backgroundUpdatesEnabled: Boolean,
     onBackgroundUpdatesChange: (Boolean) -> Unit,
+    onReset: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("下载设置", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        SettingsSectionHeading("下载", onReset)
         Card(
             Modifier.fillMaxWidth(),
             colors = androidx.compose.material3.CardDefaults.cardColors(

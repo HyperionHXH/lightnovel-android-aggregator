@@ -27,8 +27,9 @@ class ProfileDownloadSettingsTest {
             }
         }
 
-        compose.onNodeWithText("下载设置").assertIsDisplayed()
+        compose.onNodeWithText("下载").assertIsDisplayed()
         compose.onNodeWithText("仅使用 Wi-Fi 下载").assertIsDisplayed()
         compose.onNodeWithText("后台更新提醒").assertIsDisplayed()
+        compose.onNodeWithText("恢复默认").assertIsDisplayed()
     }
 }

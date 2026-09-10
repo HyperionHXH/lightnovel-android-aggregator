@@ -49,7 +49,6 @@ import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 fun ProfileScreen(
     viewModel: ProfileViewModel,
     session: Session,
-    onLogin: () -> Unit,
     onLogout: () -> Unit,
     onFollowing: () -> Unit,
     onFollowers: () -> Unit,
@@ -64,7 +63,6 @@ fun ProfileScreen(
     LaunchedEffect(session.loggedIn) { viewModel.refresh(session.loggedIn) }
     val kingdomSession = state.sourceSessions[BuiltInSourceIds.LIGHT_NOVEL_KINGDOM]
     val shelfSession = state.sourceSessions[BuiltInSourceIds.LIGHT_NOVEL_SHELF]
-    val anySourceLoggedIn = state.sourceSessions.values.any { it.loggedIn }
 
     RefreshableLazyColumn(
         isRefreshing = state.refreshing,
@@ -128,9 +126,6 @@ fun ProfileScreen(
                 ProfileEntry("阅读记录", "两站历史和在线阅读进度", onHistory)
                 ProfileEntry("下载与导出", "查看离线书籍、重试下载和导出 EPUB", onDownloads)
 
-                if (!anySourceLoggedIn) {
-                    Button(onClick = onLogin, modifier = Modifier.fillMaxWidth()) { Text("登录 / 注册") }
-                }
                 Text("应用设置", style = MaterialTheme.typography.titleMedium)
                 ProfileEntry("设置", "阅读、外观、下载与通知", onSettings)
 

@@ -167,7 +167,7 @@ class UserFontRepository(
             UserFontDefinition(
                 id = "source-han-serif-cn",
                 name = "思源宋体",
-                preview = "人间有味是清欢，适合长篇正文阅读",
+                preview = "长夜将尽，窗外的雨声渐渐停了。适合长篇正文阅读。",
                 urls = listOf(
                     "https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-serif@7889f11bf31170b5d092a083b357c8c8130f89e0/SubsetOTF/CN/SourceHanSerifCN-Regular.otf",
                     "https://raw.githubusercontent.com/adobe-fonts/source-han-serif/7889f11bf31170b5d092a083b357c8c8130f89e0/SubsetOTF/CN/SourceHanSerifCN-Regular.otf",
@@ -180,7 +180,7 @@ class UserFontRepository(
             UserFontDefinition(
                 id = "source-han-sans-cn",
                 name = "思源黑体",
-                preview = "人间有味是清欢，清晰现代的无衬线字体",
+                preview = "她抬头望向远处，街灯在薄雾里排列成一条温柔的线。清晰现代。",
                 urls = listOf(
                     "https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-sans@a4f7cf94edfb9d7ffbdfc4841de276358bd7e0f2/SubsetOTF/CN/SourceHanSansCN-Regular.otf",
                     "https://raw.githubusercontent.com/adobe-fonts/source-han-sans/a4f7cf94edfb9d7ffbdfc4841de276358bd7e0f2/SubsetOTF/CN/SourceHanSansCN-Regular.otf",
@@ -193,7 +193,7 @@ class UserFontRepository(
             UserFontDefinition(
                 id = "lxgw-wenkai",
                 name = "霞鹜文楷",
-                preview = "人间有味是清欢，温润自然的正文楷体",
+                preview = "纸页微微卷起，墨色像溪水一样舒缓。温润自然，适合正文。",
                 urls = listOf(
                     "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai@50f4b182415a8c33d9a456df220b66a284e2509b/fonts/TTF/LXGWWenKai-Regular.ttf",
                     "https://raw.githubusercontent.com/lxgw/LxgwWenKai/50f4b182415a8c33d9a456df220b66a284e2509b/fonts/TTF/LXGWWenKai-Regular.ttf",
@@ -206,7 +206,7 @@ class UserFontRepository(
             UserFontDefinition(
                 id = "lxgw-wenkai-mono",
                 name = "霞鹜文楷等宽",
-                preview = "人间有味是清欢，字宽整齐的文楷版本",
+                preview = "第一卷  旅人手记：字宽整齐，适合代码、注释与特殊排版。",
                 urls = listOf(
                     "https://cdn.jsdelivr.net/gh/lxgw/LxgwWenKai@50f4b182415a8c33d9a456df220b66a284e2509b/fonts/TTF/LXGWWenKaiMono-Regular.ttf",
                     "https://raw.githubusercontent.com/lxgw/LxgwWenKai/50f4b182415a8c33d9a456df220b66a284e2509b/fonts/TTF/LXGWWenKaiMono-Regular.ttf",

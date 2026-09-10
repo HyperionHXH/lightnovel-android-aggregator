@@ -154,11 +154,11 @@ enum class DiscoverChannel(val label: String) {
 @Serializable
 enum class ReaderFont(val label: String) {
     DEFAULT("系统默认"),
-    SANS("无衬线"),
-    SERIF("衬线"),
-    MONO("等宽"),
+    SANS("系统黑体"),
+    SERIF("系统宋体"),
+    MONO("等宽字体"),
     CURSIVE("手写体"),
-    CONDENSED("紧凑无衬线"),
+    CONDENSED("紧凑黑体"),
     ROUNDED("圆体"),
 }
 

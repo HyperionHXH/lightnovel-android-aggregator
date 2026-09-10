@@ -37,13 +37,13 @@ class FontSelectionScreenTest {
         compose.onNodeWithText("字体预览与选择").assertIsDisplayed()
         compose.onNodeWithText("系统字体").assertIsDisplayed()
         compose.onNodeWithText("系统默认").assertIsDisplayed()
-        compose.onNodeWithText("无衬线").assertIsDisplayed()
-        compose.onNodeWithText("衬线").assertIsDisplayed()
+        compose.onNodeWithText("系统黑体").assertIsDisplayed()
+        compose.onNodeWithText("系统宋体").assertIsDisplayed()
 
         val labels = ReaderFont.entries.map { it.label }
         assertEquals(7, labels.size)
         assertEquals(
-            listOf("系统默认", "无衬线", "衬线", "等宽", "手写体", "紧凑无衬线", "圆体"),
+            listOf("系统默认", "系统黑体", "系统宋体", "等宽字体", "手写体", "紧凑黑体", "圆体"),
             labels,
         )
         assertFalse(labels.any { it == "细黑" || it == "中黑" || it == "特黑" })

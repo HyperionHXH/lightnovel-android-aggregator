@@ -298,7 +298,6 @@ private fun LightNovelApp() {
                 ProfileScreen(
                     viewModel = vm,
                     session = session,
-                    onLogin = { navController.navigate(Routes.AUTH) },
                     onLogout = appViewModel::logout,
                     onFollowing = { navController.navigate(Routes.social(SocialMode.FOLLOWING)) },
                     onFollowers = { navController.navigate(Routes.social(SocialMode.FOLLOWERS)) },

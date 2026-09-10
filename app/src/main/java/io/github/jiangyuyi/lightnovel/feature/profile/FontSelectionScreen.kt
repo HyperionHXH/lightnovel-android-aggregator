@@ -207,7 +207,7 @@ private fun UserFontCard(
     FontPreviewCard(
         modifier = modifier,
         title = definition.name,
-        preview = READER_FONT_PREVIEW,
+        preview = if (installed) READER_FONT_PREVIEW else definition.preview,
         family = family,
         selected = selected,
         supporting = "${definition.sizeLabel} · ${definition.license}",
@@ -229,7 +229,7 @@ private fun UserFontCard(
                 }
             }
         },
-        note = if (!installed) "下载后显示真实字形：${definition.preview}" else null,
+        note = if (!installed) "下载后将用真实字形显示这段中文示例" else null,
     )
 }
 
