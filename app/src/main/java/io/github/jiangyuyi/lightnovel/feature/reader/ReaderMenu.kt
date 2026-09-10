@@ -17,7 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -60,14 +60,14 @@ internal fun ReaderMenuSheet(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .safeDrawingPadding()
-                .padding(horizontal = 16.dp, vertical = 24.dp)
                 .testTag("reader-menu-scrim")
                 .clickable(onClick = onDismiss),
             contentAlignment = androidx.compose.ui.Alignment.Center,
         ) {
             Surface(
                 modifier = Modifier
+                    .safeDrawingPadding()
+                    .padding(horizontal = 16.dp, vertical = 24.dp)
                     .fillMaxWidth()
                     .widthIn(max = 420.dp)
                     .heightIn(max = 640.dp)
@@ -114,7 +114,7 @@ internal fun ReaderMenuSheet(
                     ReaderMenuItem(
                         headline = "文字样式",
                         supporting = "字体、字号、行距和页边距",
-                        icon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                        icon = { Icon(Icons.Filled.FormatSize, contentDescription = null) },
                         onClick = { onDismiss(); onTextSettings() },
                     )
                     ReaderMenuItem(

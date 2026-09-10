@@ -47,6 +47,13 @@ internal fun consumeReaderVolumeKey(
     return true
 }
 
+internal fun readerVolumePagingEnabled(
+    preferenceEnabled: Boolean,
+    menuVisible: Boolean,
+    settingsVisible: Boolean,
+    textSettingsVisible: Boolean,
+): Boolean = preferenceEnabled && !menuVisible && !settingsVisible && !textSettingsVisible
+
 @Composable
 internal fun ReaderKeepScreenOnEffect(enabled: Boolean) {
     val view = LocalView.current

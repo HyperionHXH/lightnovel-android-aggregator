@@ -290,6 +290,7 @@ private fun LightNovelApp() {
                     offlineLibrary = container.offlineLibrary,
                     updateNotifications = container.updateNotifications,
                     readerPreferences = container.readerPreferences,
+                    userFonts = container.userFonts,
                     appPreferences = container.appPreferences,
                     onBack = { navController.popBackStack() },
                     onRestartOnboarding = {
@@ -447,6 +448,7 @@ private fun LightNovelApp() {
                     vm,
                     onBack = { navController.popBackStack() },
                     onCatalog = { navController.navigate(Routes.book(bookId)) },
+                    userFonts = container.userFonts,
                 )
             }
             composable(
@@ -508,6 +510,7 @@ private fun LightNovelApp() {
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     onCatalog = { navController.popBackStack() },
+                    userFonts = container.userFonts,
                 )
             }
         }

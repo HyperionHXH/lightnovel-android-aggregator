@@ -54,6 +54,7 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
             values[PADDING] == 22
         ReaderPreferences(
             font = enumValueOrDefault(values[FONT], ReaderFont.SERIF),
+            customFontId = values[CUSTOM_FONT_ID],
             fontSize = (if (legacyCompactDefaults) 21f else values[FONT_SIZE] ?: 21f).coerceIn(14f, 32f),
             lineHeight = (if (legacyCompactDefaults) 1.75f else values[LINE_HEIGHT] ?: 1.75f).coerceIn(1.2f, 2.2f),
             horizontalPadding = (if (legacyCompactDefaults) 28 else values[PADDING] ?: 28).coerceIn(12, 40),
@@ -72,6 +73,7 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
     override suspend fun update(value: ReaderPreferences) {
         context.readerDataStore.edit { values ->
             values[FONT] = value.font.name
+            if (value.customFontId == null) values.remove(CUSTOM_FONT_ID) else values[CUSTOM_FONT_ID] = value.customFontId
             values[FONT_SIZE] = value.fontSize.coerceIn(14f, 32f)
             values[LINE_HEIGHT] = value.lineHeight.coerceIn(1.2f, 2.2f)
             values[PADDING] = value.horizontalPadding.coerceIn(12, 40)
@@ -131,6 +133,7 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
     private companion object {
         val json = Json { ignoreUnknownKeys = true }
         val FONT = stringPreferencesKey("font")
+        val CUSTOM_FONT_ID = stringPreferencesKey("custom_font_id")
         val FONT_SIZE = floatPreferencesKey("font_size")
         val LINE_HEIGHT = floatPreferencesKey("line_height")
         val PADDING = intPreferencesKey("horizontal_padding")

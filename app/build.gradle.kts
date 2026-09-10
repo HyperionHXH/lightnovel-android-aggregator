@@ -37,8 +37,8 @@ android {
         applicationId = "io.github.jiangyuyi.lightnovel"
         minSdk = 26
         targetSdk = 35
-        versionCode = providers.environmentVariable("APP_VERSION_CODE").orNull?.toIntOrNull() ?: 12
-        versionName = providers.environmentVariable("APP_VERSION_NAME").orNull ?: "1.6.2"
+        versionCode = providers.environmentVariable("APP_VERSION_CODE").orNull?.toIntOrNull() ?: 13
+        versionName = providers.environmentVariable("APP_VERSION_NAME").orNull ?: "1.7.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -106,6 +106,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")

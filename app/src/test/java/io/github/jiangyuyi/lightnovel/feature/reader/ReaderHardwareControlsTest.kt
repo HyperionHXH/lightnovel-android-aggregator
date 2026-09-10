@@ -62,4 +62,20 @@ class ReaderHardwareControlsTest {
             ),
         )
     }
+
+    @Test
+    fun volumePagingStaysEnabledWhenReaderControlsAreVisible() {
+        assertTrue(
+            readerVolumePagingEnabled(
+                preferenceEnabled = true,
+                menuVisible = false,
+                settingsVisible = false,
+                textSettingsVisible = false,
+            ),
+        )
+        assertFalse(readerVolumePagingEnabled(true, true, false, false))
+        assertFalse(readerVolumePagingEnabled(true, false, true, false))
+        assertFalse(readerVolumePagingEnabled(true, false, false, true))
+        assertFalse(readerVolumePagingEnabled(false, false, false, false))
+    }
 }

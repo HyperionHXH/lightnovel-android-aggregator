@@ -1,5 +1,6 @@
 package io.github.jiangyuyi.lightnovel.feature.reader
 
+import android.graphics.Typeface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -68,9 +69,12 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
 import io.github.jiangyuyi.lightnovel.core.model.ReaderImageScale
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
+import io.github.jiangyuyi.lightnovel.core.reader.UserFontDefinition
+import io.github.jiangyuyi.lightnovel.core.reader.UserFontRepository
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -80,11 +84,22 @@ fun SourceReaderScreen(
     viewModel: SourceReaderViewModel,
     onBack: () -> Unit,
     onCatalog: () -> Unit,
+    userFonts: UserFontRepository? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val colors = state.preferences.sourceReaderColors()
     val safeTopPadding = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
     val chapter = state.chapter
+    val installedUserFontIds by (userFonts?.installed ?: flowOf(emptySet()))
+        .collectAsStateWithLifecycle(initialValue = emptySet())
+    var customFontFamily by remember(state.preferences.customFontId) { mutableStateOf<FontFamily?>(null) }
+    LaunchedEffect(state.preferences.customFontId, installedUserFontIds) {
+        customFontFamily = if (state.preferences.customFontId in installedUserFontIds) {
+            userFonts?.load(state.preferences.customFontId)
+        } else {
+            null
+        }
+    }
     val blocks = remember(chapter) {
         chapter?.let {
             buildList {
@@ -103,6 +118,12 @@ fun SourceReaderScreen(
     val menuProgress = remember(state.restoredBlock, progressBlockCount) {
         "已阅读 ${((state.restoredBlock.toFloat() / progressBlockCount) * 100).roundToInt().coerceIn(0, 100)}%"
     }
+    val volumePagingEnabled = readerVolumePagingEnabled(
+        preferenceEnabled = state.preferences.volumeKeys,
+        menuVisible = menuVisible,
+        settingsVisible = state.settingsVisible,
+        textSettingsVisible = state.textSettingsVisible,
+    )
 
     ImmersiveReaderEffect(
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
@@ -112,8 +133,7 @@ fun SourceReaderScreen(
     ReaderOrientationEffect(state.preferences.orientation)
     if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL) {
         ReaderVolumeKeyEffect(
-            enabled = state.preferences.volumeKeys && !state.controlsVisible &&
-                !state.settingsVisible && !state.textSettingsVisible && !menuVisible,
+            enabled = volumePagingEnabled,
             onPrevious = {
                 listScope.launch {
                     val amount = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
@@ -170,6 +190,7 @@ fun SourceReaderScreen(
                     preferences = state.preferences,
                     colors = colors,
                     chapterFontFamily = state.chapterFontFamily,
+                    customFontFamily = customFontFamily,
                     anchorBlock = state.restoredBlock + 1,
                     onPreviousChapter = viewModel::previous,
                     hasPreviousChapter = chapter.previousChapterKey != null,
@@ -179,6 +200,7 @@ fun SourceReaderScreen(
                     onToggleControls = viewModel::toggleControls,
                     controlsVisible = state.controlsVisible,
                     showProgressBar = state.preferences.showProgressBar,
+                    volumePagingEnabled = volumePagingEnabled,
                     safeTopPadding = safeTopPadding,
                 )
             } else LazyColumn(
@@ -207,7 +229,7 @@ fun SourceReaderScreen(
                     item { SourceChapterBoundary("上一章", viewModel::previous, previous = true) }
                 }
                 itemsIndexed(blocks, key = { index, _ -> index }) { _, block ->
-                    SourceReaderBlock(block, state.preferences, colors, state.chapterFontFamily)
+                    SourceReaderBlock(block, state.preferences, colors, state.chapterFontFamily, customFontFamily)
                 }
                 if (chapter.nextChapterKey != null) {
                     item { SourceChapterBoundary("下一章", viewModel::next, previous = false) }
@@ -326,6 +348,8 @@ fun SourceReaderScreen(
             onChange = { updated -> viewModel.updatePreferences { updated } },
             onDismiss = { viewModel.showTextSettings(false) },
             sourceFontRequired = state.chapterFontFamily != null,
+            availableUserFonts = UserFontRepository.catalog,
+            installedUserFontIds = installedUserFontIds,
         )
     }
 }
@@ -337,6 +361,7 @@ private fun SourcePagedReader(
     preferences: ReaderPreferences,
     colors: SourceReaderColors,
     chapterFontFamily: FontFamily?,
+    customFontFamily: FontFamily?,
     anchorBlock: Int,
     onPreviousChapter: () -> Unit,
     hasPreviousChapter: Boolean,
@@ -346,6 +371,7 @@ private fun SourcePagedReader(
     onToggleControls: () -> Unit,
     controlsVisible: Boolean,
     showProgressBar: Boolean,
+    volumePagingEnabled: Boolean,
     safeTopPadding: androidx.compose.ui.unit.Dp,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -367,14 +393,15 @@ private fun SourcePagedReader(
             preferences.lineHeight,
             preferences.horizontalPadding,
             chapterFontFamily,
+            customFontFamily,
             pageWidth,
             pageHeight,
         ) {
             paginateReaderBlocks(
                 blocks = blocks,
                 textMeasurer = textMeasurer,
-                paragraphStyle = preferences.sourceTextStyle(colors.text, chapterFontFamily),
-                headingStyle = preferences.sourceTextStyle(colors.text, chapterFontFamily).copy(fontSize = (preferences.fontSize + 4).sp),
+                paragraphStyle = preferences.sourceTextStyle(colors.text, chapterFontFamily, customFontFamily),
+                headingStyle = preferences.sourceTextStyle(colors.text, chapterFontFamily, customFontFamily).copy(fontSize = (preferences.fontSize + 4).sp),
                 density = density,
                 pageWidthPx = pageWidth,
                 pageHeightPx = pageHeight,
@@ -387,7 +414,7 @@ private fun SourcePagedReader(
         var scrubValue by remember { mutableFloatStateOf(0f) }
         var scrubbing by remember { mutableStateOf(false) }
         ReaderVolumeKeyEffect(
-            enabled = preferences.volumeKeys && !controlsVisible,
+            enabled = volumePagingEnabled,
             onPrevious = {
                 pagerScope.launch {
                     if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1)
@@ -472,7 +499,7 @@ private fun SourcePagedReader(
                     when (element) {
                         is ReaderPageElement.Text -> Text(
                             element.text,
-                            style = preferences.sourceTextStyle(colors.text, chapterFontFamily).copy(
+                            style = preferences.sourceTextStyle(colors.text, chapterFontFamily, customFontFamily).copy(
                                 fontSize = if (element.heading) (preferences.fontSize + 4).sp else preferences.fontSize.sp,
                                 fontWeight = if (element.heading) FontWeight.SemiBold else FontWeight.Normal,
                                 textIndent = TextIndent(firstLine = if (element.firstLineIndent) 2.em else 0.em),
@@ -515,12 +542,13 @@ private fun SourceReaderBlock(
     preferences: ReaderPreferences,
     colors: SourceReaderColors,
     chapterFontFamily: FontFamily?,
+    customFontFamily: FontFamily?,
 ) {
     when (block) {
         is ReaderBlock.Heading -> Text(
             block.text,
             color = colors.text,
-            style = preferences.sourceTextStyle(colors.text, chapterFontFamily).copy(
+            style = preferences.sourceTextStyle(colors.text, chapterFontFamily, customFontFamily).copy(
                 fontSize = (preferences.fontSize + 4).sp,
                 fontWeight = FontWeight.SemiBold,
             ),
@@ -528,7 +556,7 @@ private fun SourceReaderBlock(
 
         is ReaderBlock.Paragraph -> Text(
             block.text,
-            style = preferences.sourceTextStyle(colors.text, chapterFontFamily).copy(
+            style = preferences.sourceTextStyle(colors.text, chapterFontFamily, customFontFamily).copy(
                 textIndent = TextIndent(firstLine = if (block.firstLineIndent) 2.em else 0.em),
             ),
         )
@@ -611,14 +639,20 @@ private fun ReaderPreferences.sourceReaderColors(): SourceReaderColors = when (t
 private fun ReaderPreferences.sourceTextStyle(
     color: Color,
     chapterFontFamily: FontFamily?,
+    customFontFamily: FontFamily? = null,
 ) = TextStyle(
     color = color,
-    fontFamily = chapterFontFamily ?: when (font) {
+    fontFamily = chapterFontFamily ?: customFontFamily ?: when (font) {
         ReaderFont.DEFAULT -> FontFamily.Default
         ReaderFont.SANS -> FontFamily.SansSerif
         ReaderFont.SERIF -> FontFamily.Serif
         ReaderFont.MONO -> FontFamily.Monospace
         ReaderFont.CURSIVE -> FontFamily.Cursive
+        ReaderFont.CONDENSED -> FontFamily(Typeface.create("sans-serif-condensed", Typeface.NORMAL))
+        ReaderFont.ROUNDED -> FontFamily(Typeface.create("sans-serif-rounded", Typeface.NORMAL))
+        ReaderFont.LIGHT -> FontFamily(Typeface.create("sans-serif-light", Typeface.NORMAL))
+        ReaderFont.MEDIUM -> FontFamily(Typeface.create("sans-serif-medium", Typeface.NORMAL))
+        ReaderFont.BLACK -> FontFamily(Typeface.create("sans-serif-black", Typeface.NORMAL))
     },
     fontSize = fontSize.sp,
     lineHeight = (fontSize * lineHeight).sp,

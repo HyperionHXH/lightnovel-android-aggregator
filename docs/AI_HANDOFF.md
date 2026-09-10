@@ -1,8 +1,8 @@
 # Mixn 项目交接记录
 
-更新时间：2026-09-09  
-仓库：`https://github.com/HyperionHXH/lightnovel-android-aggregator.git`  
-当前分支：`feature/multi-source-foundation`  
+更新时间：2026-09-10
+仓库：`https://github.com/HyperionHXH/lightnovel-android-aggregator.git`
+当前分支：`feature/multi-source-foundation`
 当前分支最新提交以 `git log -1` 为准；本文件记录的最近认证与阅读交互增强均已随分支提交推送。
 
 ## 项目定位
@@ -31,8 +31,8 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 - 发现/搜索触底分页、缓存 stale-while-revalidate、磁盘 LRU、章节正文缓存和来源更新快照。
 - 阅读控制栏为 Compose 覆盖层；正文使用固定安全区，避免刘海/摄像头遮挡。展开/收起不再调用系统栏 API，也不触发整章重新解析或重新分页。
 - 阅读页加载状态统一使用安全区域内的居中进度指示器；阅读菜单使用居中限宽可滚动面板，避免底部弹层和顶部偏移。
-- 音量键翻页通过 `MainActivity.dispatchKeyEvent` 统一拦截，只有阅读器开启选项且控件隐藏时生效；菜单外部 scrim 可点击关闭，面板内部事件不会误关闭。
-- 文字样式提供系统默认、无衬线、衬线、等宽和手写体；Android 系统字体的实际字形随设备变化，来源专用字体章节仍会优先加载服务端字体。
+- 音量键翻页通过 `MainActivity.dispatchKeyEvent` 统一拦截；阅读页控制栏显示时仍可翻页，菜单或设置弹窗打开时恢复系统音量行为。菜单外部 scrim 可点击关闭，面板内部事件不会误关闭。
+- 文字样式提供系统默认、无衬线、衬线、等宽、手写体、紧凑无衬线、圆体及细/中/特黑字重；设置中的可选字体库可按需下载思源宋体、思源黑体、霞鹜文楷及等宽版本，下载文件固定提交并做 SHA-256 校验，已安装字体不会重复下载。
 - Windows 客户端具备发现、搜索、书架、设置、登录、详情、章节、在线阅读、历史和 EPUB 导出等基础流程。
 - 应用品牌为 `Mixn`，图标素材为 `docs/mixn-icon.png`；iOS 目标已移除。
 
@@ -53,7 +53,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.6.2`、`versionCode 12`；桌面和 jpackage 默认版本也是 `1.6.2`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.6.2`，含 Android APK 和 SHA256：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.6.2>。上一份 `v1.4.2` 仍含 Windows 压缩包：<https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.4.2>。
+Android 默认版本：`versionName 1.7.0`、`versionCode 13`；桌面和 jpackage 默认版本也是 `1.7.0`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.6.2`，本轮完成后发布 `v1.7.0`。
 
 ## 发布流程
 

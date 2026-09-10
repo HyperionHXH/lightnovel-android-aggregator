@@ -12,6 +12,7 @@ import io.github.jiangyuyi.lightnovel.core.offline.OfflineLibrary
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesStore
 import io.github.jiangyuyi.lightnovel.core.preferences.AppPreferencesStore
 import io.github.jiangyuyi.lightnovel.core.reader.ChapterFontRepository
+import io.github.jiangyuyi.lightnovel.core.reader.UserFontRepository
 import io.github.jiangyuyi.lightnovel.core.session.SessionStore
 import io.github.jiangyuyi.lightnovel.core.source.AggregateSearchCoordinator
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
@@ -57,6 +58,7 @@ class AppContainer(application: Application) {
     }
     val aggregateSearch: AggregateSearchCoordinator by lazy { AggregateSearchCoordinator(sourceRegistry) }
     val chapterFonts: ChapterFontRepository by lazy { ChapterFontRepository(application) }
+    val userFonts: UserFontRepository by lazy { UserFontRepository(application) }
     val offlineLibrary: OfflineLibrary by lazy {
         OfflineLibrary(
             application,

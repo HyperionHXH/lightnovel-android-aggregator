@@ -167,7 +167,7 @@ private fun ReaderStep(
             values = ReaderFont.entries,
             selected = preferences.font,
             label = { it.label },
-            onSelected = { onChange(preferences.copy(font = it)) },
+            onSelected = { onChange(preferences.copy(font = it, customFontId = null)) },
         )
         ChoiceSection(
             title = "阅读方式",

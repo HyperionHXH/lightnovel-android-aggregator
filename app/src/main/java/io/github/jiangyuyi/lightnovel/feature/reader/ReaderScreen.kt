@@ -1,5 +1,6 @@
 package io.github.jiangyuyi.lightnovel.feature.reader
 
+import android.graphics.Typeface
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -91,19 +92,37 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTapInversion
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTapZone
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
+import io.github.jiangyuyi.lightnovel.core.reader.UserFontDefinition
+import io.github.jiangyuyi.lightnovel.core.reader.UserFontRepository
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -> Unit) {
+fun ReaderScreen(
+    viewModel: ReaderViewModel,
+    onBack: () -> Unit,
+    onCatalog: () -> Unit,
+    userFonts: UserFontRepository? = null,
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val colors = state.preferences.readerColors()
     val safeTopPadding = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
     val chapterId = state.chapter?.chapter?.id
+    val installedUserFontIds by (userFonts?.installed ?: flowOf(emptySet()))
+        .collectAsStateWithLifecycle(initialValue = emptySet())
+    var customFontFamily by remember(state.preferences.customFontId) { mutableStateOf<FontFamily?>(null) }
+    LaunchedEffect(state.preferences.customFontId, installedUserFontIds) {
+        customFontFamily = if (state.preferences.customFontId in installedUserFontIds) {
+            userFonts?.load(state.preferences.customFontId)
+        } else {
+            null
+        }
+    }
     val blocks = remember(state.chapter) {
         val chapter = state.chapter
         if (chapter == null) emptyList() else buildList {
@@ -119,6 +138,12 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
         val total = (blocks.size - 1).coerceAtLeast(1)
         "已阅读 ${((state.restoredParagraph.toFloat() / total) * 100).roundToInt().coerceIn(0, 100)}%"
     }
+    val volumePagingEnabled = readerVolumePagingEnabled(
+        preferenceEnabled = state.preferences.volumeKeys,
+        menuVisible = menuVisible,
+        settingsVisible = state.settingsVisible,
+        textSettingsVisible = state.textSettingsVisible,
+    )
 
     ImmersiveReaderEffect(
         darkBackground = state.preferences.theme == ReaderTheme.DARK,
@@ -147,6 +172,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 chapterTitle = state.chapter?.chapter?.title ?: "当前章节",
                 preferences = state.preferences,
                 colors = colors,
+                customFontFamily = customFontFamily,
                 anchorBlock = anchorBlock,
                 onAnchorChanged = { anchorBlock = it },
                 onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
@@ -158,12 +184,14 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 safeTopPadding = safeTopPadding,
                 controlsVisible = state.controlsVisible,
                 showProgressBar = state.preferences.showProgressBar,
+                volumePagingEnabled = volumePagingEnabled,
             )
             else -> ScrollingReader(
                 blocks = blocks,
                 chapterTitle = state.chapter?.chapter?.title ?: "当前章节",
                 preferences = state.preferences,
                 colors = colors,
+                customFontFamily = customFontFamily,
                 anchorBlock = anchorBlock,
                 onAnchorChanged = { anchorBlock = it },
                 onProgress = { index -> viewModel.saveProgress(index, blocks.size) },
@@ -175,6 +203,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
                 safeTopPadding = safeTopPadding,
                 controlsVisible = state.controlsVisible,
                 showProgressBar = state.preferences.showProgressBar,
+                volumePagingEnabled = volumePagingEnabled,
             )
         }
 
@@ -237,6 +266,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onCatalog: () -
             preferences = state.preferences,
             onChange = { value -> viewModel.updatePreferences { value } },
             onDismiss = { viewModel.showTextSettings(false) },
+            availableUserFonts = UserFontRepository.catalog,
+            installedUserFontIds = installedUserFontIds,
         )
     }
 
@@ -248,6 +279,7 @@ private fun PagedReader(
     chapterTitle: String,
     preferences: ReaderPreferences,
     colors: ReaderColors,
+    customFontFamily: FontFamily?,
     anchorBlock: Int,
     onAnchorChanged: (Int) -> Unit,
     onProgress: (Int) -> Unit,
@@ -259,12 +291,13 @@ private fun PagedReader(
     safeTopPadding: Dp,
     controlsVisible: Boolean,
     showProgressBar: Boolean,
+    volumePagingEnabled: Boolean,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val density = LocalDensity.current
         val textMeasurer = rememberTextMeasurer()
-        val paragraphStyle = preferences.paragraphStyle(colors.text)
-        val headingStyle = preferences.headingStyle(colors.text)
+        val paragraphStyle = preferences.paragraphStyle(colors.text, customFontFamily)
+        val headingStyle = preferences.headingStyle(colors.text, customFontFamily)
         val horizontalPadding = preferences.horizontalPadding.dp
         // Keep pagination stable while the title bar/progress overlay toggles.
         // The status-bar inset is permanent; reader controls are intentionally
@@ -276,7 +309,7 @@ private fun PagedReader(
             (maxHeight - pageTopPadding - pageBottomPadding).roundToPx().coerceAtLeast(1)
         }
         val spacingPx = with(density) { 14.dp.roundToPx() }
-        val pages = remember(blocks, preferences.font, preferences.fontSize, preferences.lineHeight, preferences.horizontalPadding, pageWidthPx, pageHeightPx) {
+        val pages = remember(blocks, preferences.font, preferences.customFontId, customFontFamily, preferences.fontSize, preferences.lineHeight, preferences.horizontalPadding, pageWidthPx, pageHeightPx) {
             paginateReaderBlocks(
                 blocks = blocks,
                 textMeasurer = textMeasurer,
@@ -298,7 +331,7 @@ private fun PagedReader(
         var turnRequestToken by remember { mutableIntStateOf(0) }
 
         ReaderVolumeKeyEffect(
-            enabled = preferences.volumeKeys && !controlsVisible,
+            enabled = volumePagingEnabled,
             onPrevious = {
                 turnRequestToken += 1
                 turnRequest = ReaderTurnRequest(ReaderTurnDirection.PREVIOUS, turnRequestToken)
@@ -364,7 +397,7 @@ private fun PagedReader(
                 ) {
                     pages.getOrNull(pageIndex)?.elements.orEmpty().forEach { element ->
                         when (element) {
-                            is ReaderPageElement.Text -> ReaderTextElement(element, preferences, colors)
+                            is ReaderPageElement.Text -> ReaderTextElement(element, preferences, colors, customFontFamily)
                             is ReaderPageElement.Illustration -> ReaderIllustration(
                                 block = element.block,
                                 modifier = Modifier.fillMaxWidth().height(with(density) { element.heightPx.toDp() }),
@@ -470,6 +503,7 @@ private fun ScrollingReader(
     chapterTitle: String,
     preferences: ReaderPreferences,
     colors: ReaderColors,
+    customFontFamily: FontFamily?,
     anchorBlock: Int,
     onAnchorChanged: (Int) -> Unit,
     onProgress: (Int) -> Unit,
@@ -481,6 +515,7 @@ private fun ScrollingReader(
     safeTopPadding: Dp,
     controlsVisible: Boolean,
     showProgressBar: Boolean,
+    volumePagingEnabled: Boolean,
 ) {
     val listState = rememberLazyListState()
     val listScope = rememberCoroutineScope()
@@ -489,7 +524,7 @@ private fun ScrollingReader(
     var scrubValue by remember { mutableFloatStateOf(0f) }
     var scrubbing by remember { mutableStateOf(false) }
     ReaderVolumeKeyEffect(
-        enabled = preferences.volumeKeys && !controlsVisible,
+        enabled = volumePagingEnabled,
         onPrevious = {
             listScope.launch {
                 val amount = (listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset)
@@ -551,10 +586,10 @@ private fun ScrollingReader(
 
             itemsIndexed(blocks) { _, block ->
                 when (block) {
-                    is ReaderBlock.Heading -> Text(block.text, style = preferences.headingStyle(colors.text))
+                    is ReaderBlock.Heading -> Text(block.text, style = preferences.headingStyle(colors.text, customFontFamily))
                     is ReaderBlock.Paragraph -> Text(
                         block.text,
-                        style = preferences.paragraphStyle(colors.text).copy(
+                        style = preferences.paragraphStyle(colors.text, customFontFamily).copy(
                             textIndent = if (block.firstLineIndent) TextIndent(firstLine = preferences.fontSize.sp * 2) else TextIndent.None,
                         ),
                     )
@@ -608,8 +643,13 @@ private fun ReaderChapterEnd(label: String, onClick: () -> Unit, previous: Boole
 }
 
 @Composable
-private fun ReaderTextElement(element: ReaderPageElement.Text, preferences: ReaderPreferences, colors: ReaderColors) {
-    val style = if (element.heading) preferences.headingStyle(colors.text) else preferences.paragraphStyle(colors.text)
+private fun ReaderTextElement(
+    element: ReaderPageElement.Text,
+    preferences: ReaderPreferences,
+    colors: ReaderColors,
+    customFontFamily: FontFamily?,
+) {
+    val style = if (element.heading) preferences.headingStyle(colors.text, customFontFamily) else preferences.paragraphStyle(colors.text, customFontFamily)
     Text(
         text = element.text,
         style = style.copy(
@@ -815,6 +855,8 @@ internal fun ReaderTextSettingsDialog(
     onChange: (ReaderPreferences) -> Unit,
     onDismiss: () -> Unit,
     sourceFontRequired: Boolean = false,
+    availableUserFonts: List<UserFontDefinition> = emptyList(),
+    installedUserFontIds: Set<String> = emptySet(),
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -826,13 +868,31 @@ internal fun ReaderTextSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("字体")
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ReaderFont.entries.forEach { font ->
-                        ReaderOptionChip(
-                            selected = preferences.font == font,
-                            onClick = { onChange(preferences.copy(font = font)) },
-                            label = font.label,
-                        )
+                ReaderFont.entries.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { font ->
+                            ReaderOptionChip(
+                                selected = preferences.customFontId == null && preferences.font == font,
+                                onClick = { onChange(preferences.copy(font = font, customFontId = null)) },
+                                label = font.label,
+                            )
+                        }
+                    }
+                }
+                availableUserFonts.filter { it.id in installedUserFontIds }.takeIf { it.isNotEmpty() }?.let { fonts ->
+                    Text("已下载字体")
+                    fonts.chunked(2).forEach { row ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { font ->
+                                ReaderOptionChip(
+                                    selected = preferences.customFontId == font.id,
+                                    onClick = {
+                                        onChange(preferences.copy(font = ReaderFont.DEFAULT, customFontId = font.id))
+                                    },
+                                    label = font.name,
+                                )
+                            }
+                        }
                     }
                 }
                 if (sourceFontRequired) {
@@ -843,7 +903,7 @@ internal fun ReaderTextSettingsDialog(
                     )
                 } else {
                     Text(
-                        "可选字体来自 Android 系统，具体字形会随设备系统版本变化。",
+                        "系统字体可直接使用；下载并安装的字体会在这里单独显示。具体字形会随设备系统版本变化。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -969,16 +1029,16 @@ private fun ReaderPreferences.readerColors(): ReaderColors = when (theme) {
     ReaderTheme.DARK -> ReaderColors(Color(0xFF171416), Color(0xFFE8E0E2))
 }
 
-private fun ReaderPreferences.paragraphStyle(color: Color) = TextStyle(
+private fun ReaderPreferences.paragraphStyle(color: Color, customFontFamily: FontFamily? = null) = TextStyle(
     color = color,
-    fontFamily = font.family(),
+    fontFamily = customFontFamily ?: font.family(),
     fontSize = fontSize.sp,
     lineHeight = (fontSize * lineHeight).sp,
 )
 
-private fun ReaderPreferences.headingStyle(color: Color) = TextStyle(
+private fun ReaderPreferences.headingStyle(color: Color, customFontFamily: FontFamily? = null) = TextStyle(
     color = color,
-    fontFamily = font.family(),
+    fontFamily = customFontFamily ?: font.family(),
     fontSize = (fontSize + 5).sp,
     lineHeight = ((fontSize + 5) * lineHeight).sp,
 )
@@ -989,6 +1049,11 @@ private fun ReaderFont.family(): FontFamily = when (this) {
     ReaderFont.SERIF -> FontFamily.Serif
     ReaderFont.MONO -> FontFamily.Monospace
     ReaderFont.CURSIVE -> FontFamily.Cursive
+    ReaderFont.CONDENSED -> FontFamily(Typeface.create("sans-serif-condensed", Typeface.NORMAL))
+    ReaderFont.ROUNDED -> FontFamily(Typeface.create("sans-serif-rounded", Typeface.NORMAL))
+    ReaderFont.LIGHT -> FontFamily(Typeface.create("sans-serif-light", Typeface.NORMAL))
+    ReaderFont.MEDIUM -> FontFamily(Typeface.create("sans-serif-medium", Typeface.NORMAL))
+    ReaderFont.BLACK -> FontFamily(Typeface.create("sans-serif-black", Typeface.NORMAL))
 }
 
 private fun ReaderImageScale.contentScale(): ContentScale = when (this) {

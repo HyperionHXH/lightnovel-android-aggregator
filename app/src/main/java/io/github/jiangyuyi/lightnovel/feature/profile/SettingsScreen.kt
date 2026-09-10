@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -33,7 +34,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -58,6 +61,8 @@ import io.github.jiangyuyi.lightnovel.core.preferences.AppScale
 import io.github.jiangyuyi.lightnovel.core.preferences.AppThemeMode
 import io.github.jiangyuyi.lightnovel.R
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
+import io.github.jiangyuyi.lightnovel.core.reader.UserFontDefinition
+import io.github.jiangyuyi.lightnovel.core.reader.UserFontRepository
 import io.github.jiangyuyi.lightnovel.core.updates.UpdateNotificationSettings
 import kotlinx.coroutines.launch
 
@@ -67,6 +72,7 @@ fun SettingsScreen(
     offlineLibrary: OfflineLibraryAccess,
     updateNotifications: UpdateNotificationSettings,
     readerPreferences: ReaderPreferencesAccess,
+    userFonts: UserFontRepository,
     appPreferences: AppPreferencesAccess,
     onBack: () -> Unit,
     onRestartOnboarding: () -> Unit,
@@ -77,6 +83,13 @@ fun SettingsScreen(
     val reader by readerPreferences.preferences.collectAsStateWithLifecycle(initialValue = ReaderPreferences())
     val app by appPreferences.preferences.collectAsStateWithLifecycle(initialValue = AppPreferences())
     val scope = rememberCoroutineScope()
+    val installedFonts by userFonts.installed.collectAsStateWithLifecycle()
+    var installedFontFamilies by remember { androidx.compose.runtime.mutableStateOf<Map<String, FontFamily>>(emptyMap()) }
+    androidx.compose.runtime.LaunchedEffect(installedFonts) {
+        installedFontFamilies = installedFonts.mapNotNull { id -> userFonts.load(id)?.let { id to it } }.toMap()
+    }
+    var fontError by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    var downloadingFontId by remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
     val context = LocalContext.current
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -117,6 +130,37 @@ fun SettingsScreen(
             ?: "应用专用目录",
         backgroundUpdatesEnabled = backgroundUpdatesEnabled,
         readerPreferences = reader,
+        userFontCatalog = UserFontRepository.catalog,
+        installedFontIds = installedFonts,
+        installedFontFamilies = installedFontFamilies,
+        downloadingFontId = downloadingFontId,
+        fontError = fontError,
+        onDownloadFont = { definition ->
+            downloadingFontId = definition.id
+            scope.launch {
+                val result = userFonts.download(definition)
+                fontError = result.exceptionOrNull()?.message
+                if (result.isSuccess) {
+                    readerPreferences.update(
+                        reader.copy(font = ReaderFont.DEFAULT, customFontId = definition.id),
+                    )
+                }
+                downloadingFontId = null
+            }
+        },
+        onDeleteFont = { definition ->
+            scope.launch {
+                userFonts.delete(definition)
+                if (reader.customFontId == definition.id) {
+                    readerPreferences.update(reader.copy(font = ReaderFont.SERIF, customFontId = null))
+                }
+            }
+        },
+        onUseFont = { definition ->
+            scope.launch {
+                readerPreferences.update(reader.copy(font = ReaderFont.DEFAULT, customFontId = definition.id))
+            }
+        },
         appPreferences = app,
         onWifiOnlyChange = offlineLibrary::setWifiOnly,
         onChooseDownloadDirectory = { downloadDirectoryLauncher.launch(null) },
@@ -136,6 +180,14 @@ internal fun SettingsScreenContent(
     downloadDirectoryLabel: String = "应用专用目录",
     backgroundUpdatesEnabled: Boolean,
     readerPreferences: ReaderPreferences = ReaderPreferences(),
+    userFontCatalog: List<UserFontDefinition> = emptyList(),
+    installedFontIds: Set<String> = emptySet(),
+    installedFontFamilies: Map<String, FontFamily> = emptyMap(),
+    downloadingFontId: String? = null,
+    fontError: String? = null,
+    onDownloadFont: (UserFontDefinition) -> Unit = {},
+    onDeleteFont: (UserFontDefinition) -> Unit = {},
+    onUseFont: (UserFontDefinition) -> Unit = {},
     appPreferences: AppPreferences = AppPreferences(),
     onWifiOnlyChange: (Boolean) -> Unit,
     onChooseDownloadDirectory: () -> Unit = {},
@@ -174,6 +226,22 @@ internal fun SettingsScreenContent(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
+        if (userFontCatalog.isNotEmpty()) {
+            item {
+                UserFontSettingsSection(
+                    catalog = userFontCatalog,
+                    installedIds = installedFontIds,
+                    installedFamilies = installedFontFamilies,
+                    selectedId = readerPreferences.customFontId,
+                    downloadingId = downloadingFontId,
+                    error = fontError,
+                    onDownload = onDownloadFont,
+                    onDelete = onDeleteFont,
+                    onUse = onUseFont,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
         item {
             DownloadSettingsSection(
                 wifiOnly = wifiOnly,
@@ -192,6 +260,63 @@ internal fun SettingsScreenContent(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
+    }
+}
+
+@Composable
+private fun UserFontSettingsSection(
+    catalog: List<UserFontDefinition>,
+    installedIds: Set<String>,
+    installedFamilies: Map<String, FontFamily>,
+    selectedId: String?,
+    downloadingId: String?,
+    error: String?,
+    onDownload: (UserFontDefinition) -> Unit,
+    onDelete: (UserFontDefinition) -> Unit,
+    onUse: (UserFontDefinition) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("可选字体", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text(
+            "仅下载到本机后才会出现在阅读器的文字样式中。字体文件来自开源项目，首次下载需要网络。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        catalog.forEach { font ->
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(font.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        font.preview,
+                        style = MaterialTheme.typography.bodyLarge.copy(fontFamily = installedFamilies[font.id]),
+                    )
+                    Text(
+                        "${font.sizeLabel} · ${font.license}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        if (font.id in installedIds) {
+                            if (selectedId == font.id) {
+                                Text("使用中", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(12.dp))
+                            } else {
+                                TextButton(onClick = { onUse(font) }) { Text("使用") }
+                            }
+                            TextButton(onClick = { onDelete(font) }) { Text("删除本机字体") }
+                        } else if (downloadingId == font.id) {
+                            androidx.compose.material3.CircularProgressIndicator(Modifier.padding(10.dp).size(24.dp), strokeWidth = 2.dp)
+                        } else {
+                            TextButton(onClick = { onDownload(font) }) { Text("下载并使用") }
+                        }
+                    }
+                }
+            }
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     }
 }
 
@@ -287,7 +412,7 @@ private fun ReaderSettingsSection(
                     values = ReaderFont.entries,
                     selected = preferences.font,
                     label = { it.label },
-                    onSelected = { onChange(preferences.copy(font = it)) },
+                    onSelected = { onChange(preferences.copy(font = it, customFontId = null)) },
                 )
                 Text("字号 ${preferences.fontSize.toInt()}", fontWeight = FontWeight.SemiBold)
                 Slider(

@@ -158,6 +158,11 @@ enum class ReaderFont(val label: String) {
     SERIF("衬线"),
     MONO("等宽"),
     CURSIVE("手写体"),
+    CONDENSED("紧凑无衬线"),
+    ROUNDED("圆体"),
+    LIGHT("细黑"),
+    MEDIUM("中黑"),
+    BLACK("特黑"),
 }
 
 @Serializable
@@ -212,6 +217,7 @@ enum class ReaderImageScale(val label: String) {
 @Serializable
 data class ReaderPreferences(
     val font: ReaderFont = ReaderFont.SERIF,
+    val customFontId: String? = null,
     val fontSize: Float = 21f,
     val lineHeight: Float = 1.75f,
     val horizontalPadding: Int = 28,
