@@ -1,6 +1,5 @@
 package io.github.jiangyuyi.lightnovel.feature.reader
 
-import android.graphics.Typeface
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -92,8 +91,9 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTapInversion
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTapZone
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
-import io.github.jiangyuyi.lightnovel.core.reader.UserFontDefinition
 import io.github.jiangyuyi.lightnovel.core.reader.UserFontRepository
+import io.github.jiangyuyi.lightnovel.core.reader.fontLabel
+import io.github.jiangyuyi.lightnovel.core.reader.fontFamily
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
@@ -107,6 +107,7 @@ fun ReaderScreen(
     viewModel: ReaderViewModel,
     onBack: () -> Unit,
     onCatalog: () -> Unit,
+    onFontPicker: () -> Unit = {},
     userFonts: UserFontRepository? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -264,10 +265,13 @@ fun ReaderScreen(
     if (state.textSettingsVisible) {
         ReaderTextSettingsDialog(
             preferences = state.preferences,
+            currentFontLabel = state.preferences.fontLabel(),
             onChange = { value -> viewModel.updatePreferences { value } },
             onDismiss = { viewModel.showTextSettings(false) },
-            availableUserFonts = UserFontRepository.catalog,
-            installedUserFontIds = installedUserFontIds,
+            onChooseFont = {
+                viewModel.showTextSettings(false)
+                onFontPicker()
+            },
         )
     }
 
@@ -852,11 +856,11 @@ internal fun ReaderSettingsDialog(
 @Composable
 internal fun ReaderTextSettingsDialog(
     preferences: ReaderPreferences,
+    currentFontLabel: String? = null,
     onChange: (ReaderPreferences) -> Unit,
     onDismiss: () -> Unit,
     sourceFontRequired: Boolean = false,
-    availableUserFonts: List<UserFontDefinition> = emptyList(),
-    installedUserFontIds: Set<String> = emptySet(),
+    onChooseFont: () -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -868,33 +872,12 @@ internal fun ReaderTextSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("字体")
-                ReaderFont.entries.chunked(2).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { font ->
-                            ReaderOptionChip(
-                                selected = preferences.customFontId == null && preferences.font == font,
-                                onClick = { onChange(preferences.copy(font = font, customFontId = null)) },
-                                label = font.label,
-                            )
-                        }
-                    }
-                }
-                availableUserFonts.filter { it.id in installedUserFontIds }.takeIf { it.isNotEmpty() }?.let { fonts ->
-                    Text("已下载字体")
-                    fonts.chunked(2).forEach { row ->
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            row.forEach { font ->
-                                ReaderOptionChip(
-                                    selected = preferences.customFontId == font.id,
-                                    onClick = {
-                                        onChange(preferences.copy(font = ReaderFont.DEFAULT, customFontId = font.id))
-                                    },
-                                    label = font.name,
-                                )
-                            }
-                        }
-                    }
-                }
+                Text(
+                    "当前：${currentFontLabel ?: preferences.fontLabel()}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                TextButton(onClick = onChooseFont) { Text("打开字体预览与选择") }
                 if (sourceFontRequired) {
                     Text(
                         "当前章节使用来源字体以保证文字编码正确；字体选择将在不需要专用字体的章节生效。",
@@ -1031,30 +1014,17 @@ private fun ReaderPreferences.readerColors(): ReaderColors = when (theme) {
 
 private fun ReaderPreferences.paragraphStyle(color: Color, customFontFamily: FontFamily? = null) = TextStyle(
     color = color,
-    fontFamily = customFontFamily ?: font.family(),
+    fontFamily = customFontFamily ?: font.fontFamily(),
     fontSize = fontSize.sp,
     lineHeight = (fontSize * lineHeight).sp,
 )
 
 private fun ReaderPreferences.headingStyle(color: Color, customFontFamily: FontFamily? = null) = TextStyle(
     color = color,
-    fontFamily = customFontFamily ?: font.family(),
+    fontFamily = customFontFamily ?: font.fontFamily(),
     fontSize = (fontSize + 5).sp,
     lineHeight = ((fontSize + 5) * lineHeight).sp,
 )
-
-private fun ReaderFont.family(): FontFamily = when (this) {
-    ReaderFont.DEFAULT -> FontFamily.Default
-    ReaderFont.SANS -> FontFamily.SansSerif
-    ReaderFont.SERIF -> FontFamily.Serif
-    ReaderFont.MONO -> FontFamily.Monospace
-    ReaderFont.CURSIVE -> FontFamily.Cursive
-    ReaderFont.CONDENSED -> FontFamily(Typeface.create("sans-serif-condensed", Typeface.NORMAL))
-    ReaderFont.ROUNDED -> FontFamily(Typeface.create("sans-serif-rounded", Typeface.NORMAL))
-    ReaderFont.LIGHT -> FontFamily(Typeface.create("sans-serif-light", Typeface.NORMAL))
-    ReaderFont.MEDIUM -> FontFamily(Typeface.create("sans-serif-medium", Typeface.NORMAL))
-    ReaderFont.BLACK -> FontFamily(Typeface.create("sans-serif-black", Typeface.NORMAL))
-}
 
 private fun ReaderImageScale.contentScale(): ContentScale = when (this) {
     ReaderImageScale.FIT -> ContentScale.Fit

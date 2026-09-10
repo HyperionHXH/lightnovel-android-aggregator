@@ -1,11 +1,14 @@
 package io.github.jiangyuyi.lightnovel
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.Bundle
 import android.net.Uri
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -61,6 +64,7 @@ import io.github.jiangyuyi.lightnovel.feature.history.AggregateHistoryViewModel
 import io.github.jiangyuyi.lightnovel.feature.profile.ProfileScreen
 import io.github.jiangyuyi.lightnovel.feature.profile.ProfileViewModel
 import io.github.jiangyuyi.lightnovel.feature.profile.SettingsScreen
+import io.github.jiangyuyi.lightnovel.feature.profile.FontSelectionScreen
 import io.github.jiangyuyi.lightnovel.feature.onboarding.OnboardingScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadViewModel
@@ -115,6 +119,20 @@ private fun LightNovelAppRoot() {
         .collectAsStateWithLifecycle(initialValue = io.github.jiangyuyi.lightnovel.core.preferences.AppPreferences())
     val readerPreferences by container.readerPreferences.preferences
         .collectAsStateWithLifecycle(initialValue = io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences())
+    val downloadDirectory by container.offlineLibrary.downloadDirectory.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val downloadDirectoryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+            )
+        }
+        container.offlineLibrary.setDownloadDirectory(uri.toString())
+    }
     val scope = rememberCoroutineScope()
     LightNovelTheme(appPreferences) {
         when {
@@ -129,6 +147,12 @@ private fun LightNovelAppRoot() {
                 onReaderPreferencesChange = { value ->
                     scope.launch { container.readerPreferences.update(value) }
                 },
+                downloadDirectoryLabel = if (downloadDirectory == null) {
+                    "未选择（应用专用目录）"
+                } else {
+                    "已选择自定义文件夹"
+                },
+                onChooseDownloadDirectory = { downloadDirectoryLauncher.launch(null) },
                 onComplete = {
                     scope.launch { container.appPreferences.completeOnboarding() }
                 },
@@ -154,6 +178,7 @@ private object Routes {
     const val PROFILE = "profile"
     const val DOWNLOADS = "downloads"
     const val SETTINGS = "settings"
+    const val FONT_SELECTION = "font-selection"
     const val AUTH = "auth"
     const val SOCIAL = "social/{mode}"
     const val HISTORY = "history"
@@ -290,12 +315,19 @@ private fun LightNovelApp() {
                     offlineLibrary = container.offlineLibrary,
                     updateNotifications = container.updateNotifications,
                     readerPreferences = container.readerPreferences,
-                    userFonts = container.userFonts,
                     appPreferences = container.appPreferences,
                     onBack = { navController.popBackStack() },
                     onRestartOnboarding = {
                         scope.launch { container.appPreferences.restartOnboarding() }
                     },
+                    onFontSelection = { navController.navigate(Routes.FONT_SELECTION) },
+                )
+            }
+            composable(Routes.FONT_SELECTION) {
+                FontSelectionScreen(
+                    readerPreferences = container.readerPreferences,
+                    userFonts = container.userFonts,
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable(Routes.DOWNLOADS) {
@@ -448,6 +480,7 @@ private fun LightNovelApp() {
                     vm,
                     onBack = { navController.popBackStack() },
                     onCatalog = { navController.navigate(Routes.book(bookId)) },
+                    onFontPicker = { navController.navigate(Routes.FONT_SELECTION) },
                     userFonts = container.userFonts,
                 )
             }
@@ -510,6 +543,7 @@ private fun LightNovelApp() {
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     onCatalog = { navController.popBackStack() },
+                    onFontPicker = { navController.navigate(Routes.FONT_SELECTION) },
                     userFonts = container.userFonts,
                 )
             }

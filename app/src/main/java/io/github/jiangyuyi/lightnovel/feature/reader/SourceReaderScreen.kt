@@ -1,6 +1,5 @@
 package io.github.jiangyuyi.lightnovel.feature.reader
 
-import android.graphics.Typeface
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -69,8 +68,9 @@ import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
 import io.github.jiangyuyi.lightnovel.core.model.ReaderImageScale
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.model.ReaderTheme
-import io.github.jiangyuyi.lightnovel.core.reader.UserFontDefinition
 import io.github.jiangyuyi.lightnovel.core.reader.UserFontRepository
+import io.github.jiangyuyi.lightnovel.core.reader.fontLabel
+import io.github.jiangyuyi.lightnovel.core.reader.fontFamily
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -84,6 +84,7 @@ fun SourceReaderScreen(
     viewModel: SourceReaderViewModel,
     onBack: () -> Unit,
     onCatalog: () -> Unit,
+    onFontPicker: () -> Unit = {},
     userFonts: UserFontRepository? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -345,11 +346,14 @@ fun SourceReaderScreen(
     if (state.textSettingsVisible) {
         ReaderTextSettingsDialog(
             preferences = state.preferences,
+            currentFontLabel = state.preferences.fontLabel(),
             onChange = { updated -> viewModel.updatePreferences { updated } },
             onDismiss = { viewModel.showTextSettings(false) },
             sourceFontRequired = state.chapterFontFamily != null,
-            availableUserFonts = UserFontRepository.catalog,
-            installedUserFontIds = installedUserFontIds,
+            onChooseFont = {
+                viewModel.showTextSettings(false)
+                onFontPicker()
+            },
         )
     }
 }
@@ -642,18 +646,7 @@ private fun ReaderPreferences.sourceTextStyle(
     customFontFamily: FontFamily? = null,
 ) = TextStyle(
     color = color,
-    fontFamily = chapterFontFamily ?: customFontFamily ?: when (font) {
-        ReaderFont.DEFAULT -> FontFamily.Default
-        ReaderFont.SANS -> FontFamily.SansSerif
-        ReaderFont.SERIF -> FontFamily.Serif
-        ReaderFont.MONO -> FontFamily.Monospace
-        ReaderFont.CURSIVE -> FontFamily.Cursive
-        ReaderFont.CONDENSED -> FontFamily(Typeface.create("sans-serif-condensed", Typeface.NORMAL))
-        ReaderFont.ROUNDED -> FontFamily(Typeface.create("sans-serif-rounded", Typeface.NORMAL))
-        ReaderFont.LIGHT -> FontFamily(Typeface.create("sans-serif-light", Typeface.NORMAL))
-        ReaderFont.MEDIUM -> FontFamily(Typeface.create("sans-serif-medium", Typeface.NORMAL))
-        ReaderFont.BLACK -> FontFamily(Typeface.create("sans-serif-black", Typeface.NORMAL))
-    },
+    fontFamily = chapterFontFamily ?: customFontFamily ?: font.fontFamily(),
     fontSize = fontSize.sp,
     lineHeight = (fontSize * lineHeight).sp,
 )

@@ -40,7 +40,7 @@ import io.github.jiangyuyi.lightnovel.core.preferences.AppPreferences
 import io.github.jiangyuyi.lightnovel.core.preferences.AppScale
 import io.github.jiangyuyi.lightnovel.core.preferences.AppThemeMode
 
-private const val STEP_COUNT = 3
+private const val STEP_COUNT = 4
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +49,8 @@ fun OnboardingScreen(
     readerPreferences: ReaderPreferences,
     onAppPreferencesChange: (AppPreferences) -> Unit,
     onReaderPreferencesChange: (ReaderPreferences) -> Unit,
+    downloadDirectoryLabel: String = "未选择（应用专用目录）",
+    onChooseDownloadDirectory: () -> Unit = {},
     onComplete: () -> Unit,
 ) {
     var step by rememberSaveable { mutableIntStateOf(0) }
@@ -110,11 +112,39 @@ fun OnboardingScreen(
                             preferences = readerPreferences,
                             onChange = onReaderPreferencesChange,
                         )
+                        2 -> DownloadStep(
+                            directoryLabel = downloadDirectoryLabel,
+                            onChoose = onChooseDownloadDirectory,
+                        )
                         else -> ReadyStep()
                     }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun DownloadStep(
+    directoryLabel: String,
+    onChoose: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        StepHeading(
+            title = "选择下载目录",
+            subtitle = "离线章节和导出的 EPUB 会保存到这里，之后也可以在设置中更改。",
+        )
+        Text(
+            directoryLabel,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(onClick = onChoose) { Text("选择文件夹") }
+        Text(
+            "不选择时会使用应用专用目录；更换目录不会删除已有下载内容。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
