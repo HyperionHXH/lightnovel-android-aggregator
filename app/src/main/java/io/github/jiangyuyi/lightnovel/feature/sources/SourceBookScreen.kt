@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.FilterChip
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
@@ -30,6 +32,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -41,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
@@ -61,10 +67,12 @@ fun SourceBookScreen(
     onBook: (NovelKey) -> Unit,
     onRead: (ChapterKey) -> Unit,
     onAccounts: () -> Unit,
-    onComments: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var unlockTarget by remember { mutableStateOf<ChapterSummary?>(null) }
+    var selectedTab by remember { mutableStateOf(0) }
+    var draft by remember { mutableStateOf("") }
+    var ratingStars by remember { mutableStateOf(0) }
 
     RefreshableLazyColumn(
         isRefreshing = state.refreshing,
@@ -72,6 +80,7 @@ fun SourceBookScreen(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
+        onLoadMore = { if (selectedTab == 1) viewModel.loadMoreComments() },
     ) {
         item {
             TopAppBar(
@@ -199,17 +208,30 @@ fun SourceBookScreen(
                         }
                     }
                 }
+                item(key = "detail-tabs") {
+                    TabRow(selectedTabIndex = selectedTab, modifier = Modifier.padding(horizontal = 12.dp)) {
+                        listOf("简介", "评论", "章节").forEachIndexed { index, label ->
+                            Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(label) })
+                        }
+                    }
+                }
+                if (selectedTab == 0) {
                 if (novel.tags.isNotEmpty()) {
                     item {
-                        Text(
-                            novel.tags.joinToString(" · "),
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                        )
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            novel.tags.forEach { tag ->
+                                AssistChip(onClick = {}, label = { Text(tag) })
+                            }
+                        }
                     }
                 }
                 item {
                     SourceSection("简介") {
+                        novel.score?.let { score ->
+                            val fivePointScore = if (score > 5) score / 2 else score
+                            val rounded = fivePointScore.roundToInt().coerceIn(0, 5)
+                            Text("评分 ${"★".repeat(rounded)}${"☆".repeat(5 - rounded)} ${"%.1f".format(fivePointScore)} / 5", color = MaterialTheme.colorScheme.primary)
+                        }
                         Text(novel.synopsis.ifBlank { "暂无简介" })
                     }
                 }
@@ -226,29 +248,56 @@ fun SourceBookScreen(
                         }
                     }
                 }
-                if (state.commentsSupported) {
+                } else if (selectedTab == 1 && state.commentsSupported) {
                     item(key = "comments-header") {
                         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text("作品评论", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                                TextButton(onClick = onComments) { Text("查看全部") }
+                                CommentSort.entries.forEach { sort ->
+                                    FilterChip(selected = state.commentSort == sort, onClick = { viewModel.selectCommentSort(sort) }, label = { Text(sort.label) })
+                                }
+                            }
+                            OutlinedTextField(
+                                value = draft,
+                                onValueChange = { draft = it.take(1_000) },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("写下你的看法") },
+                                trailingIcon = {
+                                    TextButton(onClick = { viewModel.publishComment(draft, ratingStars, onLoginRequired = onAccounts, onPublished = { draft = "" }) }, enabled = draft.isNotBlank() && !state.publishingComment) {
+                                        if (state.publishingComment) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("发布")
+                                    }
+                                },
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text("评分", style = MaterialTheme.typography.labelLarge)
+                                (1..5).forEach { stars ->
+                                    FilterChip(
+                                        selected = ratingStars == stars,
+                                        onClick = { ratingStars = if (ratingStars == stars) 0 else stars },
+                                        label = { Text("${"★".repeat(stars)} $stars") },
+                                    )
+                                }
                             }
                             when {
-                                state.commentsLoading -> Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                                state.commentsLoading && state.comments.isEmpty() -> Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
                                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                                 }
                                 state.commentError != null -> Text(state.commentError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                                state.comments.isEmpty() -> Text("暂无评论", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                else -> state.comments.take(2).forEach { comment ->
-                                    Card(
+                                state.comments.isEmpty() -> Text("暂时没有评论", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                else -> {
+                                    state.comments.forEach { comment ->
+                                        Card(
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(8.dp),
                                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                    ) {
-                                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        ) {
+                                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                                 Text(comment.authorName, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                                                 Text(comment.createdAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            comment.ratingStars?.let { stars ->
+                                                Text("★".repeat(stars) + "☆".repeat(5 - stars), color = MaterialTheme.colorScheme.primary)
                                             }
                                             Text(comment.content)
                                             val meta = listOfNotNull(
@@ -258,13 +307,21 @@ fun SourceBookScreen(
                                             if (meta.isNotBlank()) {
                                                 Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                             }
+                                            }
+                                        }
+                                    }
+                                    if (state.commentsHasMore || state.commentsLoadingMore) {
+                                        TextButton(onClick = viewModel::loadMoreComments, enabled = !state.commentsLoadingMore, modifier = Modifier.fillMaxWidth()) {
+                                            if (state.commentsLoadingMore) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("加载更多评论")
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
+                } else if (selectedTab == 1) {
+                    item { EmptyPane("该来源暂不支持评论") }
+                } else if (selectedTab == 2) {
                 item {
                     Text(
                         "分卷与章节",
@@ -293,6 +350,7 @@ fun SourceBookScreen(
                             onUnlock = { chapter -> unlockTarget = chapter },
                         )
                     }
+                }
                 }
             }
         }

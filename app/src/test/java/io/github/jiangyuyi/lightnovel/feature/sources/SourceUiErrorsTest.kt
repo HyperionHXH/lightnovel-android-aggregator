@@ -2,10 +2,17 @@ package io.github.jiangyuyi.lightnovel.feature.sources
 
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
+import io.github.jiangyuyi.lightnovel.core.network.ApiException
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SourceUiErrorsTest {
+    @Test
+    fun `comment business code twenty is shown as link error instead of opaque status`() {
+        val error = ApiException("请求失败（20）", httpCode = 200, businessCode = 20)
+
+        assertEquals("评论链接错误，请稍后重试", error.toSourceUiMessage("评论加载失败"))
+    }
     @Test
     fun `opaque login status becomes actionable credential message`() {
         val error = SourceException(SourceErrorKind.AUTHENTICATION, "1001")

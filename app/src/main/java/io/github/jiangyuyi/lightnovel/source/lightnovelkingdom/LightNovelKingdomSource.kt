@@ -77,7 +77,7 @@ internal interface LightNovelKingdomGateway {
     suspend fun unlockChapter(chapterId: Long): Unit = error("chapter unlock is not implemented")
     suspend fun comments(bookId: Long, sort: CommentSort, page: Int, pageSize: Int): Page<Comment> =
         error("comments are not implemented")
-    suspend fun publishComment(bookId: Long, content: String): Comment = error("comment publishing is not implemented")
+    suspend fun publishComment(bookId: Long, content: String, ratingStars: Int = 0): Comment = error("comment publishing is not implemented")
     suspend fun welfareCenter(): RewardCenter = error("welfare center is not implemented")
     suspend fun claimDailyReward(): RewardResult = error("daily reward is not implemented")
     suspend fun claimRewardTask(taskId: Long, taskKey: String): RewardResult = error("reward task is not implemented")
@@ -117,7 +117,8 @@ private class RepositoryLightNovelKingdomGateway(
     override suspend fun unlockChapter(chapterId: Long) = repository.unlockChapter(chapterId)
     override suspend fun comments(bookId: Long, sort: CommentSort, page: Int, pageSize: Int) =
         repository.comments(bookId, sort, page, pageSize)
-    override suspend fun publishComment(bookId: Long, content: String) = repository.publishBookComment(bookId, content)
+    override suspend fun publishComment(bookId: Long, content: String, ratingStars: Int) =
+        repository.publishBookComment(bookId, content, ratingStars)
     override suspend fun welfareCenter() = repository.welfareCenter()
     override suspend fun claimDailyReward() = repository.claimWelfareSign()
     override suspend fun claimRewardTask(taskId: Long, taskKey: String) =
@@ -224,8 +225,8 @@ class LightNovelKingdomSource internal constructor(
         pageSize,
     ).toSourcePage(Comment::toSource)
 
-    override suspend fun publishComment(novelKey: NovelKey, content: String): SourceComment =
-        gateway.publishComment(novelKey.requireKingdomId(), content).toSource()
+    override suspend fun publishComment(novelKey: NovelKey, content: String, ratingStars: Int): SourceComment =
+        gateway.publishComment(novelKey.requireKingdomId(), content, ratingStars).toSource()
 
     override suspend fun restoreSession(): SourceSession = gateway.restoreSession().toSource()
 
@@ -324,9 +325,10 @@ private fun Comment.toSource() = SourceComment(
     authorAvatarUrl = author.avatarUrl,
     content = content,
     createdAt = createdAt,
-    likeCount = likeCount,
-    replyCount = replyCount,
-)
+        likeCount = likeCount,
+        replyCount = replyCount,
+        ratingStars = ratingStars,
+    )
 
 private fun BookSummary.toSource() = NovelSummary(
     key = NovelKey(SOURCE_ID, id.toString()),

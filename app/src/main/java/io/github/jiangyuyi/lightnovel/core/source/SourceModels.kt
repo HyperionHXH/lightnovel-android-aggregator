@@ -36,6 +36,8 @@ data class SourceComment(
     val createdAt: String = "",
     val likeCount: Int = 0,
     val replyCount: Int = 0,
+    /** Optional 1-5 star rating supplied by the source. */
+    val ratingStars: Int? = null,
 )
 
 @Serializable

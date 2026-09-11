@@ -416,31 +416,41 @@ private fun RewardCenterContent(
             }
         }
 
-        if (center.tasks.any { it.available }) {
+        val supportedTasks = center.tasks.filter { task ->
+            task.available && listOf("广告", "看视频", "观看视频", "激励").none { keyword ->
+                task.title.contains(keyword) || task.subtitle.contains(keyword)
+            } && !task.key.contains("ad", ignoreCase = true)
+        }
+        if (supportedTasks.isNotEmpty()) {
             HorizontalDivider()
             Text("轻币任务", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            center.tasks.filter { it.available }.forEachIndexed { index, task ->
-                if (index > 0) HorizontalDivider()
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+            supportedTasks.forEach { task ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                 ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(task.title, fontWeight = FontWeight.Medium)
-                        if (task.subtitle.isNotBlank()) {
-                            Text(task.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        if (task.totalProgress > 0) {
-                            Text("进度 ${task.progress}/${task.totalProgress} · 奖励 ${task.rewardAmount} 轻币", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                    TextButton(
-                        onClick = { onRewardTask(task) },
-                        enabled = task.claimable && actionKey == null,
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        if (actionKey == "task:${task.key}") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        else Text(if (task.claimed) "已领取" else task.buttonText.ifBlank { "领取" })
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(task.title, fontWeight = FontWeight.Medium)
+                            if (task.subtitle.isNotBlank()) {
+                                Text(task.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            if (task.totalProgress > 0) {
+                                Text("进度 ${task.progress}/${task.totalProgress} · 奖励 ${task.rewardAmount} 轻币", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        TextButton(
+                            onClick = { onRewardTask(task) },
+                            enabled = task.claimable && actionKey == null,
+                        ) {
+                            if (actionKey == "task:${task.key}") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Text(if (task.claimed) "已领取" else if (task.claimable) task.buttonText.ifBlank { "领取" } else "未完成")
+                        }
                     }
                 }
             }

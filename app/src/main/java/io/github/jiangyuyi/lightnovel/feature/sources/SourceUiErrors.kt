@@ -2,9 +2,22 @@ package io.github.jiangyuyi.lightnovel.feature.sources
 
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
+import io.github.jiangyuyi.lightnovel.core.network.ApiException
 import kotlinx.coroutines.CancellationException
 
 internal fun Throwable.toSourceUiMessage(default: String): String {
+    if (this is ApiException) {
+        if (businessCode == 20) {
+            return when {
+                default.contains("评论") -> "评论链接错误，请稍后重试"
+                default.contains("登录") -> "账号或密码错误，请检查后重试"
+                else -> "请先登录轻之国度账号"
+            }
+        }
+        if (default.contains("评论") && (httpCode == null || httpCode !in 200..299)) {
+            return "评论链接错误，请检查网络"
+        }
+    }
     if (default.contains("登录") && message.orEmpty().lineSequence().firstOrNull().orEmpty().isOpaqueAuthCode()) {
         return "账号或密码错误，请检查后重试"
     }

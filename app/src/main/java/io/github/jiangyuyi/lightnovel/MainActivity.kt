@@ -533,7 +533,6 @@ private fun LightNovelApp() {
                     onBook = { navController.navigate(Routes.sourceBook(it)) },
                      onRead = { navController.navigate(Routes.sourceReader(novelKey, it)) },
                      onAccounts = { navController.navigate(Routes.SOURCE_ACCOUNTS) },
-                     onComments = { navController.navigate("source-comments/${Uri.encode(novelKey.sourceId)}/${Uri.encode(novelKey.remoteId)}") },
                  )
             }
             composable(

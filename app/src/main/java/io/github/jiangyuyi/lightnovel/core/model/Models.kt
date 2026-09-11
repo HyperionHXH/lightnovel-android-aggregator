@@ -116,6 +116,7 @@ data class Comment(
     val createdAt: String = "",
     val likeCount: Int = 0,
     val replyCount: Int = 0,
+    val ratingStars: Int? = null,
 )
 
 @Serializable

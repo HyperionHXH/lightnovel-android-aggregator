@@ -802,7 +802,7 @@ class LightNovelRepository(
         )
     }
 
-    suspend fun publishBookComment(bookId: Long, content: String): Comment {
+    suspend fun publishBookComment(bookId: Long, content: String, ratingStars: Int = 0): Comment {
         val normalized = content.trim()
         require(normalized.isNotBlank()) { "评论内容不能为空" }
         val data = api.post(
@@ -816,7 +816,7 @@ class LightNovelRepository(
                 "root_comment_id" to 0,
                 "reply_comment_id" to 0,
                 "content" to normalized,
-                "rating_stars" to 0,
+                "rating_stars" to ratingStars.coerceIn(0, 5),
                 "read_duration_seconds" to 0,
             ),
         )

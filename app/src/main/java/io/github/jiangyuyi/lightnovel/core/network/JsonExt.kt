@@ -217,6 +217,8 @@ object ApiParsers {
             createdAt = source.string("created_at", "time", "createdAt"),
             likeCount = source.int("like_count", "likes"),
             replyCount = source.int("reply_count", "replies"),
+            ratingStars = source.intOrNull("rating_stars", "rating", "stars", "star")
+                ?.takeIf { it in 1..5 },
         )
     }
 

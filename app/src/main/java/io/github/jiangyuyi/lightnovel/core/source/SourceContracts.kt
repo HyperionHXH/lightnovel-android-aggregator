@@ -84,5 +84,5 @@ interface CommentProvider : SourceProvider {
         pageSize: Int = 20,
     ): SourcePage<SourceComment>
 
-    suspend fun publishComment(novelKey: NovelKey, content: String): SourceComment
+    suspend fun publishComment(novelKey: NovelKey, content: String, ratingStars: Int = 0): SourceComment
 }

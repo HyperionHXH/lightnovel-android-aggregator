@@ -186,7 +186,7 @@ class SourceBookViewModel(
                         shelfLoading = false,
                         shelfError = error.toSourceUiMessage("书架操作失败"),
                     )
-                    if (error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION) {
+                    if (error.isSourceAuthentication()) {
                         onLoginRequired()
                     }
                 }
@@ -215,7 +215,7 @@ class SourceBookViewModel(
                         unlockingChapterKey = null,
                         unlockError = error.toSourceUiMessage("章节解锁失败"),
                     )
-                    if (error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION) onLoginRequired()
+                    if (error.isSourceAuthentication()) onLoginRequired()
                 }
         }
     }
@@ -332,6 +332,7 @@ class SourceBookViewModel(
 
     fun publishComment(
         content: String,
+        ratingStars: Int = 0,
         onLoginRequired: () -> Unit,
         onPublished: () -> Unit,
     ) {
@@ -348,7 +349,7 @@ class SourceBookViewModel(
             commentLoginRequired = false,
         )
         viewModelScope.launch {
-            runSourceCatching { provider.publishComment(novelKey, normalized) }
+            runSourceCatching { provider.publishComment(novelKey, normalized, ratingStars.coerceIn(0, 5)) }
                 .onSuccess {
                     _state.value = _state.value.copy(publishingComment = false)
                     onPublished()
@@ -358,9 +359,9 @@ class SourceBookViewModel(
                     _state.value = _state.value.copy(
                         publishingComment = false,
                         commentError = error.toSourceUiMessage("评论发布失败"),
-                        commentLoginRequired = error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION,
+                        commentLoginRequired = error.isSourceAuthentication(),
                     )
-                    if (error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION) {
+                    if (error.isSourceAuthentication()) {
                         onLoginRequired()
                     }
                 }
@@ -401,7 +402,7 @@ class SourceBookViewModel(
                     commentsLoading = false,
                     commentsLoadingMore = false,
                     commentError = error.toSourceUiMessage("评论加载失败"),
-                    commentLoginRequired = error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION,
+                    commentLoginRequired = error.isSourceAuthentication(),
                 )
             }
         }
@@ -420,3 +421,6 @@ class SourceBookViewModel(
 
 private fun OfflineDownloadStatus?.isActiveDownload(): Boolean =
     this == OfflineDownloadStatus.QUEUED || this == OfflineDownloadStatus.DOWNLOADING
+
+private fun Throwable.isSourceAuthentication(): Boolean =
+    (this as? SourceException)?.kind == SourceErrorKind.AUTHENTICATION

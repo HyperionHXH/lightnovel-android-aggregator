@@ -273,9 +273,9 @@ class SourceBookViewModelTest {
             )
         }
 
-        override suspend fun publishComment(novelKey: NovelKey, content: String): SourceComment {
+        override suspend fun publishComment(novelKey: NovelKey, content: String, ratingStars: Int): SourceComment {
             published = content
-            return SourceComment(id = "published", authorName = "用户", content = content)
+            return SourceComment(id = "published", authorName = "用户", content = content, ratingStars = ratingStars.takeIf { it > 0 })
         }
     }
 
