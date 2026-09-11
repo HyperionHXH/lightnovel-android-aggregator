@@ -241,7 +241,9 @@ private fun UserFontDefinition.previewFontFamily(): FontFamily? {
         "source-han-serif-cn" -> R.font.preview_source_han_serif_cn
         "source-han-sans-cn" -> R.font.preview_source_han_sans_cn
         "lxgw-wenkai" -> R.font.preview_wenkai
-        "lxgw-wenkai-mono" -> R.font.preview_wenkai_mono
+        "genryu-min" -> R.font.preview_genryu
+        "glow-sans-sc" -> R.font.preview_glow_sans
+        "huiwen-mincho" -> R.font.preview_huiwen
         else -> return null
     }
     return FontFamily(Font(resource))

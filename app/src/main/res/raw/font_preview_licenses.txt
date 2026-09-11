@@ -13,6 +13,19 @@ Copyright 2021-2026 LXGW (https://github.com/lxgw/LxgwWenKai), with Reserved
 Font Name '霞鹜', '霞鶩', '落霞孤鹜', '落霞孤鶩' and 'LXGW'.
 Copyright 2020 The Klee Project Authors (https://github.com/fontworks-fonts/Klee)
 
+GenRyuMin preview subset (源流明体)
+Copyright 2017-2024 ButTaiwan (https://github.com/ButTaiwan/genryu-font).
+The original font is licensed under SIL Open Font License 1.1.
+
+Glow Sans preview subset (未来荧黑)
+Copyright 2020 Project Wêlai (https://github.com/welai/glow-sans).
+The original font is licensed under SIL Open Font License 1.1.
+
+Huiwen Mincho preview subset (汇文明朝体修正版)
+Copyright and related rights waived by the upstream distributor under CC0 1.0
+(https://github.com/bosswnx/huiwenmincho-improved). The upstream repository
+also documents the original 汇文明朝体 source and its correction history.
+
 All preview subsets are licensed under the following license.
 
 -----------------------------------------------------------

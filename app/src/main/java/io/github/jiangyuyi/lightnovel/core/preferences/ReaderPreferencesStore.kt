@@ -54,7 +54,11 @@ class ReaderPreferencesStore(private val context: Context) : ReaderPreferencesAc
             values[PADDING] == 22
         ReaderPreferences(
             font = enumValueOrDefault(values[FONT], ReaderFont.SERIF),
-            customFontId = values[CUSTOM_FONT_ID],
+            // The removed monospaced WenKai option may still be persisted by an
+            // older build. Clear it on read so the reader immediately falls
+            // back to the selected system font instead of an unavailable ID.
+            customFontId = values[CUSTOM_FONT_ID]
+                ?.takeUnless { it == "lxgw-wenkai-mono" },
             fontSize = (if (legacyCompactDefaults) 21f else values[FONT_SIZE] ?: 21f).coerceIn(14f, 32f),
             lineHeight = (if (legacyCompactDefaults) 1.75f else values[LINE_HEIGHT] ?: 1.75f).coerceIn(1.2f, 2.2f),
             horizontalPadding = (if (legacyCompactDefaults) 28 else values[PADDING] ?: 28).coerceIn(12, 40),
