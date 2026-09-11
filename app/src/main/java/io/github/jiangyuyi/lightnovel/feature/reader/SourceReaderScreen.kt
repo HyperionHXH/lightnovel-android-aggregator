@@ -73,6 +73,7 @@ import io.github.jiangyuyi.lightnovel.core.reader.fontLabel
 import io.github.jiangyuyi.lightnovel.core.reader.fontFamily
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
+import io.github.jiangyuyi.lightnovel.core.ui.ReaderImagePreview
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -594,41 +595,7 @@ private fun ReaderRemoteImage(
     modifier: Modifier,
     imageScale: ReaderImageScale = ReaderImageScale.FIT,
 ) {
-    var zoomed by remember(url) { mutableStateOf(false) }
-    SubcomposeAsyncImage(
-        model = url,
-        contentDescription = "插图",
-        modifier = modifier.clickable { zoomed = true },
-        contentScale = imageScale.contentScale(),
-        loading = {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                androidx.compose.material3.CircularProgressIndicator(strokeWidth = 2.dp)
-            }
-        },
-        error = {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("图片加载失败", color = MaterialTheme.colorScheme.error)
-            }
-        },
-    )
-    if (zoomed) {
-        Dialog(
-            onDismissRequest = { zoomed = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            Box(
-                Modifier.fillMaxSize().background(Color.Black).clickable { zoomed = false },
-                contentAlignment = Alignment.Center,
-            ) {
-                SubcomposeAsyncImage(
-                    model = url,
-                    contentDescription = "放大插图",
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    contentScale = imageScale.contentScale(),
-                )
-            }
-        }
-    }
+    ReaderImagePreview(url, modifier, imageScale, "插图", "图片加载失败")
 }
 
 private data class SourceReaderColors(val background: Color, val text: Color)

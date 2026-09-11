@@ -2,6 +2,12 @@
 
 本项目的显著变更记录在此。版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.11.0] - 2026-09-11
+
+- 阅读器放大插图后支持长按打开图片操作栏，并将插图保存到系统相册的 `Pictures/Mixn` 目录。
+- 保存流程使用 `MediaStore`，兼容 Android 10+ 分区存储及旧设备存储权限，支持 PNG、JPEG 和 WebP。
+- 点击放大图像本身不会误关闭预览，点击图片外的遮罩区域仍可退出。
+
 ## [1.10.1] - 2026-09-11
 
 - 修复轻书架生产接口改用 `Book.Chapters` 后 Android 和桌面端章节列表显示为空的问题。

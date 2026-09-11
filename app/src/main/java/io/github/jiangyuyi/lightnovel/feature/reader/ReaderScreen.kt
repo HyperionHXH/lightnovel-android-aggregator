@@ -95,6 +95,7 @@ import io.github.jiangyuyi.lightnovel.core.reader.UserFontRepository
 import io.github.jiangyuyi.lightnovel.core.reader.fontLabel
 import io.github.jiangyuyi.lightnovel.core.reader.fontFamily
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
+import io.github.jiangyuyi.lightnovel.core.ui.ReaderImagePreview
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -669,41 +670,7 @@ private fun ReaderIllustration(
     colors: ReaderColors,
     imageScale: ReaderImageScale,
 ) {
-    var zoomed by remember(block.url) { mutableStateOf(false) }
-    SubcomposeAsyncImage(
-        model = block.url,
-        contentDescription = "正文插图",
-        contentScale = imageScale.contentScale(),
-        modifier = modifier.clickable { zoomed = true },
-        loading = {
-            Box(Modifier.fillMaxSize().background(colors.text.copy(alpha = 0.04f)), contentAlignment = Alignment.Center) {
-                LinearProgressIndicator(Modifier.fillMaxWidth(0.45f))
-            }
-        },
-        error = {
-            Box(Modifier.fillMaxSize().background(colors.text.copy(alpha = 0.04f)), contentAlignment = Alignment.Center) {
-                Text("插图加载失败", color = colors.text.copy(alpha = 0.7f))
-            }
-        },
-    )
-    if (zoomed) {
-        Dialog(
-            onDismissRequest = { zoomed = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false),
-        ) {
-            Box(
-                Modifier.fillMaxSize().background(Color.Black).clickable { zoomed = false },
-                contentAlignment = Alignment.Center,
-            ) {
-                SubcomposeAsyncImage(
-                    model = block.url,
-                    contentDescription = "放大插图",
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    contentScale = imageScale.contentScale(),
-                )
-            }
-        }
-    }
+    ReaderImagePreview(block.url, modifier, imageScale, "正文插图", "插图加载失败", colors.text.copy(alpha = 0.7f))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
