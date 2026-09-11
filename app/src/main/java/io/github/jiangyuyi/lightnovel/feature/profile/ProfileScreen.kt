@@ -92,12 +92,6 @@ fun ProfileScreen(
                 ) {
                     val profile = state.profile
                     if (profile != null) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                            ProfileStat("关注", profile.followingCount, onFollowing)
-                            ProfileStat("粉丝", profile.fansCount, onFollowers)
-                            ProfileStat("发布", profile.postCount, onPublishing)
-                            ProfileStat("轻币", profile.coin, null)
-                        }
                         ProfileEntry(
                             "消息中心",
                             "回复、@、点赞、粉丝、系统与私信",
@@ -193,17 +187,6 @@ private fun SourceAccountCard(
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         }
-    }
-}
-
-@Composable
-private fun ProfileStat(label: String, value: Int, onClick: (() -> Unit)?) {
-    Column(
-        modifier = Modifier.clickable(enabled = onClick != null) { onClick?.invoke() }.padding(8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(value.toString(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

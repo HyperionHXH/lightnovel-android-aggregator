@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
@@ -16,7 +15,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
@@ -25,13 +23,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -65,10 +61,10 @@ fun SourceBookScreen(
     onBook: (NovelKey) -> Unit,
     onRead: (ChapterKey) -> Unit,
     onAccounts: () -> Unit,
+    onComments: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var unlockTarget by remember { mutableStateOf<ChapterSummary?>(null) }
-    var commentDraft by remember { mutableStateOf("") }
 
     RefreshableLazyColumn(
         isRefreshing = state.refreshing,
@@ -232,113 +228,38 @@ fun SourceBookScreen(
                 }
                 if (state.commentsSupported) {
                     item(key = "comments-header") {
-                        Column(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text("作品评论", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    CommentSort.entries.forEach { sort ->
-                                        FilterChip(
-                                            selected = state.commentSort == sort,
-                                            onClick = { viewModel.selectCommentSort(sort) },
-                                            label = { Text(sort.label) },
-                                        )
-                                    }
-                                }
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text("作品评论", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                                TextButton(onClick = onComments) { Text("查看全部") }
                             }
-                            if (!state.commentLoginRequired) OutlinedTextField(
-                                value = commentDraft,
-                                onValueChange = { commentDraft = it.take(MAX_COMMENT_LENGTH) },
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
-                                label = { Text("说说你对这部作品的看法") },
-                                supportingText = { Text("${commentDraft.length} / $MAX_COMMENT_LENGTH") },
-                                trailingIcon = {
-                                    IconButton(
-                                        onClick = {
-                                            viewModel.publishComment(
-                                                commentDraft,
-                                                onLoginRequired = onAccounts,
-                                                onPublished = { commentDraft = "" },
-                                            )
-                                        },
-                                        enabled = commentDraft.isNotBlank() && !state.publishingComment,
+                            when {
+                                state.commentsLoading -> Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                                }
+                                state.commentError != null -> Text(state.commentError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                state.comments.isEmpty() -> Text("暂无评论", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                else -> state.comments.take(2).forEach { comment ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                                     ) {
-                                        if (state.publishingComment) {
-                                            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                                        } else {
-                                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发表评论")
+                                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                                Text(comment.authorName, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                                                Text(comment.createdAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Text(comment.content)
+                                            val meta = listOfNotNull(
+                                                comment.likeCount.takeIf { it > 0 }?.let { "赞 $it" },
+                                                comment.replyCount.takeIf { it > 0 }?.let { "回复 $it" },
+                                            ).joinToString(" · ")
+                                            if (meta.isNotBlank()) {
+                                                Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
                                         }
                                     }
-                                },
-                            )
-                            state.commentError?.let { message ->
-                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        message,
-                                        modifier = Modifier.weight(1f),
-                                        color = MaterialTheme.colorScheme.error,
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                    if (state.commentLoginRequired) {
-                                        TextButton(onClick = onAccounts) { Text("登录") }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (state.commentsLoading) {
-                        item(key = "comments-loading") {
-                            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(Modifier.size(26.dp), strokeWidth = 2.dp)
-                            }
-                        }
-                    } else if (state.comments.isEmpty() && state.commentError == null) {
-                        item(key = "comments-empty") { EmptyPane("暂无评论，来留下第一条评论吧") }
-                    } else {
-                        items(state.comments, key = { "comment-${it.id}" }) { comment ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            ) {
-                                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(comment.authorName, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                                        Text(
-                                            comment.createdAt,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    Text(comment.content)
-                                    val meta = listOfNotNull(
-                                        comment.likeCount.takeIf { it > 0 }?.let { "赞 $it" },
-                                        comment.replyCount.takeIf { it > 0 }?.let { "回复 $it" },
-                                    ).joinToString(" · ")
-                                    if (meta.isNotBlank()) {
-                                        Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if (state.commentsHasMore || state.commentsLoadingMore) {
-                        item(key = "comments-more") {
-                            TextButton(
-                                onClick = viewModel::loadMoreComments,
-                                enabled = !state.commentsLoadingMore,
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                if (state.commentsLoadingMore) {
-                                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Text("加载更多评论")
                                 }
                             }
                         }
@@ -512,5 +433,3 @@ private fun SourceSection(title: String, content: @Composable () -> Unit) {
         content()
     }
 }
-
-private const val MAX_COMMENT_LENGTH = 1_000

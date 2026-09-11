@@ -328,6 +328,8 @@ class SourceBookViewModel(
 
     fun loadMoreComments() = loadComments(reset = false)
 
+    fun loadCommentsForScreen() = loadComments(reset = true)
+
     fun publishComment(
         content: String,
         onLoginRequired: () -> Unit,

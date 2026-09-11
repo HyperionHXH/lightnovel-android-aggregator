@@ -1,8 +1,11 @@
 package io.github.jiangyuyi.lightnovel
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
+import android.os.Build
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -34,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -65,6 +70,7 @@ import io.github.jiangyuyi.lightnovel.feature.profile.ProfileScreen
 import io.github.jiangyuyi.lightnovel.feature.profile.ProfileViewModel
 import io.github.jiangyuyi.lightnovel.feature.profile.SettingsScreen
 import io.github.jiangyuyi.lightnovel.feature.profile.FontSelectionScreen
+import io.github.jiangyuyi.lightnovel.feature.profile.AboutScreen
 import io.github.jiangyuyi.lightnovel.feature.onboarding.OnboardingScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadViewModel
@@ -83,6 +89,7 @@ import io.github.jiangyuyi.lightnovel.feature.sources.SourceAccountsScreen
 import io.github.jiangyuyi.lightnovel.feature.sources.SourceAccountsViewModel
 import io.github.jiangyuyi.lightnovel.feature.sources.SourceBookScreen
 import io.github.jiangyuyi.lightnovel.feature.sources.SourceBookViewModel
+import io.github.jiangyuyi.lightnovel.feature.sources.SourceCommentsScreen
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import kotlinx.coroutines.launch
@@ -121,6 +128,16 @@ private fun LightNovelAppRoot() {
         .collectAsStateWithLifecycle(initialValue = io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences())
     val downloadDirectory by container.offlineLibrary.downloadDirectory.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val imagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
+    LaunchedEffect(appPreferences.loaded, appPreferences.onboardingCompleted) {
+        if (appPreferences.loaded && !appPreferences.onboardingCompleted && Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            imagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+    }
     val downloadDirectoryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
     ) { uri ->
@@ -179,6 +196,7 @@ private object Routes {
     const val DOWNLOADS = "downloads"
     const val SETTINGS = "settings"
     const val FONT_SELECTION = "font-selection"
+    const val ABOUT = "about"
     const val AUTH = "auth"
     const val SOCIAL = "social/{mode}"
     const val HISTORY = "history"
@@ -191,6 +209,7 @@ private object Routes {
     const val SOURCE_ACCOUNT = "source-account/{sourceId}"
     const val SOURCE_BOOK = "source-book/{sourceId}/{remoteId}"
     const val SOURCE_READER = "source-reader/{sourceId}/{bookId}/{chapterId}"
+    const val SOURCE_COMMENTS = "source-comments/{sourceId}/{remoteId}"
 
     fun book(id: Long) = "book/$id"
     fun reader(bookId: Long, chapterId: Long) = "reader/$bookId/$chapterId"
@@ -320,6 +339,7 @@ private fun LightNovelApp() {
                         scope.launch { container.appPreferences.restartOnboarding() }
                     },
                     onFontSelection = { navController.navigate(Routes.FONT_SELECTION) },
+                    onAbout = { navController.navigate(Routes.ABOUT) },
                 )
             }
             composable(Routes.FONT_SELECTION) {
@@ -328,6 +348,9 @@ private fun LightNovelApp() {
                     userFonts = container.userFonts,
                     onBack = { navController.popBackStack() },
                 )
+            }
+            composable(Routes.ABOUT) {
+                AboutScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.DOWNLOADS) {
                 val vm: AggregateBookshelfViewModel = viewModel(
@@ -508,9 +531,26 @@ private fun LightNovelApp() {
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     onBook = { navController.navigate(Routes.sourceBook(it)) },
-                    onRead = { navController.navigate(Routes.sourceReader(novelKey, it)) },
-                    onAccounts = { navController.navigate(Routes.SOURCE_ACCOUNTS) },
+                     onRead = { navController.navigate(Routes.sourceReader(novelKey, it)) },
+                     onAccounts = { navController.navigate(Routes.SOURCE_ACCOUNTS) },
+                     onComments = { navController.navigate("source-comments/${Uri.encode(novelKey.sourceId)}/${Uri.encode(novelKey.remoteId)}") },
+                 )
+            }
+            composable(
+                Routes.SOURCE_COMMENTS,
+                arguments = listOf(
+                    navArgument("sourceId") { type = NavType.StringType },
+                    navArgument("remoteId") { type = NavType.StringType },
+                ),
+            ) { entry ->
+                val sourceId = entry.arguments?.getString("sourceId") ?: return@composable
+                val remoteId = entry.arguments?.getString("remoteId") ?: return@composable
+                val novelKey = NovelKey(sourceId, remoteId)
+                val vm: SourceBookViewModel = viewModel(
+                    key = "source-book-$sourceId-$remoteId",
+                    factory = viewModelFactory { SourceBookViewModel(novelKey, container.sourceRegistry, container.offlineLibrary, container.readerPreferences) },
                 )
+                SourceCommentsScreen(vm, onBack = { navController.popBackStack() }, onAccounts = { navController.navigate(Routes.SOURCE_ACCOUNTS) })
             }
             composable(
                 Routes.SOURCE_READER,

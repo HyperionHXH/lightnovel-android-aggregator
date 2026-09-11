@@ -74,6 +74,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onRestartOnboarding: () -> Unit,
     onFontSelection: () -> Unit = {},
+    onAbout: () -> Unit = {},
 ) {
     val wifiOnly by offlineLibrary.wifiOnly.collectAsStateWithLifecycle()
     val downloadDirectory by offlineLibrary.downloadDirectory.collectAsStateWithLifecycle()
@@ -136,6 +137,7 @@ fun SettingsScreen(
         onBack = onBack,
         onRestartOnboarding = onRestartOnboarding,
         onFontSelection = onFontSelection,
+        onAbout = onAbout,
     )
 }
 
@@ -157,6 +159,7 @@ internal fun SettingsScreenContent(
     onBack: () -> Unit,
     onRestartOnboarding: () -> Unit = {},
     onFontSelection: () -> Unit = {},
+    onAbout: () -> Unit = {},
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -205,6 +208,7 @@ internal fun SettingsScreenContent(
         item {
             OtherSettingsSection(
                 onRestartOnboarding = onRestartOnboarding,
+                onAbout = onAbout,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
@@ -272,6 +276,7 @@ private fun SettingsGroup(
 @Composable
 private fun OtherSettingsSection(
     onRestartOnboarding: () -> Unit,
+    onAbout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -295,6 +300,18 @@ private fun OtherSettingsSection(
                     )
                 }
                 TextButton(onClick = onRestartOnboarding) { Text("打开") }
+            }
+        }
+        Card(
+            Modifier.fillMaxWidth(),
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("关于与更新", fontWeight = FontWeight.SemiBold)
+                    Text("版本信息、开源地址和新版下载", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = onAbout) { Text("查看") }
             }
         }
     }

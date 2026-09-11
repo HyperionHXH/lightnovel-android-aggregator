@@ -21,8 +21,12 @@ internal fun Throwable.toSourceUiMessage(default: String): String {
 
         else -> {
             val detail = message.orEmpty().lineSequence().firstOrNull().orEmpty().take(160)
-            if (detail.isOpaqueAuthCode() && default.contains("登录")) {
-                "账号或密码错误，请检查后重试"
+            if (detail.isOpaqueAuthCode()) {
+                when {
+                    default.contains("评论") -> "评论服务暂时不可用，请稍后重试"
+                    default.contains("登录") -> "账号或密码错误，请检查后重试"
+                    else -> default
+                }
             } else {
                 detail.ifBlank { default }
             }

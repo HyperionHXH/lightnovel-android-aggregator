@@ -95,7 +95,9 @@ private fun ReaderImageDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var actionVisible by remember { mutableStateOf(false) }
+    // Keep the action bar visible in the zoomed state. A long-press still reveals it
+    // after it has been dismissed, but download is never hidden behind an invisible gesture.
+    var actionVisible by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var pendingSave by remember { mutableStateOf(false) }
@@ -140,7 +142,14 @@ private fun ReaderImageDialog(
     ) {
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             Box(
-                Modifier.fillMaxSize().clickable(onClick = onDismiss),
+                Modifier.fillMaxSize().clickable {
+                    if (actionVisible) {
+                        actionVisible = false
+                        message = null
+                    } else {
+                        onDismiss()
+                    }
+                },
                 contentAlignment = Alignment.Center,
             ) {
                 SubcomposeAsyncImage(
