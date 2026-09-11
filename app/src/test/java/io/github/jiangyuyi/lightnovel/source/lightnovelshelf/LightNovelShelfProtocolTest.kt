@@ -71,6 +71,91 @@ class LightNovelShelfProtocolTest {
     }
 
     @Test
+    fun `book detail reads current plural chapters and server sort numbers`() = runTest {
+        val hub = RecordingHub(
+            responses = ArrayDeque(
+                listOf(
+                    envelope(
+                        """{"Book":{"Id":7,"Title":"书名","Chapters":[{"Id":30,"Title":"第三章","SortNum":12}]}}""",
+                    ),
+                ),
+            ),
+        )
+
+        val detail = gateway(hub).getBookDetail(bookId = 7)
+
+        assertEquals("GetBookInfo", hub.calls.single().first)
+        assertEquals(30L, detail.chapters.single().id)
+        assertEquals("第三章", detail.chapters.single().title)
+        assertEquals(12, detail.chapters.single().sortNumber)
+    }
+
+    @Test
+    fun `book detail keeps legacy singular chapters and positional sort fallback`() = runTest {
+        val hub = RecordingHub(
+            responses = ArrayDeque(
+                listOf(
+                    envelope(
+                        """{"Book":{"Id":7,"Title":"书名","Chapter":[{"Id":10,"Title":"第一章"}]}}""",
+                    ),
+                ),
+            ),
+        )
+
+        val detail = gateway(hub).getBookDetail(bookId = 7)
+
+        assertEquals(1, detail.chapters.single().sortNumber)
+    }
+
+    @Test
+    fun `book detail falls back when plural chapters is null`() = runTest {
+        val hub = RecordingHub(
+            responses = ArrayDeque(
+                listOf(
+                    envelope(
+                        """{"Book":{"Id":7,"Title":"书名","Chapters":null,"Chapter":[{"Id":10,"Title":"第一章"}]}}""",
+                    ),
+                ),
+            ),
+        )
+
+        val detail = gateway(hub).getBookDetail(bookId = 7)
+
+        assertEquals(1, detail.chapters.size)
+        assertEquals(1, detail.chapters.single().sortNumber)
+    }
+
+    @Test
+    fun `book detail rejects duplicate explicit sort numbers`() = runTest {
+        val hub = RecordingHub(
+            responses = ArrayDeque(
+                listOf(envelope("""{"Book":{"Id":7,"Title":"书名","Chapters":[{"Id":1,"Title":"一","SortNum":2},{"Id":2,"Title":"二","SortNum":2}]}}""")),
+            ),
+        )
+
+        val error = runCatching { gateway(hub).getBookDetail(bookId = 7) }.exceptionOrNull()
+
+        assertEquals(SourceErrorKind.PARSING, (error as SourceException).kind)
+    }
+
+    @Test
+    fun `book detail distinguishes missing catalog from an empty catalog`() = runTest {
+        val missingHub = RecordingHub(
+            responses = ArrayDeque(listOf(envelope("""{"Book":{"Id":7,"Title":"书名"}}"""))),
+        )
+        val emptyHub = RecordingHub(
+            responses = ArrayDeque(listOf(envelope("""{"Book":{"Id":7,"Title":"书名","Chapters":[]}}"""))),
+        )
+
+        val error = runCatching { gateway(missingHub).getBookDetail(bookId = 7) }.exceptionOrNull()
+        val emptyDetail = gateway(emptyHub).getBookDetail(bookId = 7)
+
+        assertTrue(error is SourceException)
+        assertEquals(SourceErrorKind.PARSING, (error as SourceException).kind)
+        assertTrue(emptyDetail.chapters.isEmpty())
+    }
+
+    @Test
     fun `novel content preserves chapter font url`() = runTest {
         val hub = RecordingHub(
             responses = ArrayDeque(

@@ -35,6 +35,7 @@ import java.util.concurrent.TimeUnit
 import java.time.Instant
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 
 private const val SOURCE_ID = BuiltInSourceIds.LIGHT_NOVEL_SHELF
@@ -160,7 +161,8 @@ class LightNovelShelfSource internal constructor(
         val fromIndex = ((effectivePage - 1) * effectiveSize).coerceAtMost(detail.chapters.size)
         val toIndex = (fromIndex + effectiveSize).coerceAtMost(detail.chapters.size)
         val items = detail.chapters.subList(fromIndex, toIndex).mapIndexed { index, chapter ->
-            val sortNumber = fromIndex + index + 1
+            val fallbackSortNumber = fromIndex + index + 1
+            val sortNumber = chapter.sortNumber?.takeIf { it > 0 } ?: fallbackSortNumber
             ChapterSummary(
                 key = ChapterKey(SOURCE_ID, sortNumber.toString()),
                 novelKey = NovelKey(SOURCE_ID, bookId.toString()),
@@ -181,6 +183,20 @@ class LightNovelShelfSource internal constructor(
         val bookId = novelKey.requireShelfBookId()
         val sortNumber = chapterKey.requireSortNumber()
         val content = gateway.getNovelContent(bookId, sortNumber)
+        val catalog = try {
+            gateway.getBookDetail(bookId).chapters
+                .mapNotNull { it.sortNumber?.takeIf { number -> number > 0 } }
+                .distinct()
+                .sorted()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+        val currentIndex = catalog?.indexOf(content.sortNumber) ?: -1
+        val catalogContainsCurrent = currentIndex >= 0
+        val previousSortNumber = if (catalogContainsCurrent) catalog?.getOrNull(currentIndex - 1) else null
+        val nextSortNumber = if (catalogContainsCurrent) catalog?.getOrNull(currentIndex + 1) else null
         val totalChapters = content.chapterTitles.size
         val summary = ChapterSummary(
             key = ChapterKey(SOURCE_ID, content.sortNumber.toString()),
@@ -196,11 +212,11 @@ class LightNovelShelfSource internal constructor(
             bodyText = "",
             bodyHtml = content.html,
             fontUrl = content.fontUrl,
-            previousChapterKey = (content.sortNumber - 1)
+            previousChapterKey = (previousSortNumber ?: if (!catalogContainsCurrent) content.sortNumber - 1 else 0)
                 .takeIf { it >= 1 }
                 ?.let { ChapterKey(SOURCE_ID, it.toString()) },
-            nextChapterKey = (content.sortNumber + 1)
-                .takeIf { totalChapters == 0 || it <= totalChapters }
+            nextChapterKey = (nextSortNumber ?: if (!catalogContainsCurrent) content.sortNumber + 1 else 0)
+                .takeIf { it > 0 && (totalChapters == 0 || it <= totalChapters) }
                 ?.let { ChapterKey(SOURCE_ID, it.toString()) },
         )
     }

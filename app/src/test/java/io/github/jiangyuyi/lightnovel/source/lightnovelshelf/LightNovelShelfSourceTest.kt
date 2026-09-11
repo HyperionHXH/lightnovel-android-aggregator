@@ -80,7 +80,13 @@ class LightNovelShelfSourceTest {
     fun `flat chapter list is paged with stable sort number keys`() = runTest {
         val source = LightNovelShelfSource(object : StubGateway() {
             override suspend fun getBookDetail(bookId: Long) = detail(
-                chapters = (1..5).map { ShelfBookChapter(it.toLong() * 10, "第${it}章") },
+                chapters = listOf(
+                    ShelfBookChapter(10, "第一章", 2),
+                    ShelfBookChapter(20, "第二章", 5),
+                    ShelfBookChapter(30, "第三章", 9),
+                    ShelfBookChapter(40, "第四章", 12),
+                    ShelfBookChapter(50, "第五章", 20),
+                ),
             )
         })
 
@@ -91,7 +97,8 @@ class LightNovelShelfSourceTest {
             pageSize = 2,
         )
 
-        assertEquals(listOf("3", "4"), result.items.map { it.key.remoteId })
+        assertEquals(listOf("9", "12"), result.items.map { it.key.remoteId })
+        assertEquals(listOf(9, 12), result.items.map { it.order })
         assertEquals(5, result.total)
         assertEquals(true, result.hasMore)
     }
@@ -137,6 +144,66 @@ class LightNovelShelfSourceTest {
         assertEquals("4", chapter.nextChapterKey?.remoteId)
         assertEquals("<p>正文</p>", chapter.bodyHtml)
         assertEquals("/fonts/chapter.woff2", chapter.fontUrl)
+    }
+
+    @Test
+    fun `chapter navigation follows non contiguous catalog sort numbers`() = runTest {
+        val source = LightNovelShelfSource(object : StubGateway() {
+            override suspend fun getBookDetail(bookId: Long) = detail(
+                chapters = listOf(
+                    ShelfBookChapter(10, "第一章", 2),
+                    ShelfBookChapter(20, "第二章", 5),
+                    ShelfBookChapter(30, "第三章", 9),
+                    ShelfBookChapter(40, "第四章", 12),
+                    ShelfBookChapter(50, "第五章", 20),
+                ),
+            )
+
+            override suspend fun getNovelContent(bookId: Long, sortNumber: Int) = ShelfNovelContent(
+                id = 30,
+                bookId = bookId,
+                title = "第三章",
+                html = "<p>正文</p>",
+                sortNumber = sortNumber,
+                chapterTitles = emptyList(),
+            )
+        })
+
+        val chapter = source.getChapter(
+            NovelKey(BuiltInSourceIds.LIGHT_NOVEL_SHELF, "1"),
+            ChapterKey(BuiltInSourceIds.LIGHT_NOVEL_SHELF, "9"),
+        )
+
+        assertEquals("5", chapter.previousChapterKey?.remoteId)
+        assertEquals("12", chapter.nextChapterKey?.remoteId)
+    }
+
+    @Test
+    fun `chapter navigation stops at non contiguous catalog boundaries`() = runTest {
+        val source = LightNovelShelfSource(object : StubGateway() {
+            override suspend fun getBookDetail(bookId: Long) = detail(
+                chapters = listOf(ShelfBookChapter(10, "第一章", 2), ShelfBookChapter(20, "最后章", 20)),
+            )
+
+            override suspend fun getNovelContent(bookId: Long, sortNumber: Int) = ShelfNovelContent(
+                id = sortNumber.toLong(), bookId = bookId, title = "章节", html = "正文", sortNumber = sortNumber,
+                chapterTitles = emptyList(),
+            )
+        })
+
+        val first = source.getChapter(
+            NovelKey(BuiltInSourceIds.LIGHT_NOVEL_SHELF, "1"),
+            ChapterKey(BuiltInSourceIds.LIGHT_NOVEL_SHELF, "2"),
+        )
+        val last = source.getChapter(
+            NovelKey(BuiltInSourceIds.LIGHT_NOVEL_SHELF, "1"),
+            ChapterKey(BuiltInSourceIds.LIGHT_NOVEL_SHELF, "20"),
+        )
+
+        assertEquals(null, first.previousChapterKey)
+        assertEquals("20", first.nextChapterKey?.remoteId)
+        assertEquals("2", last.previousChapterKey?.remoteId)
+        assertEquals(null, last.nextChapterKey)
     }
 
     @Test

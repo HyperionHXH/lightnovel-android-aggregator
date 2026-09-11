@@ -4,6 +4,8 @@ import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.util.concurrent.Executors
 import java.util.prefs.Preferences
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -11,6 +13,31 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class DesktopSourceAdapterTest {
+    @Test
+    fun `shelf catalog reads plural chapters and non contiguous sort numbers`() {
+        val source = LightNovelShelfDesktopSource()
+        val book = Json.parseToJsonElement(
+            """{"Chapters":[{"Id":1,"Title":"第一章","SortNum":2},{"Id":2,"Title":"第二章","SortNum":5},{"Id":3,"Title":"第三章","SortNum":9}]}""",
+        ) as JsonObject
+
+        val chapters = source.parseShelfChapters(book)
+
+        assertEquals(listOf(2, 5, 9), chapters.map { it.sortNumber })
+        assertEquals(listOf("第一章", "第二章", "第三章"), chapters.map { it.title })
+    }
+
+    @Test
+    fun `shelf catalog falls back to legacy chapter field and avoids sort collisions`() {
+        val source = LightNovelShelfDesktopSource()
+        val book = Json.parseToJsonElement(
+            """{"Chapters":null,"Chapter":[{"Id":1,"Title":"显式","SortNum":2},{"Id":2,"Title":"回退"}]}""",
+        ) as JsonObject
+
+        val chapters = source.parseShelfChapters(book)
+
+        assertEquals(listOf(2, 3), chapters.map { it.sortNumber })
+    }
+
     @Test
     fun `signalr converts http hub urls to websocket schemes`() {
         assertEquals("wss://api.example.test/hub/api?access_token=a%2Bb", desktopSignalRWebSocketUrl("https://api.example.test/hub/api?access_token=a%2Bb"))

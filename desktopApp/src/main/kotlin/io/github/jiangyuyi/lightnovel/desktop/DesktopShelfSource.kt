@@ -163,9 +163,8 @@ class LightNovelShelfDesktopSource(
         val acceptedPage = page.coerceAtLeast(1)
         val acceptedSize = pageSize.coerceIn(1, 50)
         val from = ((acceptedPage - 1) * acceptedSize).coerceAtMost(detail.chapters.size)
-        val items = detail.chapters.drop(from).take(acceptedSize).mapIndexed { index, chapter ->
-            val order = from + index + 1
-            DesktopChapter(id, order.toString(), bookId.toString(), "default", chapter.title, order)
+        val items = detail.chapters.drop(from).take(acceptedSize).map { chapter ->
+            DesktopChapter(id, chapter.sortNumber.toString(), bookId.toString(), "default", chapter.title, chapter.sortNumber)
         }
         return DesktopChapterPage(items, acceptedPage, detail.chapters.size, from + items.size < detail.chapters.size)
     }
@@ -177,14 +176,26 @@ class LightNovelShelfDesktopSource(
             put("Bid", bookId)
             put("SortNum", sortNumber)
         }).asNovelContent(bookId, sortNumber)
+        val catalog = try {
+            invoke("GetBookInfo", buildJsonObject { put("Id", bookId) })
+                .asBookDetail().chapters.map { it.sortNumber }.distinct().sorted()
+        } catch (_: Exception) {
+            null
+        }
+        val currentIndex = catalog?.indexOf(content.sortNumber) ?: -1
+        val catalogContainsCurrent = currentIndex >= 0
+        val previousSortNumber = if (catalogContainsCurrent) catalog?.getOrNull(currentIndex - 1) else null
+        val nextSortNumber = if (catalogContainsCurrent) catalog?.getOrNull(currentIndex + 1) else null
         val chapter = DesktopChapter(id, content.sortNumber.toString(), bookId.toString(), "default", content.title, content.sortNumber)
         return DesktopChapterContent(
             chapter = chapter,
             bookTitle = "",
             volumeTitle = "正文",
             bodyHtml = content.html,
-            previousChapterId = (content.sortNumber - 1).takeIf { it > 0 }?.toString(),
-            nextChapterId = (content.sortNumber + 1).takeIf { content.chapterTitles.isEmpty() || it <= content.chapterTitles.size }?.toString(),
+            previousChapterId = (previousSortNumber ?: if (!catalogContainsCurrent) content.sortNumber - 1 else 0)
+                .takeIf { it > 0 }?.toString(),
+            nextChapterId = (nextSortNumber ?: if (!catalogContainsCurrent) content.sortNumber + 1 else 0)
+                .takeIf { it > 0 && (content.chapterTitles.isEmpty() || it <= content.chapterTitles.size) }?.toString(),
         )
     }
 
@@ -345,8 +356,30 @@ class LightNovelShelfDesktopSource(
             introduction = book.text("Introduction", "introduction", "Description", "description").orEmpty(),
             tags = classification?.array("tags")?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }.orEmpty(),
             favoriteCount = book.int("Favorite", "favorite"),
-            chapters = book.array("Chapter", "chapter").mapNotNull { (it as? JsonObject)?.let { chapter -> ShelfChapter(chapter.long("Id", "id"), chapter.text("Title", "title") ?: "未命名章节") } },
+            chapters = parseShelfChapters(book),
         )
+    }
+
+    internal fun parseShelfChapters(book: JsonObject): List<ShelfChapter> {
+        val chapterArray = (listOf("Chapters", "chapters", "Chapter", "chapter")
+            .asSequence()
+            .mapNotNull { book[it] }
+            .firstOrNull { it is JsonArray }
+            as? JsonArray) ?: JsonArray(emptyList())
+        val explicitSortNumbers = chapterArray.mapNotNull { item ->
+            (item as? JsonObject)?.int("SortNum", "sortNum")?.takeIf { it > 0 }
+        }
+        require(explicitSortNumbers.distinct().size == explicitSortNumbers.size) { "轻书架章节目录包含重复排序号" }
+        val explicitSortSet = explicitSortNumbers.toSet()
+        val usedSortNumbers = mutableSetOf<Int>()
+        return chapterArray.mapIndexedNotNull { index, item ->
+            val chapter = item as? JsonObject ?: return@mapIndexedNotNull null
+            val explicit = chapter.int("SortNum", "sortNum").takeIf { it > 0 }
+            var sortNumber = explicit ?: (index + 1)
+            while (sortNumber in usedSortNumbers || (explicit == null && sortNumber in explicitSortSet)) sortNumber++
+            usedSortNumbers += sortNumber
+            ShelfChapter(chapter.long("Id", "id"), chapter.text("Title", "title") ?: "未命名章节", sortNumber)
+        }.sortedBy { it.sortNumber }
     }
 
     private fun JsonElement.asNovelContent(bookId: Long, sortNumber: Int): ShelfContent {
@@ -411,7 +444,7 @@ class LightNovelShelfDesktopSource(
         fun toDesktopBook() = DesktopBook(DESKTOP_SHELF_SOURCE_ID, id.toString(), title, author.orEmpty(), coverUrl, introduction)
     }
 
-    private data class ShelfChapter(val id: Long, val title: String)
+    internal data class ShelfChapter(val id: Long, val title: String, val sortNumber: Int)
     private data class ShelfContent(val bookId: Long, val title: String, val html: String, val sortNumber: Int, val chapterTitles: List<String>)
     private data class ShelfProfile(val accountId: String?, val displayName: String, val balance: Long, val streakDays: Int, val claimedToday: Boolean)
     private data class RewardWire(val amount: Long, val streak: Int)

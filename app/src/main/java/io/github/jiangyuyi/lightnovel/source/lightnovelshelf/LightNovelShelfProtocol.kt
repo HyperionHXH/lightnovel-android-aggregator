@@ -35,6 +35,7 @@ internal data class ShelfBookPage(
 internal data class ShelfBookChapter(
     val id: Long,
     val title: String,
+    val sortNumber: Int? = null,
 )
 
 internal data class ShelfBookDetail(
@@ -171,6 +172,37 @@ internal class DefaultLightNovelShelfGateway(
         val book = (response["Book"] as? JsonObject) ?: response
         val extra = book["Extra"] as? JsonObject
         val classification = extra?.get("classification") as? JsonObject
+        // Production responses use Chapters; older responses use Chapter. A null
+        // or malformed plural field must not hide a valid legacy catalog.
+        val chapterArray = listOf("Chapters", "Chapter")
+            .asSequence()
+            .mapNotNull { book[it] }
+            .firstOrNull { it is JsonArray }
+            ?: throw SourceException(SourceErrorKind.PARSING, "轻书架书籍详情缺少章节目录")
+        val chapters = chapterArray as? JsonArray
+            ?: throw SourceException(SourceErrorKind.PARSING, "轻书架书籍详情包含无效章节目录")
+        val explicitSortNumbers = chapters.mapNotNull { item ->
+            (item as? JsonObject)?.int("SortNum", fallback = 0)?.takeIf { it > 0 }
+        }.toMutableSet()
+        val explicitCount = chapters.mapNotNull { item ->
+            (item as? JsonObject)?.int("SortNum", fallback = 0)?.takeIf { it > 0 }
+        }.size
+        if (explicitSortNumbers.size != explicitCount) {
+            throw SourceException(SourceErrorKind.PARSING, "轻书架章节目录包含重复排序号")
+        }
+        val usedSortNumbers = mutableSetOf<Int>()
+        val parsedChapters = chapters.mapIndexedNotNull { index, item ->
+            val chapter = item as? JsonObject ?: return@mapIndexedNotNull null
+            val explicit = chapter.int("SortNum", fallback = 0).takeIf { it > 0 }
+            var sortNumber = explicit ?: (index + 1)
+            while (sortNumber in usedSortNumbers || (explicit == null && sortNumber in explicitSortNumbers)) sortNumber++
+            while (!usedSortNumbers.add(sortNumber)) sortNumber++
+            ShelfBookChapter(
+                id = chapter.long("Id"),
+                title = chapter.string("Title"),
+                sortNumber = sortNumber,
+            )
+        }.sortedBy { it.sortNumber ?: Int.MAX_VALUE }
         return ShelfBookDetail(
             id = book.long("Id"),
             title = book.string("Title"),
@@ -180,13 +212,7 @@ internal class DefaultLightNovelShelfGateway(
             introduction = book.optionalString("Introduction").orEmpty(),
             tags = classification?.stringList("tags").orEmpty(),
             favoriteCount = book.int("Favorite", fallback = 0).coerceAtLeast(0),
-            chapters = book.array("Chapter").mapNotNull { item ->
-                val chapter = item as? JsonObject ?: return@mapNotNull null
-                ShelfBookChapter(
-                    id = chapter.long("Id"),
-                    title = chapter.string("Title"),
-                )
-            },
+            chapters = parsedChapters,
         )
     }
 
