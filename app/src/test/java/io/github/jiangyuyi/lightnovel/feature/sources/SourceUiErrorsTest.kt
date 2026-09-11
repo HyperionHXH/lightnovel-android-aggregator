@@ -11,7 +11,7 @@ class SourceUiErrorsTest {
     fun `comment business code twenty is shown as link error instead of opaque status`() {
         val error = ApiException("请求失败（20）", httpCode = 200, businessCode = 20)
 
-        assertEquals("评论链接错误，请稍后重试", error.toSourceUiMessage("评论加载失败"))
+        assertEquals("评论服务返回数据失败，请稍后重试", error.toSourceUiMessage("评论加载失败"))
     }
     @Test
     fun `opaque login status becomes actionable credential message`() {

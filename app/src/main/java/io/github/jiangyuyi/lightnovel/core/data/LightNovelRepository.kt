@@ -772,7 +772,9 @@ class LightNovelRepository(
         page: Int = 1,
         pageSize: Int = 20,
     ): Page<Comment> {
-        val key = requireSession()
+        // The official web client sends comments without requiring a session.
+        // Keep the key when available, but allow anonymous reads as the site does.
+        val key = sessionStore.securityKey().takeIf { it.isNotBlank() }
         val data = api.post(
             "api/new-content-read/get-book-comments",
             jsonBody(

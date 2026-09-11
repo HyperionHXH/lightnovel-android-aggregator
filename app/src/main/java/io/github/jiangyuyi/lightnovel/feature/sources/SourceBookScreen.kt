@@ -282,7 +282,12 @@ fun SourceBookScreen(
                                 state.commentsLoading && state.comments.isEmpty() -> Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
                                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                                 }
-                                state.commentError != null -> Text(state.commentError!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                state.commentError != null -> {
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        Text(state.commentError!!, Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                        TextButton(onClick = viewModel::loadCommentsForScreen) { Text("重试") }
+                                    }
+                                }
                                 state.comments.isEmpty() -> Text("暂时没有评论", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 else -> {
                                     state.comments.forEach { comment ->

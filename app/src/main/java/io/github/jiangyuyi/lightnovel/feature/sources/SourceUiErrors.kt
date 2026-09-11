@@ -9,7 +9,7 @@ internal fun Throwable.toSourceUiMessage(default: String): String {
     if (this is ApiException) {
         if (businessCode == 20) {
             return when {
-                default.contains("评论") -> "评论链接错误，请稍后重试"
+                default.contains("评论") -> "评论服务返回数据失败，请稍后重试"
                 default.contains("登录") -> "账号或密码错误，请检查后重试"
                 else -> "请先登录轻之国度账号"
             }
