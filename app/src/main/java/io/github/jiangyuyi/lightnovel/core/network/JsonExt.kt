@@ -472,12 +472,22 @@ object ApiParsers {
             .map { source.array(it) }
             .firstOrNull { it.isNotEmpty() }
             ?: JsonArray(emptyList())
-        val pagination = source.obj("pagination", "page_info")
-        val page = pagination?.int("page", "cur")?.takeIf { it >= 0 } ?: requestedPage
-        val total = pagination?.int("total", "count") ?: list.size
-        val nextPage = pagination?.int("next") ?: 0
-        val pageSize = pagination?.int("page_size", "size") ?: list.size.coerceAtLeast(1)
-        val hasMore = pagination?.bool("has_next")
+        val pagination = source.obj("pagination")
+        val pageInfo = source.obj("page_info", "pageInfo")
+        val page = pagination?.int("page")?.takeIf { it >= 0 }
+            ?: pageInfo?.int("cur", "page")?.takeIf { it >= 0 }
+            ?: requestedPage
+        val total = pagination?.int("total")?.takeIf { it >= 0 }
+            ?: pageInfo?.int("count", "total")?.takeIf { it >= 0 }
+            ?: list.size
+        val nextPage = pageInfo?.int("next")?.takeIf { it > 0 }
+            ?: pagination?.int("next")?.takeIf { it > 0 }
+            ?: 0
+        val pageSize = pagination?.int("page_size", "pageSize", "size")?.takeIf { it > 0 }
+            ?: pageInfo?.int("size", "page_size", "pageSize")?.takeIf { it > 0 }
+            ?: list.size.coerceAtLeast(1)
+        val hasMore = pageInfo?.bool("has_more", "hasMore", "has_next")
+            ?: pagination?.bool("has_more", "hasMore", "has_next")
             ?: (nextPage > 0 || page * pageSize < total)
         return Page(
             items = list.mapNotNull { (it as? JsonObject)?.let(::book) }.filter { it.id > 0 },

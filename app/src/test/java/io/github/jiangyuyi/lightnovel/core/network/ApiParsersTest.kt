@@ -2,6 +2,7 @@ package io.github.jiangyuyi.lightnovel.core.network
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import io.github.jiangyuyi.lightnovel.core.model.MessageCategory
 import io.github.jiangyuyi.lightnovel.core.model.UserSummary
 import org.junit.Assert.assertEquals
@@ -11,6 +12,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ApiParsersTest {
+    @Test
+    fun `books page prefers live page info when legacy pagination says snapshot ended`() {
+        val source = Json.parseToJsonElement(
+            """
+            {
+              "list": [{"book_id": 1, "title": "第一页"}],
+              "pagination": {"page": 1, "page_size": 30, "total": 30, "page_count": 1},
+              "page_info": {"count": 30, "size": 30, "cur": 1, "next": 2, "has_next": 1}
+            }
+            """.trimIndent(),
+        ).jsonObject
+
+        val page = ApiParsers.booksPage(source)
+
+        assertTrue(page.hasMore)
+        assertEquals(1, page.page)
+        assertEquals(30, page.total)
+    }
+
     private val json = Json { ignoreUnknownKeys = true }
 
     @Test

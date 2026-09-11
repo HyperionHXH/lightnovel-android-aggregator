@@ -4,13 +4,16 @@ import io.github.jiangyuyi.lightnovel.core.model.BookDetail
 import io.github.jiangyuyi.lightnovel.core.model.BookSummary
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
 import io.github.jiangyuyi.lightnovel.core.model.ChapterSummary
+import io.github.jiangyuyi.lightnovel.core.model.Comment
 import io.github.jiangyuyi.lightnovel.core.model.DiscoverChannel
 import io.github.jiangyuyi.lightnovel.core.model.Page
 import io.github.jiangyuyi.lightnovel.core.model.ReadingHistoryItem
 import io.github.jiangyuyi.lightnovel.core.model.Session
 import io.github.jiangyuyi.lightnovel.core.model.Volume
+import io.github.jiangyuyi.lightnovel.core.model.UserSummary
 import io.github.jiangyuyi.lightnovel.core.source.BuiltInSourceIds
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverFeed
+import io.github.jiangyuyi.lightnovel.core.source.CommentSort
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.SourceCapability
 import kotlinx.coroutines.test.runTest
@@ -34,6 +37,48 @@ class LightNovelKingdomSourceTest {
 
         assertEquals(DiscoverChannel.HOT, requestedChannel)
         assertEquals("热门书", result.items.single().title)
+    }
+
+    @Test
+    fun `daily ranking maps to live daily hot scene`() = runTest {
+        var requestedChannel: DiscoverChannel? = null
+        var requestedPageSize = 0
+        val source = LightNovelKingdomSource(object : StubGateway() {
+            override suspend fun discover(channel: DiscoverChannel, page: Int, pageSize: Int): Page<BookSummary> {
+                requestedChannel = channel
+                requestedPageSize = pageSize
+                return Page(emptyList(), page)
+            }
+        })
+
+        source.discover(DiscoverFeed.DAILY_RANK)
+
+        assertEquals(DiscoverChannel.DAILY_RANK, requestedChannel)
+        assertEquals(30, requestedPageSize)
+    }
+
+    @Test
+    fun `comments map sort and source neutral fields`() = runTest {
+        var requestedSort: CommentSort? = null
+        val source = LightNovelKingdomSource(object : StubGateway() {
+            override suspend fun comments(bookId: Long, sort: CommentSort, page: Int, pageSize: Int): Page<Comment> {
+                requestedSort = sort
+                return Page(
+                    listOf(Comment(8, UserSummary(2, "读者"), "很好看", likeCount = 3, replyCount = 1)),
+                    page,
+                )
+            }
+        })
+
+        val result = source.getComments(
+            NovelKey(BuiltInSourceIds.LIGHT_NOVEL_KINGDOM, "42"),
+            CommentSort.LATEST,
+        )
+
+        assertEquals(CommentSort.LATEST, requestedSort)
+        assertEquals("8", result.items.single().id)
+        assertEquals("读者", result.items.single().authorName)
+        assertEquals("很好看", result.items.single().content)
     }
 
     @Test
@@ -82,10 +127,12 @@ class LightNovelKingdomSourceTest {
     }
 
     @Test
-    fun `unconfirmed daily reward capability is not advertised`() {
+    fun `confirmed welfare and comments capabilities are advertised`() {
         val source = LightNovelKingdomSource(StubGateway())
 
-        assertFalse(SourceCapability.DAILY_REWARD in source.descriptor.capabilities)
+        assertTrue(SourceCapability.DAILY_REWARD in source.descriptor.capabilities)
+        assertTrue(SourceCapability.REWARD_CENTER in source.descriptor.capabilities)
+        assertTrue(SourceCapability.COMMENTS in source.descriptor.capabilities)
     }
 
     private open class StubGateway : LightNovelKingdomGateway {

@@ -56,7 +56,14 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.11.0`、`versionCode 19`；桌面和 jpackage 默认版本也是 `1.11.0`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.11.0`（阅读器插图长按保存到相册）。
+Android 默认版本：`versionName 1.12.0`、`versionCode 20`；桌面和 jpackage 默认版本也是 `1.12.0`。tag Release 工作流会从 tag 注入版本。上一正式 Release 为 `v1.11.0`（阅读器插图长按保存到相册）。
+
+## 2026-09-11 本轮变更
+
+- 发现页榜单已按官网行为核对：LK 日榜、新书榜、周榜是固定快照，分页接口会重复内容，因此请求 30 个名额并在 UI 明确显示“官网固定榜单已全部加载”；原创、同人、EPUB、最近更新仍使用服务端 `page_info.has_next` 继续分页。
+- LK 适配器新增官方客户端福利中心：`welfare-sign-detail-v1`、`claim-welfare-sign-v1`、`welfare-task-list-v1`、`claim-welfare-task-v1`、`welfare-earn-coin-detail-v1`、`claim-welfare-earn-coin-v1` 和余额刷新。福利入口只属于 LK 账号，不会出现在轻书架账号；不会自动刷任务。
+- LK 作品评论支持最热/最新、加载更多和发布，接口为 `get-book-comments` 与 `publish-book-comment`。评论能力通过 `CommentProvider` 暴露，轻书架不实现该接口。
+- 本轮验证：148 项 Android 单元测试通过（1 项既有跳过）、Android Lint 通过、Debug APK 构建通过、桌面端测试通过；AVD `emulator-5554` 动态检查确认 LK 日榜显示官网实际 28 本并给出固定榜单提示。
 
 ## 发布流程
 

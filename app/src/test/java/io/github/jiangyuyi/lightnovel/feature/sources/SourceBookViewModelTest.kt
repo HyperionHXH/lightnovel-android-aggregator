@@ -10,6 +10,8 @@ import io.github.jiangyuyi.lightnovel.core.source.ChapterContent
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
 import io.github.jiangyuyi.lightnovel.core.source.ChapterUnlockProvider
+import io.github.jiangyuyi.lightnovel.core.source.CommentProvider
+import io.github.jiangyuyi.lightnovel.core.source.CommentSort
 import io.github.jiangyuyi.lightnovel.core.source.DetailProvider
 import io.github.jiangyuyi.lightnovel.core.source.NovelDetail
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
@@ -19,6 +21,7 @@ import io.github.jiangyuyi.lightnovel.core.source.ReaderProvider
 import io.github.jiangyuyi.lightnovel.core.source.ReadingProgress
 import io.github.jiangyuyi.lightnovel.core.source.ShelfProvider
 import io.github.jiangyuyi.lightnovel.core.source.SourceCapability
+import io.github.jiangyuyi.lightnovel.core.source.SourceComment
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
@@ -165,17 +168,36 @@ class SourceBookViewModelTest {
             assertEquals("请先登录该来源", viewModel.state.value.unlockError)
         }
 
-    private class FakeReadableSource(
+    @Test
+    fun `comments expose sorting pagination and publish state`() = runTest(mainDispatcherRule.dispatcher) {
+        val source = FakeCommentSource()
+        val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)))
+        advanceUntilIdle()
+
+        assertEquals(listOf("hot-1"), viewModel.state.value.comments.map { it.id })
+        viewModel.selectCommentSort(CommentSort.LATEST)
+        advanceUntilIdle()
+        assertEquals(CommentSort.LATEST, source.lastSort)
+        assertEquals(listOf("latest-1"), viewModel.state.value.comments.map { it.id })
+        viewModel.publishComment("  新评论  ", onLoginRequired = {}, onPublished = {})
+        advanceUntilIdle()
+        assertEquals("新评论", source.published)
+        assertFalse(viewModel.state.value.publishingComment)
+    }
+
+    private open class FakeReadableSource(
         private val unlockError: Throwable? = null,
+        sourceId: String = "source",
+        extraCapabilities: Set<SourceCapability> = emptySet(),
     ) : NovelSource, DetailProvider, ReaderProvider, ShelfProvider, ChapterUnlockProvider {
         override val descriptor = SourceDescriptor(
-            id = "source",
+            id = sourceId,
             displayName = "来源",
             capabilities = setOf(
                 SourceCapability.DETAIL,
                 SourceCapability.READER,
                 SourceCapability.REMOTE_SHELF,
-            ),
+            ) + extraCapabilities,
         )
         val novelKey = NovelKey(descriptor.id, "book")
         val volumeKey = VolumeKey(descriptor.id, "volume")
@@ -225,6 +247,36 @@ class SourceBookViewModelTest {
             title = "第 $number 章",
             order = number,
         )
+    }
+
+    private class FakeCommentSource : FakeReadableSource(
+        sourceId = "source-comments",
+        extraCapabilities = setOf(SourceCapability.COMMENTS),
+    ), CommentProvider {
+        var lastSort: CommentSort? = null
+        var published: String? = null
+
+        override suspend fun getComments(
+            novelKey: NovelKey,
+            sort: CommentSort,
+            page: Int,
+            pageSize: Int,
+        ): SourcePage<SourceComment> {
+            lastSort = sort
+            return SourcePage(
+                items = listOf(
+                    SourceComment(id = "${sort.name.lowercase()}-$page", authorName = "用户", content = "内容"),
+                ),
+                page = page,
+                total = 2,
+                hasMore = page == 1,
+            )
+        }
+
+        override suspend fun publishComment(novelKey: NovelKey, content: String): SourceComment {
+            published = content
+            return SourceComment(id = "published", authorName = "用户", content = content)
+        }
     }
 
     private class FakeOfflineLibrary : OfflineLibraryAccess {

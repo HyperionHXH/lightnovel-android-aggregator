@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.jiangyuyi.lightnovel.core.source.PasswordCredentials
 import io.github.jiangyuyi.lightnovel.core.source.RewardStatus
+import io.github.jiangyuyi.lightnovel.core.source.RewardCenter
+import io.github.jiangyuyi.lightnovel.core.source.RewardTask
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
+import io.github.jiangyuyi.lightnovel.core.source.SourceProfile
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
 import io.github.jiangyuyi.lightnovel.core.source.SourceSession
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,10 +23,14 @@ data class SourceAccountItemState(
     val signingOut: Boolean = false,
     val rewardLoading: Boolean = false,
     val rewardStatus: RewardStatus? = null,
+    val rewardCenter: RewardCenter? = null,
+    val rewardActionKey: String? = null,
+    val profile: SourceProfile? = null,
+    val profileLoading: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
 ) {
-    val busy: Boolean get() = checking || signingIn || signingOut || rewardLoading
+    val busy: Boolean get() = checking || signingIn || signingOut || rewardActionKey != null
 }
 
 data class SourceAccountsState(
@@ -53,7 +60,7 @@ class SourceAccountsViewModel(
                 runSourceCatching { provider.restoreSession() }
                     .onSuccess { session ->
                         update(id) { it.copy(session = session, checking = false, error = null) }
-                        if (session.loggedIn) loadRewardStatus(id)
+                        if (session.loggedIn) loadAccountExtras(id)
                     }
                     .onFailure { error ->
                         update(id) {
@@ -82,7 +89,7 @@ class SourceAccountsViewModel(
                             error = if (session.loggedIn) null else "登录失败，请检查账号和密码",
                         )
                     }
-                    if (session.loggedIn) loadRewardStatus(sourceId)
+                    if (session.loggedIn) loadAccountExtras(sourceId)
                 }
                 .onFailure { error ->
                     update(sourceId) {
@@ -103,6 +110,8 @@ class SourceAccountsViewModel(
                             session = SourceSession(loggedIn = false),
                             signingOut = false,
                             rewardStatus = null,
+                            rewardCenter = null,
+                            profile = null,
                         )
                     }
                 }
@@ -116,13 +125,14 @@ class SourceAccountsViewModel(
 
     fun claimDailyReward(sourceId: String) {
         val provider = registry.rewardProvider(sourceId) ?: return
-        update(sourceId) { it.copy(rewardLoading = true, error = null, notice = null) }
+        update(sourceId) { it.copy(rewardLoading = true, rewardActionKey = "sign", error = null, notice = null) }
         viewModelScope.launch {
             runSourceCatching { provider.claimDailyReward() }
                 .onSuccess { result ->
                     update(sourceId) { current ->
                         current.copy(
                             rewardLoading = false,
+                            rewardActionKey = null,
                             rewardStatus = RewardStatus(
                                 claimedToday = true,
                                 balance = result.balance ?: current.rewardStatus?.balance,
@@ -132,10 +142,112 @@ class SourceAccountsViewModel(
                                 ?: "今日已签到",
                         )
                     }
+                    if (registry.rewardCenterProvider(sourceId) != null) {
+                        loadAccountExtras(sourceId, preserveNotice = true)
+                    }
                 }
                 .onFailure { error ->
                     update(sourceId) {
-                        it.copy(rewardLoading = false, error = error.toSourceUiMessage("签到失败"))
+                        it.copy(rewardLoading = false, rewardActionKey = null, error = error.toSourceUiMessage("签到失败"))
+                    }
+                }
+        }
+    }
+
+    fun claimRewardTask(sourceId: String, task: RewardTask) {
+        val provider = registry.rewardCenterProvider(sourceId) ?: return
+        if (!task.claimable) return
+        runRewardAction(sourceId, "task:${task.key}", "任务奖励领取失败") {
+            provider.claimRewardTask(task.id, task.key)
+        }
+    }
+
+    fun claimEarnCoin(sourceId: String) {
+        val provider = registry.rewardCenterProvider(sourceId) ?: return
+        val earning = _state.value.accounts.firstOrNull { it.descriptor.id == sourceId }
+            ?.rewardCenter?.earning ?: return
+        if (!earning.claimable) return
+        runRewardAction(sourceId, "earning", "浏览奖励领取失败") {
+            provider.claimEarnCoin(earning.taskKey)
+        }
+    }
+
+    private fun runRewardAction(
+        sourceId: String,
+        actionKey: String,
+        fallbackMessage: String,
+        action: suspend () -> io.github.jiangyuyi.lightnovel.core.source.RewardResult,
+    ) {
+        if (_state.value.accounts.firstOrNull { it.descriptor.id == sourceId }?.rewardActionKey != null) return
+        update(sourceId) { it.copy(rewardActionKey = actionKey, error = null, notice = null) }
+        viewModelScope.launch {
+            runSourceCatching { action() }
+                .onSuccess { result ->
+                    update(sourceId) {
+                        it.copy(
+                            rewardActionKey = null,
+                            notice = result.rewardAmount?.takeIf { amount -> amount > 0 }?.let { amount ->
+                                "已领取 $amount 轻币"
+                            } ?: "奖励已领取",
+                        )
+                    }
+                    loadAccountExtras(sourceId, preserveNotice = true)
+                }
+                .onFailure { error ->
+                    update(sourceId) {
+                        it.copy(rewardActionKey = null, error = error.toSourceUiMessage(fallbackMessage))
+                    }
+                }
+        }
+    }
+
+    private fun loadAccountExtras(sourceId: String, preserveNotice: Boolean = false) {
+        loadProfile(sourceId, preserveNotice)
+        if (registry.rewardCenterProvider(sourceId) != null) loadRewardCenter(sourceId, preserveNotice)
+        else loadRewardStatus(sourceId)
+    }
+
+    private fun loadProfile(sourceId: String, preserveNotice: Boolean) {
+        val provider = registry.profileProvider(sourceId) ?: return
+        update(sourceId) { it.copy(profileLoading = true, notice = it.notice.takeIf { preserveNotice }) }
+        viewModelScope.launch {
+            runSourceCatching { provider.getProfile() }
+                .onSuccess { profile ->
+                    update(sourceId) {
+                        it.copy(
+                            profile = profile,
+                            profileLoading = false,
+                            rewardStatus = it.rewardStatus?.copy(balance = profile.balance),
+                        )
+                    }
+                }
+                .onFailure { update(sourceId) { it.copy(profileLoading = false) } }
+        }
+    }
+
+    private fun loadRewardCenter(sourceId: String, preserveNotice: Boolean) {
+        val provider = registry.rewardCenterProvider(sourceId) ?: return
+        update(sourceId) {
+            it.copy(rewardLoading = true, notice = it.notice.takeIf { preserveNotice })
+        }
+        viewModelScope.launch {
+            runSourceCatching { provider.getRewardCenter() }
+                .onSuccess { center ->
+                    update(sourceId) { current ->
+                        current.copy(
+                            rewardLoading = false,
+                            rewardCenter = center,
+                            rewardStatus = RewardStatus(
+                                claimedToday = center.claimed,
+                                balance = current.profile?.balance,
+                                streakDays = center.progress,
+                            ),
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    update(sourceId) {
+                        it.copy(rewardLoading = false, error = error.toSourceUiMessage("轻币福利加载失败"))
                     }
                 }
         }

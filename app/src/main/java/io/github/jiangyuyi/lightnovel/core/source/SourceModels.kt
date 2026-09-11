@@ -17,7 +17,26 @@ enum class SourceCapability {
     REMOTE_SHELF,
     HISTORY,
     DAILY_REWARD,
+    REWARD_CENTER,
+    COMMENTS,
 }
+
+@Serializable
+enum class CommentSort(val label: String) {
+    HOT("最热"),
+    LATEST("最新"),
+}
+
+@Serializable
+data class SourceComment(
+    val id: String,
+    val authorName: String,
+    val authorAvatarUrl: String? = null,
+    val content: String,
+    val createdAt: String = "",
+    val likeCount: Int = 0,
+    val replyCount: Int = 0,
+)
 
 @Serializable
 enum class DiscoverFeed(val label: String) {
@@ -208,4 +227,54 @@ data class RewardResult(
     val rewardAmount: Long? = null,
     val balance: Long? = null,
     val streakDays: Int? = null,
+)
+
+@Serializable
+data class RewardDay(
+    val day: Int,
+    val rewardAmount: Long,
+    val claimed: Boolean,
+    val claimable: Boolean,
+)
+
+@Serializable
+data class RewardTask(
+    val id: Long,
+    val key: String,
+    val title: String,
+    val subtitle: String = "",
+    val rewardAmount: Long = 0,
+    val claimed: Boolean = false,
+    val claimable: Boolean = false,
+    val progress: Int = 0,
+    val totalProgress: Int = 0,
+    val buttonText: String = "",
+    val available: Boolean = true,
+)
+
+@Serializable
+data class EarnCoinStatus(
+    val title: String,
+    val subtitle: String = "",
+    val progress: Int = 0,
+    val totalProgress: Int = 0,
+    val progressText: String = "",
+    val rewardAmount: Long = 0,
+    val claimed: Boolean = false,
+    val claimable: Boolean = false,
+    val taskKey: String = "",
+)
+
+@Serializable
+data class RewardCenter(
+    val signTitle: String,
+    val signSubtitle: String = "",
+    val currentDay: Int = 1,
+    val progress: Int = 0,
+    val totalProgress: Int = 0,
+    val claimed: Boolean = false,
+    val claimable: Boolean = false,
+    val days: List<RewardDay> = emptyList(),
+    val earning: EarnCoinStatus? = null,
+    val tasks: List<RewardTask> = emptyList(),
 )

@@ -142,6 +142,7 @@ data class SearchOption(
 @Serializable
 enum class DiscoverChannel(val label: String) {
     HOT("热门"),
+    DAILY_RANK("日榜"),
     RANK("排行"),
     NEW("新书"),
     ORIGINAL("原创"),

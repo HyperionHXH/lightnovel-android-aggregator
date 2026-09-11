@@ -5,6 +5,7 @@ import io.github.jiangyuyi.lightnovel.core.model.BookDetail
 import io.github.jiangyuyi.lightnovel.core.model.BookSummary
 import io.github.jiangyuyi.lightnovel.core.model.AccountProfile
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
+import io.github.jiangyuyi.lightnovel.core.model.Comment
 import io.github.jiangyuyi.lightnovel.core.model.DiscoverChannel
 import io.github.jiangyuyi.lightnovel.core.model.Page
 import io.github.jiangyuyi.lightnovel.core.model.ReadingHistoryItem
@@ -17,6 +18,8 @@ import io.github.jiangyuyi.lightnovel.core.source.ChapterContent
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
 import io.github.jiangyuyi.lightnovel.core.source.ChapterUnlockProvider
+import io.github.jiangyuyi.lightnovel.core.source.CommentProvider
+import io.github.jiangyuyi.lightnovel.core.source.CommentSort
 import io.github.jiangyuyi.lightnovel.core.source.DetailProvider
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverFeed
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverProvider
@@ -28,6 +31,10 @@ import io.github.jiangyuyi.lightnovel.core.source.NovelSource
 import io.github.jiangyuyi.lightnovel.core.source.NovelSummary
 import io.github.jiangyuyi.lightnovel.core.source.PasswordCredentials
 import io.github.jiangyuyi.lightnovel.core.source.ReaderProvider
+import io.github.jiangyuyi.lightnovel.core.source.RewardCenter
+import io.github.jiangyuyi.lightnovel.core.source.RewardCenterProvider
+import io.github.jiangyuyi.lightnovel.core.source.RewardResult
+import io.github.jiangyuyi.lightnovel.core.source.RewardStatus
 import io.github.jiangyuyi.lightnovel.core.source.ReadingHistoryEntry
 import io.github.jiangyuyi.lightnovel.core.source.ReadingProgress
 import io.github.jiangyuyi.lightnovel.core.source.ReadingProgressSyncProvider
@@ -38,6 +45,7 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourcePage
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfile
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfileProvider
+import io.github.jiangyuyi.lightnovel.core.source.SourceComment
 import io.github.jiangyuyi.lightnovel.core.source.SourceSession
 import io.github.jiangyuyi.lightnovel.core.source.VolumeKey
 import io.github.jiangyuyi.lightnovel.core.source.VolumeSummary
@@ -67,6 +75,13 @@ internal interface LightNovelKingdomGateway {
         percent: Int,
     )
     suspend fun unlockChapter(chapterId: Long): Unit = error("chapter unlock is not implemented")
+    suspend fun comments(bookId: Long, sort: CommentSort, page: Int, pageSize: Int): Page<Comment> =
+        error("comments are not implemented")
+    suspend fun publishComment(bookId: Long, content: String): Comment = error("comment publishing is not implemented")
+    suspend fun welfareCenter(): RewardCenter = error("welfare center is not implemented")
+    suspend fun claimDailyReward(): RewardResult = error("daily reward is not implemented")
+    suspend fun claimRewardTask(taskId: Long, taskKey: String): RewardResult = error("reward task is not implemented")
+    suspend fun claimEarnCoin(taskKey: String): RewardResult = error("earn coin is not implemented")
 }
 
 private class RepositoryLightNovelKingdomGateway(
@@ -100,6 +115,14 @@ private class RepositoryLightNovelKingdomGateway(
         percent: Int,
     ) = repository.saveReadingProgress(bookId, volumeId, chapterId, paragraphIndex, percent)
     override suspend fun unlockChapter(chapterId: Long) = repository.unlockChapter(chapterId)
+    override suspend fun comments(bookId: Long, sort: CommentSort, page: Int, pageSize: Int) =
+        repository.comments(bookId, sort, page, pageSize)
+    override suspend fun publishComment(bookId: Long, content: String) = repository.publishBookComment(bookId, content)
+    override suspend fun welfareCenter() = repository.welfareCenter()
+    override suspend fun claimDailyReward() = repository.claimWelfareSign()
+    override suspend fun claimRewardTask(taskId: Long, taskKey: String) =
+        repository.claimWelfareTask(taskId, taskKey)
+    override suspend fun claimEarnCoin(taskKey: String) = repository.claimWelfareEarnCoin(taskKey)
 }
 
 class LightNovelKingdomSource internal constructor(
@@ -115,7 +138,9 @@ class LightNovelKingdomSource internal constructor(
     HistoryMutationProvider,
     ReadingProgressSyncProvider,
     ChapterUnlockProvider,
-    SourceProfileProvider {
+    SourceProfileProvider,
+    RewardCenterProvider,
+    CommentProvider {
 
     override val descriptor = SourceDescriptor(
         id = SOURCE_ID,
@@ -128,12 +153,16 @@ class LightNovelKingdomSource internal constructor(
             SourceCapability.ACCOUNT,
             SourceCapability.REMOTE_SHELF,
             SourceCapability.HISTORY,
+            SourceCapability.DAILY_REWARD,
+            SourceCapability.REWARD_CENTER,
+            SourceCapability.COMMENTS,
         ),
         websiteUrl = "https://www.lightnovel.fun/",
     )
 
     override val discoverFeeds = listOf(
         DiscoverFeed.POPULAR,
+        DiscoverFeed.DAILY_RANK,
         DiscoverFeed.WEEKLY_RANK,
         DiscoverFeed.NEWEST,
         DiscoverFeed.ORIGINAL,
@@ -144,7 +173,8 @@ class LightNovelKingdomSource internal constructor(
 
     override suspend fun discover(feed: DiscoverFeed, page: Int, pageSize: Int): SourcePage<NovelSummary> {
         require(feed in discoverFeeds) { "unsupported light novel kingdom feed: $feed" }
-        return gateway.discover(feed.toKingdomChannel(), page, pageSize).toSourcePage(BookSummary::toSource)
+        val effectivePageSize = if (feed in FIXED_RANK_FEEDS) 30 else pageSize
+        return gateway.discover(feed.toKingdomChannel(), page, effectivePageSize).toSourcePage(BookSummary::toSource)
     }
 
     override suspend fun search(query: String, page: Int, pageSize: Int): SourcePage<NovelSummary> =
@@ -182,6 +212,21 @@ class LightNovelKingdomSource internal constructor(
     override suspend fun unlockChapter(chapterKey: ChapterKey) =
         gateway.unlockChapter(chapterKey.requireKingdomId())
 
+    override suspend fun getComments(
+        novelKey: NovelKey,
+        sort: CommentSort,
+        page: Int,
+        pageSize: Int,
+    ): SourcePage<SourceComment> = gateway.comments(
+        novelKey.requireKingdomId(),
+        sort,
+        page,
+        pageSize,
+    ).toSourcePage(Comment::toSource)
+
+    override suspend fun publishComment(novelKey: NovelKey, content: String): SourceComment =
+        gateway.publishComment(novelKey.requireKingdomId(), content).toSource()
+
     override suspend fun restoreSession(): SourceSession = gateway.restoreSession().toSource()
 
     override suspend fun login(credentials: PasswordCredentials): SourceSession =
@@ -190,6 +235,21 @@ class LightNovelKingdomSource internal constructor(
     override suspend fun logout() = gateway.logout()
 
     override suspend fun getProfile(): SourceProfile = gateway.profile().toSourceProfile()
+
+    override suspend fun getRewardCenter(): RewardCenter = gateway.welfareCenter()
+
+    override suspend fun getRewardStatus(): RewardStatus {
+        val center = gateway.welfareCenter()
+        val balance = runCatching { gateway.profile().coin.toLong() }.getOrNull()
+        return RewardStatus(center.claimed, balance, center.progress)
+    }
+
+    override suspend fun claimDailyReward(): RewardResult = gateway.claimDailyReward()
+
+    override suspend fun claimRewardTask(taskId: Long, taskKey: String): RewardResult =
+        gateway.claimRewardTask(taskId, taskKey)
+
+    override suspend fun claimEarnCoin(taskKey: String): RewardResult = gateway.claimEarnCoin(taskKey)
 
     override suspend fun getRemoteShelf(): List<NovelSummary> = gateway.bookshelf().map(BookSummary::toSource)
 
@@ -220,6 +280,12 @@ class LightNovelKingdomSource internal constructor(
     }
 
     companion object {
+        private val FIXED_RANK_FEEDS = setOf(
+            DiscoverFeed.DAILY_RANK,
+            DiscoverFeed.WEEKLY_RANK,
+            DiscoverFeed.NEWEST,
+        )
+
         fun from(repository: LightNovelRepository): LightNovelKingdomSource =
             LightNovelKingdomSource(RepositoryLightNovelKingdomGateway(repository))
     }
@@ -241,16 +307,26 @@ private fun AccountProfile.toSourceProfile() = SourceProfile(
 
 private fun DiscoverFeed.toKingdomChannel(): DiscoverChannel = when (this) {
     DiscoverFeed.POPULAR -> DiscoverChannel.HOT
+    DiscoverFeed.DAILY_RANK -> DiscoverChannel.DAILY_RANK
     DiscoverFeed.LATEST -> DiscoverChannel.UPDATED
     DiscoverFeed.NEWEST -> DiscoverChannel.NEW
     DiscoverFeed.WEEKLY_RANK -> DiscoverChannel.RANK
     DiscoverFeed.ORIGINAL -> DiscoverChannel.ORIGINAL
     DiscoverFeed.FANFIC -> DiscoverChannel.FANFIC
     DiscoverFeed.EPUB -> DiscoverChannel.EPUB
-    DiscoverFeed.DAILY_RANK,
     DiscoverFeed.MONTHLY_RANK,
     -> error("unsupported light novel kingdom feed: $this")
 }
+
+private fun Comment.toSource() = SourceComment(
+    id = id.toString(),
+    authorName = author.nickname,
+    authorAvatarUrl = author.avatarUrl,
+    content = content,
+    createdAt = createdAt,
+    likeCount = likeCount,
+    replyCount = replyCount,
+)
 
 private fun BookSummary.toSource() = NovelSummary(
     key = NovelKey(SOURCE_ID, id.toString()),

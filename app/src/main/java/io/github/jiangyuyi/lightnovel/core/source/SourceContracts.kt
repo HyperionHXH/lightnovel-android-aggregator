@@ -69,3 +69,20 @@ interface RewardProvider : SourceProvider {
     suspend fun getRewardStatus(): RewardStatus
     suspend fun claimDailyReward(): RewardResult
 }
+
+interface RewardCenterProvider : RewardProvider {
+    suspend fun getRewardCenter(): RewardCenter
+    suspend fun claimRewardTask(taskId: Long, taskKey: String): RewardResult
+    suspend fun claimEarnCoin(taskKey: String): RewardResult
+}
+
+interface CommentProvider : SourceProvider {
+    suspend fun getComments(
+        novelKey: NovelKey,
+        sort: CommentSort = CommentSort.HOT,
+        page: Int = 1,
+        pageSize: Int = 20,
+    ): SourcePage<SourceComment>
+
+    suspend fun publishComment(novelKey: NovelKey, content: String): SourceComment
+}

@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
@@ -22,6 +25,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -35,6 +40,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -45,8 +51,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.source.AccountIdentifierKind
+import io.github.jiangyuyi.lightnovel.core.source.RewardCenter
+import io.github.jiangyuyi.lightnovel.core.source.RewardTask
 import android.content.Intent
 import android.net.Uri
+import coil.compose.AsyncImage
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,6 +100,8 @@ fun SourceAccountsScreen(
                 },
                 onLogout = { viewModel.logout(account.descriptor.id) },
                 onReward = { viewModel.claimDailyReward(account.descriptor.id) },
+                onRewardTask = { task -> viewModel.claimRewardTask(account.descriptor.id, task) },
+                onEarnCoin = { viewModel.claimEarnCoin(account.descriptor.id) },
                 onRetry = { viewModel.refresh(account.descriptor.id) },
             )
         }
@@ -103,6 +114,8 @@ private fun SourceAccountCard(
     onLogin: (String, String) -> Unit,
     onLogout: () -> Unit,
     onReward: () -> Unit,
+    onRewardTask: (RewardTask) -> Unit,
+    onEarnCoin: () -> Unit,
     onRetry: () -> Unit,
 ) {
     var identifier by remember(account.descriptor.id) { mutableStateOf("") }
@@ -128,6 +141,13 @@ private fun SourceAccountCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                account.profile?.avatarUrl?.let { avatarUrl ->
+                    AsyncImage(
+                        model = avatarUrl,
+                        contentDescription = "账号头像",
+                        modifier = Modifier.size(48.dp).clip(CircleShape),
+                    )
+                }
                 Column(Modifier.weight(1f)) {
                     Text(
                         account.descriptor.displayName,
@@ -143,8 +163,11 @@ private fun SourceAccountCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    account.profile?.accountId?.let { id ->
+                        Text("UID $id", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
-                if (account.checking) {
+                if (account.checking || account.profileLoading) {
                     CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                 }
             }
@@ -170,6 +193,15 @@ private fun SourceAccountCard(
             }
 
             if (account.session.loggedIn) {
+                account.profile?.let { profile ->
+                    val identity = listOfNotNull(
+                        profile.levelLabel,
+                        profile.balance?.let { "轻币 $it" },
+                    ).joinToString(" · ")
+                    if (identity.isNotBlank()) {
+                        Text(identity, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    }
+                }
                 if (account.rewardLoading && account.rewardStatus == null) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -179,7 +211,16 @@ private fun SourceAccountCard(
                         Text("正在读取签到状态", style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                account.rewardStatus?.let { reward ->
+                account.rewardCenter?.let { center ->
+                    RewardCenterContent(
+                        center = center,
+                        actionKey = account.rewardActionKey,
+                        loading = account.rewardLoading,
+                        onSign = onReward,
+                        onRewardTask = onRewardTask,
+                        onEarnCoin = onEarnCoin,
+                    )
+                } ?: account.rewardStatus?.let { reward ->
                     val details = listOfNotNull(
                         reward.balance?.let { "余额 $it" },
                         reward.streakDays?.let { "连续 $it 天" },
@@ -300,6 +341,108 @@ private fun SourceAccountCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RewardCenterContent(
+    center: RewardCenter,
+    actionKey: String?,
+    loading: Boolean,
+    onSign: () -> Unit,
+    onRewardTask: (RewardTask) -> Unit,
+    onEarnCoin: () -> Unit,
+) {
+    HorizontalDivider()
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(center.signTitle, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        if (center.signSubtitle.isNotBlank()) {
+            Text(center.signSubtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (center.days.isNotEmpty()) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(center.days, key = { it.day }) { day ->
+                    Column(
+                        modifier = Modifier.width(68.dp).padding(vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text("第 ${day.day} 天", style = MaterialTheme.typography.labelSmall)
+                        Text("${day.rewardAmount}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            when {
+                                day.claimed -> "已领"
+                                day.claimable -> "今日"
+                                else -> "轻币"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (day.claimable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        Button(
+            onClick = onSign,
+            enabled = center.claimable && actionKey == null && !loading,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (actionKey == "sign") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            else Text(if (center.claimed) "今日已签到" else if (center.claimable) "领取今日签到" else "暂不可签到")
+        }
+
+        center.earning?.let { earning ->
+            HorizontalDivider()
+            Text(earning.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(earning.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (earning.totalProgress > 0) {
+                LinearProgressIndicator(
+                    progress = { earning.progress.toFloat() / earning.totalProgress.coerceAtLeast(1) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    earning.progressText.ifBlank { "${earning.progress} / ${earning.totalProgress}" },
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = onEarnCoin, enabled = earning.claimable && actionKey == null) {
+                    if (actionKey == "earning") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text(if (earning.claimed) "已领取" else "领取 ${earning.rewardAmount} 轻币")
+                }
+            }
+        }
+
+        if (center.tasks.any { it.available }) {
+            HorizontalDivider()
+            Text("轻币任务", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            center.tasks.filter { it.available }.forEachIndexed { index, task ->
+                if (index > 0) HorizontalDivider()
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(task.title, fontWeight = FontWeight.Medium)
+                        if (task.subtitle.isNotBlank()) {
+                            Text(task.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (task.totalProgress > 0) {
+                            Text("进度 ${task.progress}/${task.totalProgress} · 奖励 ${task.rewardAmount} 轻币", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    TextButton(
+                        onClick = { onRewardTask(task) },
+                        enabled = task.claimable && actionKey == null,
+                    ) {
+                        if (actionKey == "task:${task.key}") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Text(if (task.claimed) "已领取" else task.buttonText.ifBlank { "领取" })
+                    }
+                }
             }
         }
     }

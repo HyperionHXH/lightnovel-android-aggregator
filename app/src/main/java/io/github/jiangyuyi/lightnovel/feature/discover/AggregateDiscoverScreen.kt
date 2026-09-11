@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
+import io.github.jiangyuyi.lightnovel.core.source.DiscoverFeed
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.SourceNovelCard
@@ -143,6 +144,22 @@ fun AggregateDiscoverScreen(
                         TextButton(onClick = viewModel::loadMore) { Text("加载更多") }
                     }
                 }
+            }
+        }
+        activeSource?.takeIf { it.loaded && !it.hasMore && !it.loading && it.items.isNotEmpty() }?.let { source ->
+            item(key = "end-${source.descriptor.id}") {
+                val fixedSnapshot = state.selectedFeed in setOf(
+                    DiscoverFeed.DAILY_RANK,
+                    DiscoverFeed.WEEKLY_RANK,
+                    DiscoverFeed.NEWEST,
+                )
+                Text(
+                    if (fixedSnapshot) "官网固定榜单已全部加载，共 ${source.items.size} 本"
+                    else "已加载完官网内容，共 ${source.items.size} 本",
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

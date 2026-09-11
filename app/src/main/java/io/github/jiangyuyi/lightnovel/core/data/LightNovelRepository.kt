@@ -38,9 +38,17 @@ import io.github.jiangyuyi.lightnovel.core.network.string
 import io.github.jiangyuyi.lightnovel.core.session.SessionStore
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
+import io.github.jiangyuyi.lightnovel.core.source.CommentSort
+import io.github.jiangyuyi.lightnovel.core.source.EarnCoinStatus
+import io.github.jiangyuyi.lightnovel.core.source.RewardCenter
+import io.github.jiangyuyi.lightnovel.core.source.RewardDay
+import io.github.jiangyuyi.lightnovel.core.source.RewardResult
+import io.github.jiangyuyi.lightnovel.core.source.RewardTask
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -309,27 +317,30 @@ class LightNovelRepository(
 
     fun commentsUpdates(
         bookId: Long,
+        sort: CommentSort = CommentSort.HOT,
         page: Int = 1,
         pageSize: Int = 20,
         forceRefresh: Boolean = false,
     ): Flow<CacheUpdate<Page<Comment>>> = cache.updates(
         scope = currentScope(),
-        key = cacheKey("comments", bookId, page, pageSize),
+        key = cacheKey("comments", bookId, sort, page, pageSize),
         policy = CachePolicies.BOOK,
         serializer = Page.serializer(Comment.serializer()),
         forceRefresh = forceRefresh,
-    ) { comments(bookId, page, pageSize) }
+    ) { comments(bookId, sort, page, pageSize) }
 
     suspend fun discover(channel: DiscoverChannel, page: Int = 1, pageSize: Int = 20): Page<BookSummary> {
-        if (channel == DiscoverChannel.NEW) return rank("daily_fresh", page, pageSize)
-        if (channel == DiscoverChannel.RANK) return rank("weekly_hot", page, pageSize)
+        if (channel == DiscoverChannel.DAILY_RANK) return rank("daily_hot", page, RANK_SNAPSHOT_SIZE)
+        if (channel == DiscoverChannel.NEW) return rank("daily_fresh", page, RANK_SNAPSHOT_SIZE)
+        if (channel == DiscoverChannel.RANK) return rank("weekly_hot", page, RANK_SNAPSHOT_SIZE)
         val path = when (channel) {
             DiscoverChannel.HOT -> "api/bff/home-feed-v1"
             DiscoverChannel.ORIGINAL -> "api/bff/home-original-feed-v1"
             DiscoverChannel.FANFIC -> "api/bff/home-fanfic-feed-v1"
             DiscoverChannel.EPUB -> "api/bff/home-epub-feed-v1"
             DiscoverChannel.UPDATED -> "api/bff/home-recent-updates-feed-v1"
-            DiscoverChannel.NEW, DiscoverChannel.RANK, DiscoverChannel.COLLECTION -> error("handled before endpoint selection")
+            DiscoverChannel.DAILY_RANK, DiscoverChannel.NEW, DiscoverChannel.RANK, DiscoverChannel.COLLECTION ->
+                error("handled before endpoint selection")
         }
         val data = api.post(
             path,
@@ -350,7 +361,10 @@ class LightNovelRepository(
             "api/bff/book-rank-list-v1",
             jsonBody("rank_scene" to scene, "page" to page, "page_size" to pageSize, "pageSize" to pageSize),
         )
-        return ApiParsers.booksPage(data, page)
+        val parsed = ApiParsers.booksPage(data, page)
+        // LK rank scenes are fixed snapshots. Its current page_info advertises a
+        // second page that repeats the same Top 30, so the snapshot ends here.
+        return parsed.copy(hasMore = false)
     }
 
     suspend fun taxonomy(): SearchTaxonomy =
@@ -752,10 +766,17 @@ class LightNovelRepository(
         cache.removePrefix(userScope(), cachePrefix("reader-bootstrap"))
     }
 
-    suspend fun comments(bookId: Long, page: Int = 1, pageSize: Int = 20): Page<Comment> {
+    suspend fun comments(
+        bookId: Long,
+        sort: CommentSort = CommentSort.HOT,
+        page: Int = 1,
+        pageSize: Int = 20,
+    ): Page<Comment> {
+        val key = requireSession()
         val data = api.post(
             "api/new-content-read/get-book-comments",
-            withOptionalSession(
+            jsonBody(
+                "security_key" to key,
                 "book_id" to bookId,
                 "volume_id" to 0,
                 "chapter_id" to 0,
@@ -763,6 +784,7 @@ class LightNovelRepository(
                 "comment_id" to 0,
                 "page" to page,
                 "pageSize" to pageSize,
+                "comment_sort" to sort.name.lowercase(),
                 "rating_filter" to "all",
                 "include_user_interactions" to 1,
             ),
@@ -777,6 +799,127 @@ class LightNovelRepository(
             page = page,
             total = pageInfo?.int("count", "total") ?: list.size,
             hasMore = (pageInfo?.int("next") ?: 0) > 0 || pageInfo?.bool("has_next") == true,
+        )
+    }
+
+    suspend fun publishBookComment(bookId: Long, content: String): Comment {
+        val normalized = content.trim()
+        require(normalized.isNotBlank()) { "评论内容不能为空" }
+        val data = api.post(
+            "api/discuss/publish-book-comment",
+            jsonBody(
+                "security_key" to requireSession(),
+                "book_id" to bookId,
+                "volume_id" to 0,
+                "chapter_id" to 0,
+                "view" to "",
+                "root_comment_id" to 0,
+                "reply_comment_id" to 0,
+                "content" to normalized,
+                "rating_stars" to 0,
+                "read_duration_seconds" to 0,
+            ),
+        )
+        val comment = ApiParsers.comment(data.obj("comment") ?: data)
+        if (comment.id <= 0L) throw SourceException(SourceErrorKind.PARSING, "评论发布成功，但服务器未返回评论内容")
+        cache.removePrefix(currentScope(), cachePrefix("comments"))
+        return comment
+    }
+
+    suspend fun welfareCenter(): RewardCenter = coroutineScope {
+        val key = requireSession()
+        val signRequest = async {
+            api.post("api/bff/welfare-sign-detail-v1", jsonBody("security_key" to key))
+        }
+        val earningRequest = async {
+            api.post("api/bff/welfare-earn-coin-detail-v1", jsonBody("security_key" to key))
+        }
+        val tasksRequest = async {
+            api.post(
+                "api/bff/welfare-task-list-v1",
+                jsonBody("security_key" to key, "page" to 1, "page_size" to 20, "pageSize" to 20),
+            )
+        }
+        val sign = signRequest.await()
+        val earning = earningRequest.await()
+        val tasks = tasksRequest.await()
+        RewardCenter(
+            signTitle = sign.string("title").ifBlank { "每日签到" },
+            signSubtitle = sign.string("sub_title", "subtitle"),
+            currentDay = sign.int("current_day").coerceAtLeast(1),
+            progress = sign.int("progress"),
+            totalProgress = sign.int("total_progress"),
+            claimed = sign.bool("claimed") == true,
+            claimable = sign.bool("claimable") == true,
+            days = sign.array("rewards").mapNotNull { item ->
+                val day = item as? JsonObject ?: return@mapNotNull null
+                RewardDay(
+                    day = day.int("day"),
+                    rewardAmount = day.long("reward_amount", "amount"),
+                    claimed = day.bool("claimed") == true,
+                    claimable = day.bool("claimable") == true,
+                )
+            },
+            earning = EarnCoinStatus(
+                title = earning.string("title").ifBlank { "浏览赚轻币" },
+                subtitle = earning.string("sub_title", "subtitle"),
+                progress = earning.int("progress"),
+                totalProgress = earning.int("total_progress"),
+                progressText = earning.string("progress_text"),
+                rewardAmount = earning.long("reward_amount"),
+                claimed = earning.bool("claimed") == true,
+                claimable = earning.bool("claimable") == true,
+                taskKey = earning.string("task_key"),
+            ).takeIf { earning.bool("enabled") != false },
+            tasks = tasks.array("list", "items").mapNotNull { item ->
+                val task = item as? JsonObject ?: return@mapNotNull null
+                val id = task.long("task_id", "id")
+                val taskKey = task.string("task_key", "key")
+                if (id <= 0L || taskKey.isBlank()) return@mapNotNull null
+                RewardTask(
+                    id = id,
+                    key = taskKey,
+                    title = task.string("title").ifBlank { "轻币任务" },
+                    subtitle = task.string("sub_title", "subtitle"),
+                    rewardAmount = task.long("reward_amount").takeIf { it > 0 }
+                        ?: task.obj("reward")?.long("coin") ?: 0,
+                    claimed = task.bool("claimed") == true,
+                    claimable = task.bool("claimable") == true,
+                    progress = task.int("progress"),
+                    totalProgress = task.int("total_progress"),
+                    buttonText = task.string("button_text"),
+                    available = task.bool("available") != false,
+                )
+            },
+        )
+    }
+
+    suspend fun claimWelfareSign(): RewardResult = rewardResult(
+        api.post("api/bff/claim-welfare-sign-v1", jsonBody("security_key" to requireSession())),
+    )
+
+    suspend fun claimWelfareTask(taskId: Long, taskKey: String): RewardResult = rewardResult(
+        api.post(
+            "api/bff/claim-welfare-task-v1",
+            jsonBody("security_key" to requireSession(), "task_id" to taskId, "task_key" to taskKey),
+        ),
+    )
+
+    suspend fun claimWelfareEarnCoin(taskKey: String): RewardResult = rewardResult(
+        api.post(
+            "api/bff/claim-welfare-earn-coin-v1",
+            jsonBody("security_key" to requireSession(), "task_key" to taskKey.takeIf { it.isNotBlank() }),
+        ),
+    )
+
+    private fun rewardResult(data: JsonObject): RewardResult {
+        val reward = data.obj("reward", "result")
+        return RewardResult(
+            rewardAmount = data.long("reward_amount", "amount", "coin").takeIf { it > 0 }
+                ?: reward?.long("reward_amount", "amount", "coin")?.takeIf { it > 0 },
+            balance = data.string("balance", "total_coin", "light_coin").toLongOrNull()?.takeIf { it >= 0 }
+                ?: reward?.string("balance", "total_coin", "light_coin")?.toLongOrNull()?.takeIf { it >= 0 },
+            streakDays = data.string("streak_days", "continue_days", "progress").toIntOrNull()?.takeIf { it >= 0 },
         )
     }
 
@@ -832,5 +975,9 @@ class LightNovelRepository(
     private fun withOptionalSession(vararg pairs: Pair<String, Any?>): JsonObject {
         val token = sessionStore.securityKey()
         return jsonBody(*pairs, "security_key" to token.takeIf { it.isNotBlank() })
+    }
+
+    private companion object {
+        const val RANK_SNAPSHOT_SIZE = 30
     }
 }

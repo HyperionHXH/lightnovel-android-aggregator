@@ -28,6 +28,11 @@ class SourceRegistry(sources: Iterable<NovelSource>) {
 
     fun rewardProviders(): List<RewardProvider> = all().filterIsInstance<RewardProvider>()
 
+    fun rewardCenterProvider(sourceId: String): RewardCenterProvider? =
+        get(sourceId) as? RewardCenterProvider
+
+    fun commentProvider(sourceId: String): CommentProvider? = get(sourceId) as? CommentProvider
+
     fun profileProvider(sourceId: String): SourceProfileProvider? = get(sourceId) as? SourceProfileProvider
 
     fun shelfProviders(): List<ShelfProvider> = all().filterIsInstance<ShelfProvider>()

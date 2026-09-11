@@ -10,10 +10,12 @@ import io.github.jiangyuyi.lightnovel.core.preferences.EmptyReaderPreferencesAcc
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
+import io.github.jiangyuyi.lightnovel.core.source.CommentSort
 import io.github.jiangyuyi.lightnovel.core.source.NovelDetail
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.ReadingProgress
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
+import io.github.jiangyuyi.lightnovel.core.source.SourceComment
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
@@ -56,6 +58,16 @@ data class SourceBookState(
     val readingProgress: ReadingProgress? = null,
     val error: String? = null,
     val directoryError: String? = null,
+    val commentsSupported: Boolean = false,
+    val commentSort: CommentSort = CommentSort.HOT,
+    val comments: List<SourceComment> = emptyList(),
+    val commentsPage: Int = 0,
+    val commentsHasMore: Boolean = false,
+    val commentsLoading: Boolean = false,
+    val commentsLoadingMore: Boolean = false,
+    val publishingComment: Boolean = false,
+    val commentError: String? = null,
+    val commentLoginRequired: Boolean = false,
 )
 
 class SourceBookViewModel(
@@ -69,10 +81,12 @@ class SourceBookViewModel(
             source = registry.get(novelKey.sourceId)?.descriptor,
             shelfSupported = registry.shelfProvider(novelKey.sourceId) != null,
             unlockSupported = registry.unlockProvider(novelKey.sourceId) != null,
+            commentsSupported = registry.commentProvider(novelKey.sourceId) != null,
         ),
     )
     val state: StateFlow<SourceBookState> = _state.asStateFlow()
     private var loadJob: Job? = null
+    private var commentsJob: Job? = null
     private val chapterJobs = mutableMapOf<VolumeKey, Job>()
 
     init {
@@ -100,6 +114,7 @@ class SourceBookViewModel(
             return
         }
         loadJob?.cancel()
+        commentsJob?.cancel()
         chapterJobs.values.forEach(Job::cancel)
         chapterJobs.clear()
         val hasContent = _state.value.detail != null
@@ -149,6 +164,7 @@ class SourceBookViewModel(
                 if (firstVolume != null) loadMoreChapters(firstVolume)
             }
         }
+        loadComments(reset = true)
     }
 
     fun toggleShelf(onLoginRequired: () -> Unit) {
@@ -301,6 +317,91 @@ class SourceBookViewModel(
                         directoryError = error.toSourceUiMessage("章节加载失败"),
                     )
                 }
+        }
+    }
+
+    fun selectCommentSort(sort: CommentSort) {
+        if (sort == _state.value.commentSort) return
+        _state.value = _state.value.copy(commentSort = sort)
+        loadComments(reset = true)
+    }
+
+    fun loadMoreComments() = loadComments(reset = false)
+
+    fun publishComment(
+        content: String,
+        onLoginRequired: () -> Unit,
+        onPublished: () -> Unit,
+    ) {
+        val provider = registry.commentProvider(novelKey.sourceId) ?: return
+        val normalized = content.trim()
+        if (normalized.isBlank()) {
+            _state.value = _state.value.copy(commentError = "请输入评论内容")
+            return
+        }
+        if (_state.value.publishingComment) return
+        _state.value = _state.value.copy(
+            publishingComment = true,
+            commentError = null,
+            commentLoginRequired = false,
+        )
+        viewModelScope.launch {
+            runSourceCatching { provider.publishComment(novelKey, normalized) }
+                .onSuccess {
+                    _state.value = _state.value.copy(publishingComment = false)
+                    onPublished()
+                    loadComments(reset = true)
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        publishingComment = false,
+                        commentError = error.toSourceUiMessage("评论发布失败"),
+                        commentLoginRequired = error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION,
+                    )
+                    if (error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION) {
+                        onLoginRequired()
+                    }
+                }
+        }
+    }
+
+    private fun loadComments(reset: Boolean) {
+        val provider = registry.commentProvider(novelKey.sourceId) ?: return
+        val current = _state.value
+        if (!reset && (current.commentsLoading || current.commentsLoadingMore || !current.commentsHasMore)) return
+        commentsJob?.cancel()
+        val requestedSort = current.commentSort
+        val requestedPage = if (reset) 1 else current.commentsPage + 1
+        _state.value = current.copy(
+            comments = if (reset) emptyList() else current.comments,
+            commentsPage = if (reset) 0 else current.commentsPage,
+            commentsLoading = reset,
+            commentsLoadingMore = !reset,
+            commentError = null,
+            commentLoginRequired = false,
+        )
+        commentsJob = viewModelScope.launch {
+            runSourceCatching {
+                provider.getComments(novelKey, requestedSort, requestedPage, pageSize = 20)
+            }.onSuccess { page ->
+                if (_state.value.commentSort != requestedSort) return@onSuccess
+                _state.value = _state.value.copy(
+                    comments = if (reset) page.items else (_state.value.comments + page.items).distinctBy { it.id },
+                    commentsPage = page.page,
+                    commentsHasMore = page.hasMore,
+                    commentsLoading = false,
+                    commentsLoadingMore = false,
+                    commentError = null,
+                    commentLoginRequired = false,
+                )
+            }.onFailure { error ->
+                _state.value = _state.value.copy(
+                    commentsLoading = false,
+                    commentsLoadingMore = false,
+                    commentError = error.toSourceUiMessage("评论加载失败"),
+                    commentLoginRequired = error is SourceException && error.kind == SourceErrorKind.AUTHENTICATION,
+                )
+            }
         }
     }
 
