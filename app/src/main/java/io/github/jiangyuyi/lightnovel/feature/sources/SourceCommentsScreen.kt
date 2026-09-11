@@ -52,6 +52,7 @@ fun SourceCommentsScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf("") }
+    var ratingStars by remember { mutableStateOf(0) }
     RefreshableLazyColumn(
         isRefreshing = state.commentsLoading,
         onRefresh = { viewModel.loadCommentsForScreen() },
@@ -83,13 +84,30 @@ fun SourceCommentsScreen(
                 supportingText = { Text("${draft.length} / 1,000") },
                 trailingIcon = {
                     IconButton(
-                        onClick = { viewModel.publishComment(draft, onLoginRequired = onAccounts, onPublished = { draft = "" }) },
+                        onClick = {
+                            viewModel.publishComment(
+                                draft,
+                                ratingStars,
+                                onLoginRequired = onAccounts,
+                                onPublished = {
+                                    draft = ""
+                                    ratingStars = 0
+                                },
+                            )
+                        },
                         enabled = draft.isNotBlank() && !state.publishingComment,
                     ) {
                         if (state.publishingComment) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                         else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发表评论")
                     }
                 },
+            )
+        }
+        item {
+            CommentRatingSelector(
+                value = ratingStars,
+                onValueChange = { ratingStars = it },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             )
         }
         state.commentError?.let { message ->
@@ -115,6 +133,7 @@ fun SourceCommentsScreen(
                                 Text(comment.authorName, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                                 Text(comment.createdAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            comment.ratingStars?.let { CommentRatingDisplay(it) }
                             Text(comment.content)
                             val meta = listOfNotNull(
                                 comment.likeCount.takeIf { it > 0 }?.let { "赞 $it" },

@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,7 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
@@ -59,7 +60,7 @@ import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import io.github.jiangyuyi.lightnovel.core.ui.NovelCover
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SourceBookScreen(
     viewModel: SourceBookViewModel,
@@ -67,6 +68,7 @@ fun SourceBookScreen(
     onBook: (NovelKey) -> Unit,
     onRead: (ChapterKey) -> Unit,
     onAccounts: () -> Unit,
+    onTag: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var unlockTarget by remember { mutableStateOf<ChapterSummary?>(null) }
@@ -218,20 +220,19 @@ fun SourceBookScreen(
                 if (selectedTab == 0) {
                 if (novel.tags.isNotEmpty()) {
                     item {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FlowRow(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
                             novel.tags.forEach { tag ->
-                                AssistChip(onClick = {}, label = { Text(tag) })
+                                AssistChip(onClick = { onTag(tag) }, label = { Text(tag) })
                             }
                         }
                     }
                 }
                 item {
                     SourceSection("简介") {
-                        novel.score?.let { score ->
-                            val fivePointScore = if (score > 5) score / 2 else score
-                            val rounded = fivePointScore.roundToInt().coerceIn(0, 5)
-                            Text("评分 ${"★".repeat(rounded)}${"☆".repeat(5 - rounded)} ${"%.1f".format(fivePointScore)} / 5", color = MaterialTheme.colorScheme.primary)
-                        }
                         Text(novel.synopsis.ifBlank { "暂无简介" })
                     }
                 }
@@ -268,16 +269,11 @@ fun SourceBookScreen(
                                     }
                                 },
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("评分", style = MaterialTheme.typography.labelLarge)
-                                (1..5).forEach { stars ->
-                                    FilterChip(
-                                        selected = ratingStars == stars,
-                                        onClick = { ratingStars = if (ratingStars == stars) 0 else stars },
-                                        label = { Text("${"★".repeat(stars)} $stars") },
-                                    )
-                                }
-                            }
+                            CommentRatingSelector(
+                                value = ratingStars,
+                                onValueChange = { ratingStars = it },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                            )
                             when {
                                 state.commentsLoading && state.comments.isEmpty() -> Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
                                     CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -302,7 +298,7 @@ fun SourceBookScreen(
                                                 Text(comment.createdAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                             }
                                             comment.ratingStars?.let { stars ->
-                                                Text("★".repeat(stars) + "☆".repeat(5 - stars), color = MaterialTheme.colorScheme.primary)
+                                                CommentRatingDisplay(stars)
                                             }
                                             Text(comment.content)
                                             val meta = listOfNotNull(

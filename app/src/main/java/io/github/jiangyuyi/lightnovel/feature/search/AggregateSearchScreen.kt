@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,10 +47,19 @@ fun AggregateSearchScreen(
     viewModel: AggregateSearchViewModel,
     onBook: (NovelKey) -> Unit,
     onAccounts: () -> Unit,
+    initialQuery: String? = null,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
     val interleavedResults = interleaveSourceResults(state.sources)
+
+    LaunchedEffect(initialQuery) {
+        val query = initialQuery?.trim().orEmpty()
+        if (query.isNotEmpty() && state.query != query) {
+            viewModel.setQuery(query)
+            viewModel.searchNow()
+        }
+    }
 
     RefreshableLazyColumn(
         isRefreshing = state.sources.any { it.loading || it.refreshing },

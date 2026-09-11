@@ -195,7 +195,12 @@ internal class LightNovelShelfAuthApi(
             put("email", normalizedEmail)
             put("password", sha256Hex(password))
         }
-        val root = post("/api/user/login", body, authStatuses = setOf(401))
+        val root = post(
+            path = "/api/user/login",
+            body = body,
+            authStatuses = setOf(401),
+            authenticationContext = true,
+        )
         val response = root.objectValue("Response", "response") ?: root
         return ShelfTokens(
             accessToken = response.requiredString("Token", "token"),
@@ -219,7 +224,12 @@ internal class LightNovelShelfAuthApi(
             ?: throw SourceException(SourceErrorKind.PARSING, "轻书架刷新响应缺少会话令牌")
     }
 
-    private suspend fun post(path: String, body: JsonObject, authStatuses: Set<Int>): JsonObject {
+    private suspend fun post(
+        path: String,
+        body: JsonObject,
+        authStatuses: Set<Int>,
+        authenticationContext: Boolean = false,
+    ): JsonObject {
         val response = try {
             limiter.run {
                 transport.postJson(apiOrigin.trimEnd('/') + path, body.toString())
@@ -231,18 +241,19 @@ internal class LightNovelShelfAuthApi(
             runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
         }
         if (response.code !in 200..299) {
-            val kind = when (response.code) {
-                in authStatuses -> SourceErrorKind.AUTHENTICATION
-                429 -> SourceErrorKind.RATE_LIMITED
-                in 500..599 -> SourceErrorKind.SERVER
+            val kind = when {
+                response.code == 429 -> SourceErrorKind.RATE_LIMITED
+                response.code in authStatuses ||
+                    (authenticationContext && response.code in 400..499) -> SourceErrorKind.AUTHENTICATION
+                response.code in 500..599 -> SourceErrorKind.SERVER
                 else -> SourceErrorKind.NETWORK
             }
-            val message = root?.optionalString("Msg", "msg", "message")
+            val message = root?.optionalString("Msg", "msg", "message", "Error", "error")
                 ?: "轻书架服务器返回 ${response.code}"
             throw SourceException(kind, message)
         }
         root ?: throw SourceException(SourceErrorKind.PARSING, "轻书架返回了无法识别的数据")
-        root.throwIfFailed()
+        root.throwIfFailed(authenticationContext)
         return root
     }
 }
@@ -295,18 +306,18 @@ internal fun sha256Hex(value: String): String = MessageDigest
     .digest(value.toByteArray(Charsets.UTF_8))
     .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
-internal fun JsonObject.throwIfFailed() {
+internal fun JsonObject.throwIfFailed(authenticationContext: Boolean = false) {
     val success = value("Success", "success")?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull()
     if (success != false) return
     val status = value("Status", "status")?.jsonPrimitive?.intOrNull
-    val kind = if (status == 401 || status == -100 || status == 1001) {
+    val kind = if (authenticationContext || status == 401 || status == -100 || status == 1001) {
         SourceErrorKind.AUTHENTICATION
     } else {
         SourceErrorKind.SERVER
     }
     throw SourceException(
         kind,
-        optionalString("Msg", "msg") ?: "轻书架请求失败",
+        optionalString("Msg", "msg", "message", "Error", "error") ?: "轻书架请求失败",
     )
 }
 

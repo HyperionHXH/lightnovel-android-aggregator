@@ -56,7 +56,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.14.1`、`versionCode 23`；桌面和 jpackage 默认版本也是 `1.14.1`。tag Release 工作流会从 tag 注入版本。上一正式 Release 为 `v1.14.0`。
+Android 默认版本：`versionName 1.15.0`、`versionCode 24`；桌面和 jpackage 默认版本也是 `1.15.0`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.15.0`。
 
 ## 2026-09-11 本轮变更
 
@@ -66,6 +66,14 @@ Android 默认版本：`versionName 1.14.1`、`versionCode 23`；桌面和 jpack
 - LK 适配器新增官方客户端福利中心：`welfare-sign-detail-v1`、`claim-welfare-sign-v1`、`welfare-task-list-v1`、`claim-welfare-task-v1`、`welfare-earn-coin-detail-v1`、`claim-welfare-earn-coin-v1` 和余额刷新。福利入口只属于 LK 账号，不会出现在轻书架账号；不会自动刷任务。
 - LK 作品评论支持最热/最新、分页加载、星级展示和发布评分，接口为 `get-book-comments` 与 `publish-book-comment`。评论能力通过 `CommentProvider` 暴露，轻书架不实现该接口；评论代理返回业务码 20 时显示为“评论链接错误”，不伪装成暂无评论。
 - 本轮验证：148 项 Android 单元测试通过（1 项既有跳过）、Android Lint 通过、Debug APK 构建通过、桌面端测试通过；AVD `emulator-5554` 动态检查确认 LK 日榜显示官网实际 28 本并给出固定榜单提示。
+
+## 2026-09-12 本轮变更
+
+- 1.15.0：简介移除评分，作品 Tag 点击后进入带初始关键词的聚合搜索；评论评分改为图标式五星控件。
+- LK 轻币任务按收藏、阅读、评论和官方客户端专属任务显示具体完成方式，广告任务仍不接入，也不会自动执行任务。
+- 轻书架登录的 HTTP 2xx 业务失败在登录上下文中归类为认证错误，并保留 `Msg/message/Error` 文案，避免账号输错被误报为来源服务不可用。
+- 关于页参考常见开源应用改为品牌头部、检查更新主按钮和项目/开源分组列表，原有 Release 检查与 APK 系统下载保持不变。
+- AVD `noval_api35` 动态确认简介、Tag 自动换行、Tag 搜索导航、评分选中态和关于页布局在 360dp 宽度下没有文字重叠。
 
 ## 发布流程
 

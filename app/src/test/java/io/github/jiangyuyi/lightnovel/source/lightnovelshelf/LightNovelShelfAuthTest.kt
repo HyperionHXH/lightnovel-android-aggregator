@@ -88,6 +88,45 @@ class LightNovelShelfAuthTest {
         assertEquals(original, store.read())
     }
 
+    @Test
+    fun `business login failure with unknown status remains an authentication error`() = runTest {
+        val api = authApi { _, _ ->
+            ShelfHttpResponse(200, """{"Success":false,"Status":7,"Msg":"用户不存在"}""")
+        }
+
+        val error = runCatching { api.login("missing@example.com", "password") }.exceptionOrNull()
+
+        assertTrue(error is SourceException)
+        assertEquals(SourceErrorKind.AUTHENTICATION, (error as SourceException).kind)
+        assertEquals("用户不存在", error.message)
+    }
+
+    @Test
+    fun `http four hundred login validation keeps the server credential message`() = runTest {
+        val api = authApi { _, _ ->
+            ShelfHttpResponse(400, """{"Success":false,"message":"邮箱不存在"}""")
+        }
+
+        val error = runCatching { api.login("missing@example.com", "password") }.exceptionOrNull()
+
+        assertTrue(error is SourceException)
+        assertEquals(SourceErrorKind.AUTHENTICATION, (error as SourceException).kind)
+        assertEquals("邮箱不存在", error.message)
+    }
+
+    @Test
+    fun `ordinary business failure is still classified as a server error`() {
+        val error = runCatching {
+            Json.parseToJsonElement(
+                """{"Success":false,"Status":7,"message":"维护中"}""",
+            ).jsonObject.throwIfFailed()
+        }.exceptionOrNull()
+
+        assertTrue(error is SourceException)
+        assertEquals(SourceErrorKind.SERVER, (error as SourceException).kind)
+        assertEquals("维护中", error.message)
+    }
+
     private fun authApi(handler: suspend (String, String) -> ShelfHttpResponse) = LightNovelShelfAuthApi(
         transport = ShelfHttpTransport(handler),
         limiter = ShelfRateLimiter(),

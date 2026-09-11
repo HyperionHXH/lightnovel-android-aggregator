@@ -192,6 +192,7 @@ private object Routes {
     const val DISCOVER = "discover"
     const val BOOKSHELF = "bookshelf"
     const val SEARCH = "search"
+    const val SEARCH_ROUTE = "search?query={query}"
     const val PROFILE = "profile"
     const val DOWNLOADS = "downloads"
     const val SETTINGS = "settings"
@@ -221,6 +222,7 @@ private object Routes {
     fun dm(conversation: DmConversation) =
         "dm/${conversation.peerUid}/${Uri.encode(conversation.user.nickname)}"
     fun sourceAccounts(sourceId: String) = "source-account/${Uri.encode(sourceId)}"
+    fun search(query: String) = "search?query=${Uri.encode(query)}"
 }
 
 private data class BottomDestination(val route: String, val label: String, val icon: ImageVector)
@@ -300,7 +302,16 @@ private fun LightNovelApp() {
                     onAccounts = { navController.navigate(Routes.SOURCE_ACCOUNTS) },
                 )
             }
-            composable(Routes.SEARCH) {
+            composable(
+                Routes.SEARCH_ROUTE,
+                arguments = listOf(
+                    navArgument("query") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
                 val vm: AggregateSearchViewModel = viewModel(
                     factory = viewModelFactory {
                         AggregateSearchViewModel(container.aggregateSearch, container.sourceRegistry)
@@ -310,6 +321,7 @@ private fun LightNovelApp() {
                     viewModel = vm,
                     onBook = { navController.navigate(Routes.sourceBook(it)) },
                     onAccounts = { navController.navigate(Routes.SOURCE_ACCOUNTS) },
+                    initialQuery = entry.arguments?.getString("query"),
                 )
             }
             composable(Routes.PROFILE) {
@@ -377,7 +389,11 @@ private fun LightNovelApp() {
                 val vm: SourceAccountsViewModel = viewModel(
                     factory = viewModelFactory { SourceAccountsViewModel(container.sourceRegistry) },
                 )
-                SourceAccountsScreen(vm, onBack = { navController.popBackStack() })
+                SourceAccountsScreen(
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onDiscover = { navController.openRoot(Routes.DISCOVER) },
+                )
             }
             composable(
                 Routes.SOURCE_ACCOUNT,
@@ -392,6 +408,7 @@ private fun LightNovelApp() {
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     focusSourceId = sourceId,
+                    onDiscover = { navController.openRoot(Routes.DISCOVER) },
                 )
             }
             composable(
@@ -533,6 +550,7 @@ private fun LightNovelApp() {
                     onBook = { navController.navigate(Routes.sourceBook(it)) },
                      onRead = { navController.navigate(Routes.sourceReader(novelKey, it)) },
                      onAccounts = { navController.navigate(Routes.SOURCE_ACCOUNTS) },
+                     onTag = { tag -> navController.openRoot(Routes.search(tag)) },
                  )
             }
             composable(
