@@ -40,7 +40,22 @@ data class OfflineBookRecord(
         get() = chapters.count { !it.locked }
 
     val completedChapters: Int
-        get() = downloadedChapterIds.count { remoteId -> chapters.any { it.key.remoteId == remoteId } }
+        get() = downloadedChapterIds.count { remoteId ->
+            chapters.any { chapter -> chapter.key.remoteId == remoteId && !chapter.locked }
+        }
+
+    /** A volume is counted only after every unlocked chapter in that volume is present. */
+    val completedVolumes: Int
+        get() = knownVolumeKeys.count { volumeKey ->
+            val volumeChapters = chapters.filter { it.volumeKey == volumeKey && !it.locked }
+            volumeChapters.isNotEmpty() && volumeChapters.all { it.key.remoteId in downloadedChapterIds }
+        }
+
+    val totalVolumes: Int
+        get() = knownVolumeKeys.size.coerceAtLeast(novel.volumeCount)
+
+    private val knownVolumeKeys
+        get() = (volumes.map(VolumeSummary::key) + chapters.map(ChapterSummary::volumeKey)).distinct()
 }
 
 internal data class OfflineWorkSpec(

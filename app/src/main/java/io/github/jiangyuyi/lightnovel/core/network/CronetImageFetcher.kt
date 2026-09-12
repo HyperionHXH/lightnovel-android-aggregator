@@ -26,8 +26,10 @@ internal class CronetImageFetcher(
 
     class Factory(private val api: LightNovelApi) : Fetcher.Factory<Uri> {
         override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? {
-            val host = data.host.orEmpty().lowercase()
-            if (data.scheme != "https" || (host != "lightnovel.fun" && !host.endsWith(".lightnovel.fun"))) return null
+            // Source adapters may return signed CDN URLs on a different HTTPS host.
+            // The request still goes through the app transport, which applies the
+            // same timeout and response validation as API image downloads.
+            if (data.scheme != "https" || data.host.isNullOrBlank()) return null
             return CronetImageFetcher(data.toString(), options, api)
         }
     }

@@ -41,4 +41,21 @@ class ReaderContentParserTest {
 
         assertEquals("A&B 。", (blocks.single() as ReaderBlock.Paragraph).text)
     }
+
+    @Test
+    fun `lazy and protocol relative image urls are normalised`() {
+        val blocks = ReaderContentParser.parse(
+            "<p><img data-src=\"//cdn.example.test/illustration.webp\" /></p>",
+            "",
+        )
+
+        assertEquals("https://cdn.example.test/illustration.webp", (blocks.single() as ReaderBlock.Illustration).url)
+    }
+
+    @Test
+    fun `legacy http image urls are upgraded to https`() {
+        val blocks = ReaderContentParser.parse("<p><img src=\"http://cdn.example.test/a.jpg\" /></p>", "")
+
+        assertEquals("https://cdn.example.test/a.jpg", (blocks.single() as ReaderBlock.Illustration).url)
+    }
 }

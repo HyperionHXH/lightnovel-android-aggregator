@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "io.github.jiangyuyi.lightnovel"
-version = providers.environmentVariable("APP_VERSION_NAME").orNull ?: "1.16.0"
+version = providers.environmentVariable("APP_VERSION_NAME").orNull ?: "1.17.0"
 
 base {
     archivesName.set("Mixn")

@@ -31,6 +31,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,6 +77,7 @@ fun AggregateBookshelfScreen(
     val selectedTabIndex = if (state.downloadedOnly) 1 else 0
     val updateSummary = bookshelfUpdateSummary(state)
     var deleteTarget by remember { mutableStateOf<OfflineBookRecord?>(null) }
+    var exportChooserTarget by remember { mutableStateOf<OfflineBookRecord?>(null) }
     var exportTarget by remember { mutableStateOf<OfflineBookRecord?>(null) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
     var exportProgress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
@@ -303,10 +305,10 @@ fun AggregateBookshelfScreen(
                     record = record,
                     sourceName = sourceName,
                     onOpen = { onBook(record.novel.key) },
+                    showManagementActions = title == "下载与导出",
                     onRetry = { viewModel.retryDownload(record) },
                     onDelete = { deleteTarget = record },
-                    onExportEpub = { startExport(record, ExportFormat.EPUB) },
-                    onExportTxt = { startExport(record, ExportFormat.TXT) },
+                    onExport = { exportChooserTarget = record },
                 )
             }
             state.sourceOptions.isEmpty() -> item { EmptyPane("没有支持书架的在线来源") }
@@ -349,6 +351,17 @@ fun AggregateBookshelfScreen(
             },
         )
     }
+
+    exportChooserTarget?.let { record ->
+        ExportFormatDialog(
+            record = record,
+            onDismiss = { exportChooserTarget = null },
+            onExport = { format ->
+                exportChooserTarget = null
+                startExport(record, format)
+            },
+        )
+    }
 }
 
 @Composable
@@ -356,10 +369,10 @@ private fun OfflineDownloadItem(
     record: OfflineBookRecord,
     sourceName: String,
     onOpen: () -> Unit,
+    showManagementActions: Boolean,
     onRetry: () -> Unit,
     onDelete: () -> Unit,
-    onExportEpub: () -> Unit,
-    onExportTxt: () -> Unit,
+    onExport: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SourceNovelCard(
@@ -394,24 +407,80 @@ private fun OfflineDownloadItem(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
-            if (record.status == OfflineDownloadStatus.FAILED) {
+            if (showManagementActions && record.status == OfflineDownloadStatus.FAILED) {
                 IconButton(onClick = onRetry) {
                     Icon(Icons.Filled.Refresh, contentDescription = "重试下载")
                 }
             }
-            if (record.status == OfflineDownloadStatus.COMPLETE) {
-                IconButton(onClick = onExportEpub) {
-                    Icon(painterResource(R.drawable.ic_file_download), contentDescription = "导出 EPUB")
-                }
-                IconButton(onClick = onExportTxt) {
-                    Icon(Icons.Filled.Download, contentDescription = "导出 TXT")
+            if (showManagementActions && record.status == OfflineDownloadStatus.COMPLETE) {
+                OutlinedButton(onClick = onExport) {
+                    Icon(Icons.Filled.Download, contentDescription = null)
+                    Text("导出", modifier = Modifier.padding(start = 6.dp))
                 }
             }
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "删除离线书籍")
+            if (showManagementActions) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Filled.Delete, contentDescription = "删除离线书籍")
+                }
             }
         }
     }
+}
+
+@Composable
+private fun ExportFormatDialog(
+    record: OfflineBookRecord,
+    onDismiss: () -> Unit,
+    onExport: (ExportFormat) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("导出《${record.novel.title}》") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("选择保存格式", style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(
+                    onClick = { onExport(ExportFormat.EPUB) },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Icon(painterResource(R.drawable.ic_file_download), contentDescription = null)
+                    Column(
+                        modifier = Modifier.weight(1f).padding(start = 10.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.Start,
+                    ) {
+                        Text("EPUB", style = MaterialTheme.typography.titleSmall)
+                        Text("保留目录和插图", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                OutlinedButton(
+                    onClick = { onExport(ExportFormat.TXT) },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp),
+                    ) {
+                        Text(
+                            "TXT",
+                            style = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 2.dp),
+                        )
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f).padding(start = 10.dp),
+                        horizontalAlignment = androidx.compose.ui.Alignment.Start,
+                    ) {
+                        Text("TXT", style = MaterialTheme.typography.titleSmall)
+                        Text("适合纯文本阅读器", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+    )
 }
 
 private fun epubFileName(record: OfflineBookRecord): String =
@@ -430,7 +499,12 @@ private fun downloadDirectoryLabel(value: String?): String = value?.let { uri ->
 
 private fun offlineStatusLabel(record: OfflineBookRecord): String = when (record.status) {
     OfflineDownloadStatus.QUEUED -> "等待下载"
-    OfflineDownloadStatus.DOWNLOADING -> "已下载 ${record.completedChapters}/${record.totalChapters} 章"
-    OfflineDownloadStatus.COMPLETE -> "已下载 ${record.completedChapters} 章"
+    OfflineDownloadStatus.DOWNLOADING -> "正在下载 · ${record.downloadSummary()}"
+    OfflineDownloadStatus.COMPLETE -> "已下载 · ${record.downloadSummary()}"
     OfflineDownloadStatus.FAILED -> record.error ?: "下载失败"
+}
+
+private fun OfflineBookRecord.downloadSummary(): String {
+    val volumes = if (totalVolumes > 0) "$completedVolumes/$totalVolumes 卷 · " else ""
+    return "$volumes$completedChapters/$totalChapters 章"
 }

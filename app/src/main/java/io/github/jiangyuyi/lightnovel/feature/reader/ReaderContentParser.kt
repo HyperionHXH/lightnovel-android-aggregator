@@ -66,8 +66,13 @@ internal object ReaderContentParser {
 
     private fun MatchResult.toIllustration(): ReaderBlock.Illustration? {
         val attributes = groupValues[1]
-        val src = attributes.attribute("src")?.decodeHtmlEntities()?.trim().orEmpty()
-        if (!src.startsWith("https://")) return null
+        val src = listOf("src", "data-src", "data-original", "data-url")
+            .asSequence()
+            .mapNotNull { name -> attributes.attribute(name) }
+            .map { it.decodeHtmlEntities().trim() }
+            .firstOrNull { it.isNotBlank() }
+            ?.toHttpsImageUrl()
+            ?: return null
         return ReaderBlock.Illustration(
             url = src,
             width = attributes.attribute("img-width")?.toIntOrNull() ?: attributes.attribute("width")?.toIntOrNull(),
@@ -80,6 +85,13 @@ internal object ReaderContentParser {
             .find(this)
             ?.groupValues
             ?.get(1)
+
+    private fun String.toHttpsImageUrl(): String? = when {
+        startsWith("https://", ignoreCase = true) -> this
+        startsWith("http://", ignoreCase = true) -> "https://${substringAfter("//")}"
+        startsWith("//") -> "https:$this"
+        else -> null
+    }
 
     private fun String.decodeHtmlEntities(): String {
         var value = this

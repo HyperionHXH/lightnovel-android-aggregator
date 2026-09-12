@@ -19,13 +19,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -42,14 +43,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import coil.compose.SubcomposeAsyncImage
 import io.github.jiangyuyi.lightnovel.LightNovelApplication
 import io.github.jiangyuyi.lightnovel.core.model.ReaderImageScale
 import kotlinx.coroutines.launch
 
-/** Shared reader image preview. The overlay itself remains dismissible outside the image. */
+/** Shared reader image preview. The dialog is dismissed with the close button or system back. */
 @Composable
 fun ReaderImagePreview(
     url: String,
@@ -63,7 +68,9 @@ fun ReaderImagePreview(
     SubcomposeAsyncImage(
         model = url,
         contentDescription = contentDescription,
-        modifier = modifier.clickable { zoomed = true },
+        modifier = modifier
+            .clickable { zoomed = true }
+            .testTag("reader-image-inline"),
         contentScale = imageScale.contentScale(),
         loading = {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -140,33 +147,67 @@ private fun ReaderImageDialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .testTag("reader-image-dialog"),
+        ) {
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(8.dp)
+                    .zIndex(2f)
+                    .testTag("reader-image-close"),
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = "关闭图片", tint = Color.White)
+            }
             Box(
-                Modifier.fillMaxSize().clickable {
-                    message = null
-                    onDismiss()
-                },
+                Modifier
+                    .fillMaxSize()
+                    .padding(top = 56.dp, bottom = 72.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                SubcomposeAsyncImage(
-                    model = url,
-                    contentDescription = contentDescription,
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .fillMaxHeight(0.82f)
-                        .align(Alignment.Center)
+                        .fillMaxHeight()
                         .padding(16.dp)
                         .combinedClickable(
-                        onClick = {},
-                        onLongClick = { actionVisible = true },
-                    ),
-                    contentScale = imageScale.contentScale(),
-                    loading = { CircularProgressIndicator(color = Color.White) },
-                )
+                            onClick = {},
+                            onLongClick = { actionVisible = true },
+                            onLongClickLabel = "显示图片操作",
+                        )
+                        .semantics {
+                            onLongClick(label = "显示图片操作") {
+                                actionVisible = true
+                                true
+                            }
+                        }
+                        .testTag("reader-image-dialog-image"),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    SubcomposeAsyncImage(
+                        model = url,
+                        contentDescription = contentDescription,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = imageScale.contentScale(),
+                        loading = { CircularProgressIndicator(color = Color.White) },
+                    )
+                }
             }
             if (actionVisible || saving || message != null) {
                 Surface(
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding(),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        // Dialog windows can report zero navigation-bar insets on OEMs;
+                        // reserve a stable gesture/navigation clearance explicitly.
+                        .padding(bottom = 56.dp)
+                        .zIndex(3f)
+                        .testTag("reader-image-actions"),
                     color = Color(0xEE202124),
                     tonalElevation = 6.dp,
                 ) {
@@ -181,8 +222,14 @@ private fun ReaderImageDialog(
                             modifier = Modifier.weight(1f),
                         )
                         if (!saving && message == null) {
-                            IconButton(onClick = requestSave) {
-                                Icon(Icons.Filled.Download, contentDescription = "保存到相册", tint = Color.White)
+                            Button(
+                                onClick = requestSave,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("reader-image-save"),
+                            ) {
+                                Icon(Icons.Filled.Download, contentDescription = null, tint = Color.White)
+                                Text("保存到相册", modifier = Modifier.padding(start = 6.dp))
                             }
                         }
                         IconButton(onClick = { message = null; actionVisible = false }) {
@@ -203,16 +250,19 @@ suspend fun saveReaderImage(context: Context, url: String): Result<Unit> = runCa
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     check(bounds.outWidth > 0 && bounds.outHeight > 0) { "图片格式无法识别" }
     val resolver = context.contentResolver
-    val extension = when {
-        bytes.size >= 4 && bytes.copyOfRange(0, 4).contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)) -> "png"
-        bytes.size >= 2 && bytes.copyOfRange(0, 2).contentEquals(byteArrayOf(0xff.toByte(), 0xd8.toByte())) -> "jpg"
+    val (extension, mimeType) = when {
+        bytes.size >= 4 && bytes.copyOfRange(0, 4).contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47)) ->
+            "png" to "image/png"
+        bytes.size >= 2 && bytes.copyOfRange(0, 2).contentEquals(byteArrayOf(0xff.toByte(), 0xd8.toByte())) ->
+            "jpg" to "image/jpeg"
         bytes.size >= 12 && bytes.copyOfRange(0, 4).contentEquals(byteArrayOf(0x52, 0x49, 0x46, 0x46)) &&
-            bytes.copyOfRange(8, 12).contentEquals(byteArrayOf(0x57, 0x45, 0x42, 0x50)) -> "webp"
-        else -> "jpg"
+            bytes.copyOfRange(8, 12).contentEquals(byteArrayOf(0x57, 0x45, 0x42, 0x50)) ->
+            "webp" to "image/webp"
+        else -> "jpg" to "image/jpeg"
     }
     val values = ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, "Mixn_${System.currentTimeMillis()}.$extension")
-        put(MediaStore.Images.Media.MIME_TYPE, "image/$extension")
+        put(MediaStore.Images.Media.MIME_TYPE, mimeType)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Mixn")
             put(MediaStore.Images.Media.IS_PENDING, 1)
