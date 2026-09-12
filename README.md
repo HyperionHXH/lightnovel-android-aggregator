@@ -2,47 +2,72 @@
   <img src="docs/mixn-icon.png" width="112" alt="Mixn 图标">
 </p>
 
-# Mixn Android
+# Mixn
 
-> 当前本地分支是轻之国度与轻书架双源聚合阅读器的开发预览版，已经接通双源独立发现、聚合搜索、统一书架（全部/已下载）、双源账号、通用详情/目录/正文、聚合阅读历史、来源更新快照、下拉刷新、离线下载、EPUB/TXT 导出和来源签到。轻之国度的浏览赚轻币需要官方阅读计时接口，Mixn 不伪造计时，因此不展示该任务。实施范围、接口边界和阶段进度见 [双源聚合开发大纲](docs/AGGREGATOR_PLAN.md) 与 [来源适配器 ADR](docs/adr/0001-built-in-source-adapters.md)。
+Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK）与轻书架（LNS）两个来源。它把发现、搜索、书架、阅读进度和离线导出放在一个应用中，同时保持两站的登录态、接口协议和错误相互隔离。
 
-轻之国度（`lightnovel.fun`）的非官方 Android 客户端。项目基于 2026-08-06 实测的站点 Web BFF/API 实现，使用 Kotlin、Jetpack Compose 和 Material 3。
+当前稳定发布版本：**1.17.0**
 
-[项目仓库与构建产物](https://github.com/HyperionHXH/lightnovel-android-aggregator)
+- Android Release：[v1.17.0](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.17.0)
+- Android APK：[Mixn-1.17.0.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.17.0/Mixn-1.17.0.apk)
+- Windows 桌面端：随源码构建，仍属于预览版
 
-> 本项目仅用于学习与个人使用，不隶属于轻之国度。请遵守站点规则和内容版权要求，不要批量抓取、分发或商业使用站点内容。
+> 本项目是非官方客户端，不隶属于轻之国度或轻书架。请遵守两个站点的服务条款和内容版权要求，不要批量抓取、分发或商业使用站点内容。
 
-## 已实现
+## 当前功能
 
-- 用户名/邮箱密码登录、邮箱验证码注册、会话恢复与退出。
-- 热门、排行、新书、原创、同人、EPUB、最近更新分区。
-- 搜索分类、标签筛选和书籍跳转。
-- 书籍详情、同书其他版本、分卷和章节目录。
-- 登录后加入/移出书架、我的书架。
-- 登录用户个人概览：头像、UID、用户组、轻币、关注/粉丝/发布统计。
-- 关注与粉丝列表、关系状态、分页加载及带确认的关注切换。
-- 云端阅读记录、续读跳转和带确认的单条删除。
-- 发布管理：作品状态、审核进度、卷章/字数和公开详情跳转。
-- 消息中心：私信、回复、@我、点赞、新粉丝、系统六类通知、未读徽标、分类分页与显式标为已读。
-- 私信会话与只读消息线程；本版本不会自动标记已读，也不会发送私信。
-- 正文阅读、上一章/下一章、目录返回、阅读进度保存。
-- 两级内容缓存与稳定后台刷新：页面往返优先显示已有内容，刷新不清空列表；在线读过的章节正文可离线打开。
-- 默认按屏幕自动排版并左右翻页，支持点击左右区域或横向滑动；也可切回上下滚动。
-- 按原站 `body_html` 解析正文插图，将 `[res]...[/res]` 对应为真实图片并按正文顺序展示。
-- 无衬线/衬线/等宽字体，14–32sp 字号、行高、页边距和白色/米黄/护眼绿/深色背景。
-- 书籍评论匿名只读展示；评论故障不会影响书籍详情和阅读。
-- Android Keystore 加密保存 `security_key`；不保存密码和验证码。
-- 轻之国度书架在来源提供可信数据时显示账号维度的未读章节数；轻书架没有对应字段时不猜测更新。
-- 书架支持“全部标为已读”本地确认，不会伪造远端阅读记录。
-- 书架更新以 `(sourceId, remoteId)` 区分来源，并在顶部按来源汇总有更新的书籍数量；离线书籍仍独立归入“已下载”。
-- “仅使用 Wi-Fi 下载”属于全局下载策略，已移到“我的 → 设置 → 下载与提醒”，不会出现在书架列表中。
-- “后台更新提醒”默认关闭；启用后需通知权限，WorkManager 每 6 小时检查一次书架，只提醒快照确认后的新增章节。
-- “下载与导出”支持 EPUB 和 UTF-8 TXT；默认保存到应用专用 `offline_library/exports`，选择过下载目录时保存到该目录下的 `Mixn/exports`，系统文件选择器作为兼容回退。EPUB 会尽量包含已下载的封面与正文插图，TXT 对插图使用 `[插图]` 占位。
-- 设置中的“下载目录”支持授权一个文件夹保存离线书库；应用会在其中创建自己的 Mixn 数据子目录，并兼容旧版“诺阅”目录，不申请全盘存储权限。
+### 发现与搜索
 
-网站的独立“合集”分区目前标记为维护中。本客户端按实际可用的数据实现“书籍 → 分卷 → 章节”三级目录，并展示 `alternate_versions`；合集页会显示维护说明，不调用猜测接口。
+- 轻之国度和轻书架分别展示各自的热门、排行、新书和更新频道，不把两个站点强行混成一个榜单。
+- 聚合搜索会并行查询两个来源，逐来源显示结果或错误；搜索不要求登录。
+- 发现和搜索支持触底分页。官网固定榜单在站点没有更多数据时会明确提示，不会重复追加相同书籍。
 
-完整的 API 调研、合集/评论评估、架构与验收计划见 [实施计划](docs/IMPLEMENTATION_PLAN.md)；账户功能和 1.2.0 消息中心设计见 [账户与消息计划](docs/ACCOUNT_AND_MESSAGES_PLAN.md)；1.3.0 缓存策略见 [缓存与稳定刷新计划](docs/CACHE_AND_REFRESH_PLAN.md)。版本变更见 [CHANGELOG](CHANGELOG.md)。
+### 书籍与阅读
+
+- 书籍详情包含简介、标签、同书版本、分卷和章节目录。
+- 统一书架按 `sourceId + remoteId` 区分来源，支持全部书籍、已下载书籍和阅读历史。
+- 在线章节支持分页阅读和上下滚动，可调整字体、字号、行距、边距、背景、点击区域、图片缩放、屏幕方向、音量键翻页、屏幕常亮和进度条。
+- 正文插图支持懒加载、协议相对地址和常见 CDN 地址；放大后长按可保存到相册，退出使用右上角关闭或系统返回。
+- 付费章节按来源接口和账号权限处理。客户端不会绕过锁定、伪造余额或伪造阅读记录。
+
+### 账号与站点功能
+
+- 两个来源独立登录、退出和会话恢复，凭据不会跨站共享。
+- 轻之国度：个人资料、轻币余额、七日签到、关注/粉丝、发布管理、消息中心和作品评论。
+- 轻之国度评论支持最热/最新、分页、星级展示和发表评论；轻书架没有对应评论接口，因此不显示评论入口。
+- 轻书架：个人资料、收藏同步和官方签到。
+- 站点接口或账号权限不可用时，页面会保留来源、认证、超时、权限或内容不存在等具体错误。
+
+### 下载与导出
+
+- 可下载整本或指定分卷的可读章节，锁定章节不会被当作已下载内容。
+- 下载页显示已完成卷数和章节数，并提供失败重试与删除记录。
+- 已下载章节可导出为 UTF-8 TXT 或 EPUB 3；EPUB 会尽量包含封面和正文插图，TXT 使用 `[插图]` 占位。
+- 导出优先写入设置中授权的下载目录；未选择目录时使用应用专用目录 `offline_library/exports`。应用不会扫描或导入本地 EPUB，也不会删除用户原始文件。
+- “仅使用 Wi-Fi 下载”和后台更新提醒属于全局设置，后台提醒默认关闭。
+
+### 字体与外观
+
+- 提供系统字体和可下载字体的独立预览页，下载前后均可对比中文、标点和英文示例。
+- 阅读设置与界面外观设置分开保存；各分组可单独恢复默认值。
+- 主题、界面字号和图标大小可调整。轻书架章节若要求服务端专用字体，会优先使用该字体以避免正文乱码。
+
+## 平台状态
+
+### Android
+
+Android 使用 Kotlin、Jetpack Compose、Material 3，最低支持 Android 8.0（API 26），目标 SDK 35。Android 是功能最完整、主要面向日常使用的客户端。
+
+### Windows
+
+桌面端位于 [`desktopApp`](desktopApp/)，使用 Kotlin/JVM 与 Swing，提供与 Android 相同的三项主导航：发现、书架、我的。当前已支持：
+
+- 双源发现、搜索、详情、目录和正文阅读；
+- 双源账号、会话恢复、书架和阅读历史；
+- 阅读进度、离线章节保存和 EPUB 导出；
+- 宽屏窗口、鼠标/键盘交互以及发现和搜索触底分页。
+
+桌面端仍是预览版，评论、Android 通知/WorkManager、相册保存、音量键和部分移动端阅读设置暂未承诺与 Android 完全一致。详见 [`desktopApp/README.md`](desktopApp/README.md)。
 
 ## 截图
 
@@ -52,144 +77,108 @@
   <img src="docs/screenshots/reader-scroll.png" width="250" alt="上下滚动与护眼背景">
 </p>
 
-## 构建
+## 构建与运行
 
-要求：
+### 环境要求
 
 - JDK 17
-- Android SDK 35
-- 无需安装全局 Gradle
+- Android SDK 35（构建 Android 端）
+- Windows 打包需要 JDK 17+ 的 `jpackage`
+- 不需要全局 Gradle，仓库自带 Gradle Wrapper
 
-Windows：
+### Android
 
-```powershell
-./gradlew.bat testDebugUnitTest lintDebug assembleDebug
-```
-
-Windows 桌面端预览：
+在仓库根目录执行：
 
 ```powershell
-./gradlew.bat :desktopApp:run
-./scripts/package-windows.ps1
+./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon "-Pkotlin.incremental=false"
 ```
 
-桌面端目前是可运行的 Mixn 预览版，包含发现、聚合搜索、统一书架、阅读历史、双源账号、详情/目录/正文、章节进度、离线章节保存、EPUB 导出和设置入口，并已接入轻之国度与轻书架的来源适配器及触底分页。桌面端与 Android 共享三项主导航（发现 / 书架 / 我的）、青绿色主题、来源与榜单标签、横向封面卡片和阅读信息层级，同时保留宽屏网格、鼠标和键盘交互；两端仍按平台分别实现窗口/触控适配以及 Android 独有的 WorkManager 后台任务、通知、社交资料和消息中心。
-
-默认单元测试不访问外网。需要手动运行轻书架匿名 SignalR 冒烟测试时，显式设置环境变量：
-
-```powershell
-$env:RUN_LNS_SMOKE = "true"
-./gradlew.bat testDebugUnitTest --tests "io.github.jiangyuyi.lightnovel.source.lightnovelshelf.LightNovelShelfLiveSmokeTest"
-```
-
-该测试使用内存 Token，只验证未登录服务响应，不读取或修改应用内账号数据；网络不可用时应保持默认跳过。
-
-macOS/Linux：
-
-```bash
-./gradlew testDebugUnitTest lintDebug assembleDebug
-```
-
-仓库优先使用阿里云的 Google Maven、Maven Central 和 Gradle Plugin Portal 镜像，并保留官方源回退。Gradle Wrapper 分发使用腾讯云镜像。若你的网络不能访问该镜像，可把 `gradle/wrapper/gradle-wrapper.properties` 的 `distributionUrl` 改回：
-
-```text
-https://services.gradle.org/distributions/gradle-8.9-bin.zip
-```
-
-Debug APK 生成于：
+Debug APK：
 
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
+### Windows 桌面端
+
+```powershell
+./gradlew.bat :desktopApp:run
+./gradlew.bat :desktopApp:installDist
+./scripts/package-windows.ps1
+```
+
+`installDist` 输出到 `desktopApp/build/install/Mixn`；`package-windows.ps1` 会尝试生成 `desktopApp/build/windows/Mixn/Mixn` app-image。桌面端的详细说明、限制和接口边界见 [`desktopApp/README.md`](desktopApp/README.md)。
+
 ### Release 签名
 
-Release 构建强制要求签名，避免误发布未签名 APK。Windows 首次配置时运行：
+Release APK 必须使用本地 Android Keystore 签名。首次配置可运行：
 
 ```powershell
 ./scripts/setup-release-signing.ps1
 ```
 
-脚本会在本机安全提示中读取签名密码，生成 `.signing/lightnovel-release.jks` 和 `signing.properties`，并通过已登录的 GitHub CLI 写入仓库 Actions Secrets。密码、私钥和本地签名配置均被 `.gitignore` 排除，不会提交到 Git。
+签名密钥、密码、`signing.properties` 和本地账号信息均不应提交到 Git。丢失同一签名密钥后，无法覆盖安装后续版本。
 
-请把 `.signing/lightnovel-release.jks` 与 `signing.properties` 离线备份；丢失签名密钥后将无法用相同应用 ID 发布可覆盖安装的更新。配置完成后可构建：
+推送 `v*` 标签会触发 [Android Release 工作流](.github/workflows/release.yml)，执行测试、Lint、签名构建、`apksigner` 校验并上传 APK 与 SHA-256 文件。普通文档修改不需要单独创建 Release。
 
-```powershell
-./gradlew.bat testDebugUnitTest lintDebug assembleRelease
-```
+## 测试
 
-已签名 APK 生成于：
-
-```text
-app/build/outputs/apk/release/app-release.apk
-```
-
-### GitHub Release
-
-`.github/workflows/release.yml` 会在推送 `v*` 标签时执行测试、Lint、签名构建、`apksigner` 验证，并发布 APK 与 SHA-256 校验文件：
+默认测试使用固定响应，不访问真实账号或外网。完整本地回归命令：
 
 ```powershell
-git tag v1.3.0
-git push origin v1.3.0
+./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :desktopApp:test --no-daemon "-Pkotlin.incremental=false"
 ```
 
-也可以在 GitHub Actions 页面手动运行 `Android Release` 并填写版本标签。
+轻书架匿名 SignalR 冒烟测试需要显式开启，网络不可用时保持跳过：
 
-## 当前验证结果
+```powershell
+$env:RUN_LNS_SMOKE = "true"
+./gradlew.bat :app:testDebugUnitTest --tests "io.github.jiangyuyi.lightnovel.source.lightnovelshelf.LightNovelShelfLiveSmokeTest"
+```
 
-- `testDebugUnitTest`：通过，包含认证错误提示、正文插图、账户资料、用户关系、阅读记录、发布作品、消息通知和私信解析。
-- `lintDebug`：通过。
-- `assembleDebug`：通过。
-- `assembleRelease`：使用独立 Release 密钥签名，并通过 `apksigner verify`。
-- 小米 Android 16 真机已验证：首页/分区、图片加载、书籍详情、分卷章节、分页正文、点击/滑动翻页、上下滚动兼容模式、字体字号与背景设置、用户手动登录、进程重启后的会话恢复、书架、个人概览、3 个关注、0 粉丝空状态、多条阅读记录及 0 个发布作品空状态。
-- 1.2.0 消息中心真机验证：六类入口均可用；回复、@我、点赞、新粉丝正确显示空状态；系统通知加载 3 条历史记录；现有私信会话与只读线程成功加载。测试未执行标为已读或发送操作。
-- 1.3.0 缓存真机验证：覆盖安装保留登录态；发现页和书架在进程重启后直接恢复缓存；书架后台刷新时旧列表保持可见；关闭 Wi-Fi/移动数据后仍可经缓存详情进入已读章节并显示完整 27 页正文。
-- 密码由用户在手机上手动输入；测试过程未读取、记录或保存密码。临时加入的测试书籍已移出，书架恢复原状。
+最近的 Android 真机/AVD 验证覆盖发现、双源搜索、登录态恢复、书架、详情/目录、分页与滚动阅读、正文图片、字体设置、缓存恢复、下载和 EPUB/TXT 导出。真实账号相关功能仍应由使用者自行确认，因为站点接口、登录态和付费权限会变化。
 
-## API 与隐私
+## 隐私、数据和已知限制
 
-应用只使用 HTTPS：
-
-- Web BFF：`https://www.lightnovel.fun/api/pc-proxy/`
-- 评论读取：`https://api.lightnovel.fun/pc-comment-proxy/`
-
-站点没有为本项目提供稳定 SDK，因此 API 可能变化。API 与站点图片统一使用嵌入式 Cronet，优先建立 HTTP/3/QUIC 连接；遇到大陆网络上的可重试连接重置时会重建引擎并轮换备用 CDN 边缘地址。网络层同时集中处理响应信封、历史字段兼容和错误映射。Debug/Release 均不会记录密码、验证码或 `security_key`。
-
-正文只缓存在当前设备供连续阅读，不随 Git 提交。整本导出仅针对已下载且未锁定的章节，EPUB/TXT 文件写入下载目录。章节正文默认缓存 7 天，并与其他磁盘内容共同受 96 MiB LRU 上限约束。游客阅读设置和位置保存在 DataStore；登录用户的书架、阅读进度和阅读设置会按站点 API 同步。密码、验证码和 `security_key` 不进入内容缓存，退出登录会清理按 UID 隔离的私有缓存。
+- 应用只请求完成对应功能所需的网络、通知和相册写入权限，不申请全盘存储权限。
+- 密码、验证码和 `security_key` 不写入正文缓存、日志或崩溃报告；会话使用 Android Keystore 保护。退出登录会清理对应账号的私有缓存。
+- 正文、封面和插图缓存只保留在当前设备，不会随 Git 或项目发布；导出文件由用户选择的目录保存。
+- LK 的“浏览赚轻币”依赖官方客户端计时/心跳接口，当前没有可确认的公开合法接口，因此 Mixn 不伪造阅读时长，也不接入广告任务。
+- 轻书架正文可能依赖站点下发的专用字体；字体或接口变化时会显示来源错误，而不是展示混淆文本。
+- 网站接口、SignalR 协议、CDN 和榜单数据可能随时变化。来源适配器和错误处理集中在对应模块，遇到接口变更请优先提交可复现信息。
+- 项目不包含本地 EPUB/TXT 导入或本地书库阅读功能；离线能力仅针对 Mixn 下载的在线章节及其导出。
 
 ## 工程结构
 
 ```text
 app/src/main/java/io/github/jiangyuyi/lightnovel/
-├─ core/
-│  ├─ data/          Repository
-│  ├─ cache/         内存/SQLite 两级缓存、TTL 与 LRU
-│  ├─ model/         书籍、分卷、章节、评论与阅读设置
-│  ├─ network/       Cronet/QUIC、API 解包与兼容解析
-│  ├─ preferences/   阅读偏好和本地进度
-│  ├─ session/       Keystore 加密会话
-│  └─ ui/            主题与通用组件
-└─ feature/
-   ├─ auth/
-   ├─ book/
-   ├─ bookshelf/
-   ├─ discover/
-   ├─ account/       关注、粉丝、阅读记录与发布管理
-   ├─ messages/      六类消息、私信会话与只读线程
-   ├─ profile/
-   ├─ reader/
-   └─ search/
+├─ core/       统一模型、来源契约、网络、缓存、会话、离线和阅读设置
+├─ feature/    发现、搜索、书架、详情、阅读、账号、消息、字体和设置页面
+└─ source/     轻之国度与轻书架的内置来源适配器
+desktopApp/    Kotlin/JVM + Swing 桌面端和独立来源适配器
+docs/          聚合方案、ADR、测试/交接记录和截图
 ```
 
-## 已知限制
+## 贡献与反馈
 
-- 站点接口可能临时返回 5xx，页面提供错误提示和重试。
-- 独立合集频道维护中；当前实现以分卷和同书版本覆盖实际阅读结构。
-- 评论为只读，发布、回复、点赞、图片上传和举报未实现。
-- EPUB 频道可以浏览；整本导出仅针对用户已下载且未锁定的章节。EPUB 尽量嵌入封面和正文插图，TXT 使用纯文本并以 `[插图]` 标记图片位置。
-- 发布管理当前为只读作品状态视图，完整作者编辑工作台尚未接入。
-- 私信发送、通知内回复、动态、发帖尚未接入；消息中心与只读私信已在 1.2.0 实现。
+请在 [GitHub Issues](https://github.com/HyperionHXH/lightnovel-android-aggregator/issues) 提交问题，附上：
+
+- 平台、系统版本和 Mixn 版本；
+- 来源（轻之国度/轻书架）、页面和复现步骤；
+- 是否登录、是否使用缓存或离线模式；
+- 脱敏后的错误文案、截图或测试响应。
+
+不要在 Issue、日志或提交中粘贴密码、Token、`security_key`、签名密码或付费内容。
+
+项目状态、架构决策和后续交接记录：
+
+- [`CONTEXT.md`](CONTEXT.md)
+- [`双源聚合开发大纲`](docs/AGGREGATOR_PLAN.md)
+- [`来源适配器 ADR`](docs/adr/0001-built-in-source-adapters.md)
+- [`AI 交接记录`](docs/AI_HANDOFF.md)
+- [`CHANGELOG.md`](CHANGELOG.md)
 
 ## 许可证
 
-客户端源代码使用 [MIT License](LICENSE)。站点内容、书籍正文、插图及轻之国度相关商标不因本许可证而改变其原有权利归属。
+客户端源代码使用 [MIT License](LICENSE)。站点内容、书籍正文、插图和轻之国度/轻书架相关商标不因本许可证改变其原有权利归属。
