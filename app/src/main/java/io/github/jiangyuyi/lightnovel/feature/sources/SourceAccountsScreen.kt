@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -25,8 +25,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -52,7 +50,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.source.AccountIdentifierKind
 import io.github.jiangyuyi.lightnovel.core.source.RewardCenter
-import io.github.jiangyuyi.lightnovel.core.source.RewardTask
 import android.content.Intent
 import android.net.Uri
 import coil.compose.AsyncImage
@@ -64,7 +61,6 @@ fun SourceAccountsScreen(
     viewModel: SourceAccountsViewModel,
     onBack: () -> Unit,
     focusSourceId: String? = null,
-    onDiscover: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val visibleAccounts = state.accounts.filter { focusSourceId == null || it.descriptor.id == focusSourceId }
@@ -101,10 +97,7 @@ fun SourceAccountsScreen(
                 },
                 onLogout = { viewModel.logout(account.descriptor.id) },
                 onReward = { viewModel.claimDailyReward(account.descriptor.id) },
-                onRewardTask = { task -> viewModel.claimRewardTask(account.descriptor.id, task) },
-                onEarnCoin = { viewModel.claimEarnCoin(account.descriptor.id) },
                 onRetry = { viewModel.refresh(account.descriptor.id) },
-                onDiscover = onDiscover,
             )
         }
     }
@@ -116,10 +109,7 @@ private fun SourceAccountCard(
     onLogin: (String, String) -> Unit,
     onLogout: () -> Unit,
     onReward: () -> Unit,
-    onRewardTask: (RewardTask) -> Unit,
-    onEarnCoin: () -> Unit,
     onRetry: () -> Unit,
-    onDiscover: () -> Unit,
 ) {
     var identifier by remember(account.descriptor.id) { mutableStateOf("") }
     var password by remember(account.descriptor.id) { mutableStateOf("") }
@@ -220,9 +210,6 @@ private fun SourceAccountCard(
                         actionKey = account.rewardActionKey,
                         loading = account.rewardLoading,
                         onSign = onReward,
-                        onRewardTask = onRewardTask,
-                        onEarnCoin = onEarnCoin,
-                        onDiscover = onDiscover,
                     )
                 } ?: account.rewardStatus?.let { reward ->
                     val details = listOfNotNull(
@@ -356,11 +343,7 @@ private fun RewardCenterContent(
     actionKey: String?,
     loading: Boolean,
     onSign: () -> Unit,
-    onRewardTask: (RewardTask) -> Unit,
-    onEarnCoin: () -> Unit,
-    onDiscover: () -> Unit,
 ) {
-    HorizontalDivider()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(center.signTitle, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         if (center.signSubtitle.isNotBlank()) {
@@ -396,107 +379,6 @@ private fun RewardCenterContent(
         ) {
             if (actionKey == "sign") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
             else Text(if (center.claimed) "今日已签到" else if (center.claimable) "领取今日签到" else "暂不可签到")
-        }
-
-        center.earning?.let { earning ->
-            val guidance = rewardTaskGuidance(
-                earning.taskKey,
-                earning.title,
-                earning.subtitle,
-                claimed = earning.claimed,
-            )
-            HorizontalDivider()
-            Text(earning.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text(earning.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(guidance.instruction, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            if (earning.totalProgress > 0) {
-                LinearProgressIndicator(
-                    progress = { earning.progress.toFloat() / earning.totalProgress.coerceAtLeast(1) },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    earning.progressText.ifBlank { "${earning.progress} / ${earning.totalProgress}" },
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                val canNavigate = !earning.claimed && !earning.claimable && guidance.destination == RewardTaskDestination.DISCOVER
-                TextButton(
-                    onClick = { if (earning.claimable) onEarnCoin() else onDiscover() },
-                    enabled = (earning.claimable || canNavigate) && actionKey == null,
-                ) {
-                    if (actionKey == "earning") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Text(
-                        when {
-                            earning.claimed -> "已领取"
-                            earning.claimable -> "领取 ${earning.rewardAmount} 轻币"
-                            canNavigate -> "去发现"
-                            guidance.destination == RewardTaskDestination.OFFICIAL_CLIENT -> "官方客户端完成"
-                            else -> "未完成"
-                        },
-                    )
-                }
-            }
-        }
-
-        val supportedTasks = center.tasks.filter { task ->
-            task.available && listOf("广告", "看视频", "观看视频", "激励").none { keyword ->
-                task.title.contains(keyword) || task.subtitle.contains(keyword)
-            } && !task.key.contains("ad", ignoreCase = true)
-        }
-        if (supportedTasks.isNotEmpty()) {
-            HorizontalDivider()
-            Text("轻币任务", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            supportedTasks.forEach { task ->
-                val guidance = task.completionGuidance()
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(task.title, fontWeight = FontWeight.Medium)
-                            if (task.subtitle.isNotBlank()) {
-                                Text(task.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text(
-                                guidance.instruction,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                            if (task.totalProgress > 0) {
-                                Text("进度 ${task.progress}/${task.totalProgress} · 奖励 ${task.rewardAmount} 轻币", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                        TextButton(
-                            onClick = {
-                                if (task.claimable) onRewardTask(task) else onDiscover()
-                            },
-                            enabled = (
-                                task.claimable ||
-                                    (!task.claimed && guidance.destination == RewardTaskDestination.DISCOVER)
-                                ) && actionKey == null,
-                        ) {
-                            if (actionKey == "task:${task.key}") CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            else Text(
-                                when {
-                                    task.claimed -> "已领取"
-                                    task.claimable -> task.buttonText.ifBlank { "领取" }
-                                    guidance.destination == RewardTaskDestination.DISCOVER -> "去发现"
-                                    guidance.destination == RewardTaskDestination.OFFICIAL_CLIENT -> "官方客户端完成"
-                                    else -> "未完成"
-                                },
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }

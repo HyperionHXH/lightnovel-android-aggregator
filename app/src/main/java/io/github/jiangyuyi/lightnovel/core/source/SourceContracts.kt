@@ -72,8 +72,6 @@ interface RewardProvider : SourceProvider {
 
 interface RewardCenterProvider : RewardProvider {
     suspend fun getRewardCenter(): RewardCenter
-    suspend fun claimRewardTask(taskId: Long, taskKey: String): RewardResult
-    suspend fun claimEarnCoin(taskKey: String): RewardResult
 }
 
 interface CommentProvider : SourceProvider {

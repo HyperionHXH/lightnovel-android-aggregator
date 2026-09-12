@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -95,9 +96,8 @@ private fun ReaderImageDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // Keep the action bar visible in the zoomed state. A long-press still reveals it
-    // after it has been dismissed, but download is never hidden behind an invisible gesture.
-    var actionVisible by remember { mutableStateOf(true) }
+    // The preview starts clean; long-pressing the image is the explicit action affordance.
+    var actionVisible by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var pendingSave by remember { mutableStateOf(false) }
@@ -143,19 +143,20 @@ private fun ReaderImageDialog(
         Box(Modifier.fillMaxSize().background(Color.Black)) {
             Box(
                 Modifier.fillMaxSize().clickable {
-                    if (actionVisible) {
-                        actionVisible = false
-                        message = null
-                    } else {
-                        onDismiss()
-                    }
+                    message = null
+                    onDismiss()
                 },
                 contentAlignment = Alignment.Center,
             ) {
                 SubcomposeAsyncImage(
                     model = url,
                     contentDescription = contentDescription,
-                    modifier = Modifier.fillMaxSize().padding(16.dp).combinedClickable(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.82f)
+                        .align(Alignment.Center)
+                        .padding(16.dp)
+                        .combinedClickable(
                         onClick = {},
                         onLongClick = { actionVisible = true },
                     ),

@@ -240,34 +240,6 @@ data class RewardDay(
 )
 
 @Serializable
-data class RewardTask(
-    val id: Long,
-    val key: String,
-    val title: String,
-    val subtitle: String = "",
-    val rewardAmount: Long = 0,
-    val claimed: Boolean = false,
-    val claimable: Boolean = false,
-    val progress: Int = 0,
-    val totalProgress: Int = 0,
-    val buttonText: String = "",
-    val available: Boolean = true,
-)
-
-@Serializable
-data class EarnCoinStatus(
-    val title: String,
-    val subtitle: String = "",
-    val progress: Int = 0,
-    val totalProgress: Int = 0,
-    val progressText: String = "",
-    val rewardAmount: Long = 0,
-    val claimed: Boolean = false,
-    val claimable: Boolean = false,
-    val taskKey: String = "",
-)
-
-@Serializable
 data class RewardCenter(
     val signTitle: String,
     val signSubtitle: String = "",
@@ -277,6 +249,4 @@ data class RewardCenter(
     val claimed: Boolean = false,
     val claimable: Boolean = false,
     val days: List<RewardDay> = emptyList(),
-    val earning: EarnCoinStatus? = null,
-    val tasks: List<RewardTask> = emptyList(),
 )

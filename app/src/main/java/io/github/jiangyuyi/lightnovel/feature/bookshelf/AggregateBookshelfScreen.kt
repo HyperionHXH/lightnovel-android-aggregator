@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -53,6 +54,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 
+private enum class ExportFormat(val extension: String, val mimeType: String, val label: String) {
+    EPUB("epub", "application/epub+zip", "EPUB"),
+    TXT("txt", "text/plain", "TXT"),
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AggregateBookshelfScreen(
@@ -76,26 +82,74 @@ fun AggregateBookshelfScreen(
     var exportJob by remember { mutableStateOf<Job?>(null) }
     val context = LocalContext.current
     val exportScope = rememberCoroutineScope()
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/epub+zip"),
+    fun runUriExport(uri: android.net.Uri, record: OfflineBookRecord, format: ExportFormat) {
+        exportJob = exportScope.launch {
+            try {
+                exportProgress = 0 to record.chapters.count { !it.locked && it.key.remoteId in record.downloadedChapterIds }
+                val exportedChapters = context.contentResolver.openOutputStream(uri)?.use { output ->
+                    when (format) {
+                        ExportFormat.EPUB -> viewModel.exportEpub(record, output) { progress ->
+                            exportProgress = progress.completed to progress.total
+                        }?.exportedChapters ?: 0
+                        ExportFormat.TXT -> viewModel.exportTxt(record, output) { progress ->
+                            exportProgress = progress.completed to progress.total
+                        }?.exportedChapters ?: 0
+                    }
+                } ?: error("无法打开导出位置")
+                exportMessage = "已导出 $exportedChapters 章 ${format.label}"
+            } catch (_: CancellationException) {
+                exportMessage = "已取消 ${format.label} 导出"
+            } catch (error: Throwable) {
+                exportMessage = error.message.orEmpty().ifBlank { "${format.label} 导出失败" }
+            } finally {
+                exportProgress = null
+                exportJob = null
+            }
+        }
+    }
+    val exportEpubLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(ExportFormat.EPUB.mimeType),
     ) { uri ->
         val record = exportTarget
         exportTarget = null
         if (uri == null || record == null) return@rememberLauncherForActivityResult
+        runUriExport(uri, record, ExportFormat.EPUB)
+    }
+    val exportTxtLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument(ExportFormat.TXT.mimeType),
+    ) { uri ->
+        val record = exportTarget
+        exportTarget = null
+        if (uri == null || record == null) return@rememberLauncherForActivityResult
+        runUriExport(uri, record, ExportFormat.TXT)
+    }
+
+    fun startExport(record: OfflineBookRecord, format: ExportFormat) {
+        if (exportJob != null) return
         exportJob = exportScope.launch {
             try {
                 exportProgress = 0 to record.chapters.count { !it.locked && it.key.remoteId in record.downloadedChapterIds }
-                val result =
-                context.contentResolver.openOutputStream(uri)?.use { output ->
-                    viewModel.exportEpub(record, output) { progress ->
+                val result = when (format) {
+                    ExportFormat.EPUB -> viewModel.exportEpubToDownloadDirectory(record) { progress ->
                         exportProgress = progress.completed to progress.total
                     }
-                } ?: error("无法打开导出位置")
-                exportMessage = "已导出 ${result?.exportedChapters ?: 0} 章"
+                    ExportFormat.TXT -> viewModel.exportTxtToDownloadDirectory(record) { progress ->
+                        exportProgress = progress.completed to progress.total
+                    }
+                }
+                if (result == null) {
+                    exportTarget = record
+                    when (format) {
+                        ExportFormat.EPUB -> exportEpubLauncher.launch(epubFileName(record))
+                        ExportFormat.TXT -> exportTxtLauncher.launch(txtFileName(record))
+                    }
+                } else {
+                    exportMessage = "已保存 ${result.fileName}（${result.exportedChapters} 章）"
+                }
             } catch (_: CancellationException) {
-                exportMessage = "已取消 EPUB 导出"
+                exportMessage = "已取消 ${format.label} 导出"
             } catch (error: Throwable) {
-                exportMessage = error.message.orEmpty().ifBlank { "EPUB 导出失败" }
+                exportMessage = error.message.orEmpty().ifBlank { "${format.label} 导出失败" }
             } finally {
                 exportProgress = null
                 exportJob = null
@@ -139,6 +193,15 @@ fun AggregateBookshelfScreen(
                         text = { Text("已下载") },
                     )
                 }
+            }
+            if (title == "下载与导出") {
+                val directory = viewModel.downloadDirectory.collectAsStateWithLifecycle().value
+                Text(
+                    "保存位置：${downloadDirectoryLabel(directory)}",
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         exportMessage?.let { message ->
@@ -242,10 +305,8 @@ fun AggregateBookshelfScreen(
                     onOpen = { onBook(record.novel.key) },
                     onRetry = { viewModel.retryDownload(record) },
                     onDelete = { deleteTarget = record },
-                    onExport = {
-                        exportTarget = record
-                        exportLauncher.launch(epubFileName(record))
-                    },
+                    onExportEpub = { startExport(record, ExportFormat.EPUB) },
+                    onExportTxt = { startExport(record, ExportFormat.TXT) },
                 )
             }
             state.sourceOptions.isEmpty() -> item { EmptyPane("没有支持书架的在线来源") }
@@ -297,7 +358,8 @@ private fun OfflineDownloadItem(
     onOpen: () -> Unit,
     onRetry: () -> Unit,
     onDelete: () -> Unit,
-    onExport: () -> Unit,
+    onExportEpub: () -> Unit,
+    onExportTxt: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SourceNovelCard(
@@ -338,8 +400,11 @@ private fun OfflineDownloadItem(
                 }
             }
             if (record.status == OfflineDownloadStatus.COMPLETE) {
-                IconButton(onClick = onExport) {
+                IconButton(onClick = onExportEpub) {
                     Icon(painterResource(R.drawable.ic_file_download), contentDescription = "导出 EPUB")
+                }
+                IconButton(onClick = onExportTxt) {
+                    Icon(Icons.Filled.Download, contentDescription = "导出 TXT")
                 }
             }
             IconButton(onClick = onDelete) {
@@ -351,6 +416,17 @@ private fun OfflineDownloadItem(
 
 private fun epubFileName(record: OfflineBookRecord): String =
     record.novel.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "novel" } + ".epub"
+
+private fun txtFileName(record: OfflineBookRecord): String =
+    record.novel.title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "novel" } + ".txt"
+
+private fun downloadDirectoryLabel(value: String?): String = value?.let { uri ->
+    val name = android.net.Uri.parse(uri).lastPathSegment
+        ?.substringAfterLast(':')
+        ?.substringAfterLast('/')
+        ?.takeIf(String::isNotBlank)
+    "自定义文件夹${name?.let { " · $it" }.orEmpty()}"
+} ?: "应用专用目录 · 应用数据/offline_library"
 
 private fun offlineStatusLabel(record: OfflineBookRecord): String = when (record.status) {
     OfflineDownloadStatus.QUEUED -> "等待下载"

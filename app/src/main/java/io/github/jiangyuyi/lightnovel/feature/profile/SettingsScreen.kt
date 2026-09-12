@@ -119,7 +119,7 @@ fun SettingsScreen(
     SettingsScreenContent(
         wifiOnly = wifiOnly,
         downloadDirectoryLabel = downloadDirectory?.let { downloadDirectoryName(context, it) }
-            ?: "应用专用目录",
+            ?: defaultDownloadDirectoryLabel(),
         backgroundUpdatesEnabled = backgroundUpdatesEnabled,
         readerPreferences = reader,
         appPreferences = app,
@@ -510,7 +510,7 @@ private fun <T> ChipRow(
 @Composable
 internal fun DownloadSettingsSection(
     wifiOnly: Boolean,
-    downloadDirectoryLabel: String = "应用专用目录",
+    downloadDirectoryLabel: String = defaultDownloadDirectoryLabel(),
     onWifiOnlyChange: (Boolean) -> Unit,
     onChooseDownloadDirectory: () -> Unit = {},
     onResetDownloadDirectory: () -> Unit = {},
@@ -545,7 +545,7 @@ internal fun DownloadSettingsSection(
                 IconButton(onClick = onChooseDownloadDirectory) {
                     Icon(painterResource(R.drawable.ic_folder_open), contentDescription = "选择下载目录")
                 }
-                if (downloadDirectoryLabel != "应用专用目录") {
+                if (!downloadDirectoryLabel.startsWith("应用专用目录")) {
                     IconButton(onClick = onResetDownloadDirectory) {
                         Icon(Icons.Default.Refresh, contentDescription = "恢复应用专用目录")
                     }
@@ -604,3 +604,5 @@ private fun downloadDirectoryName(context: android.content.Context, value: Strin
     runCatching {
         DocumentFile.fromTreeUri(context, Uri.parse(value))?.name
     }.getOrNull()?.takeIf(String::isNotBlank) ?: "已选择的文件夹"
+
+private fun defaultDownloadDirectoryLabel(): String = "应用专用目录 · 应用数据/offline_library"

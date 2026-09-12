@@ -165,7 +165,7 @@ private fun LightNovelAppRoot() {
                     scope.launch { container.readerPreferences.update(value) }
                 },
                 downloadDirectoryLabel = if (downloadDirectory == null) {
-                    "未选择（应用专用目录）"
+                    "应用专用目录 · 应用数据/offline_library"
                 } else {
                     "已选择自定义文件夹"
                 },
@@ -392,7 +392,6 @@ private fun LightNovelApp() {
                 SourceAccountsScreen(
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
-                    onDiscover = { navController.openRoot(Routes.DISCOVER) },
                 )
             }
             composable(
@@ -408,7 +407,6 @@ private fun LightNovelApp() {
                     viewModel = vm,
                     onBack = { navController.popBackStack() },
                     focusSourceId = sourceId,
-                    onDiscover = { navController.openRoot(Routes.DISCOVER) },
                 )
             }
             composable(

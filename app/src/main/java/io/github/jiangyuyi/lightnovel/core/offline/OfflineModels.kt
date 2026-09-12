@@ -9,6 +9,8 @@ import io.github.jiangyuyi.lightnovel.core.source.VolumeKey
 import io.github.jiangyuyi.lightnovel.core.source.VolumeSummary
 import io.github.jiangyuyi.lightnovel.core.epub.EpubExportResult
 import io.github.jiangyuyi.lightnovel.core.epub.EpubExportProgress
+import io.github.jiangyuyi.lightnovel.core.txt.TxtExportProgress
+import io.github.jiangyuyi.lightnovel.core.txt.TxtExportResult
 import java.io.OutputStream
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -77,7 +79,26 @@ interface OfflineLibraryAccess {
         output: OutputStream,
         onProgress: (EpubExportProgress) -> Unit = {},
     ): EpubExportResult? = null
+    suspend fun exportTxt(
+        key: NovelKey,
+        output: OutputStream,
+        onProgress: (TxtExportProgress) -> Unit = {},
+    ): TxtExportResult? = null
+    suspend fun exportEpubToDownloadDirectory(
+        key: NovelKey,
+        onProgress: (EpubExportProgress) -> Unit = {},
+    ): OfflineFileExportResult? = null
+    suspend fun exportTxtToDownloadDirectory(
+        key: NovelKey,
+        onProgress: (TxtExportProgress) -> Unit = {},
+    ): OfflineFileExportResult? = null
 }
+
+data class OfflineFileExportResult(
+    val fileName: String,
+    val exportedChapters: Int,
+    val skippedChapters: Int,
+)
 
 private val EMPTY_DOWNLOAD_DIRECTORY = MutableStateFlow<String?>(null)
 

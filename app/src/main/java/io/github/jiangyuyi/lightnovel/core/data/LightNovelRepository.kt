@@ -39,16 +39,12 @@ import io.github.jiangyuyi.lightnovel.core.session.SessionStore
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import io.github.jiangyuyi.lightnovel.core.source.CommentSort
-import io.github.jiangyuyi.lightnovel.core.source.EarnCoinStatus
 import io.github.jiangyuyi.lightnovel.core.source.RewardCenter
 import io.github.jiangyuyi.lightnovel.core.source.RewardDay
 import io.github.jiangyuyi.lightnovel.core.source.RewardResult
-import io.github.jiangyuyi.lightnovel.core.source.RewardTask
 import java.security.MessageDigest
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -828,24 +824,12 @@ class LightNovelRepository(
         return comment
     }
 
-    suspend fun welfareCenter(): RewardCenter = coroutineScope {
-        val key = requireSession()
-        val signRequest = async {
-            api.post("api/bff/welfare-sign-detail-v1", jsonBody("security_key" to key))
-        }
-        val earningRequest = async {
-            api.post("api/bff/welfare-earn-coin-detail-v1", jsonBody("security_key" to key))
-        }
-        val tasksRequest = async {
-            api.post(
-                "api/bff/welfare-task-list-v1",
-                jsonBody("security_key" to key, "page" to 1, "page_size" to 20, "pageSize" to 20),
-            )
-        }
-        val sign = signRequest.await()
-        val earning = earningRequest.await()
-        val tasks = tasksRequest.await()
-        RewardCenter(
+    suspend fun welfareCenter(): RewardCenter {
+        val sign = api.post(
+            "api/bff/welfare-sign-detail-v1",
+            jsonBody("security_key" to requireSession()),
+        )
+        return RewardCenter(
             signTitle = sign.string("title").ifBlank { "每日签到" },
             signSubtitle = sign.string("sub_title", "subtitle"),
             currentDay = sign.int("current_day").coerceAtLeast(1),
@@ -862,56 +846,11 @@ class LightNovelRepository(
                     claimable = day.bool("claimable") == true,
                 )
             },
-            earning = EarnCoinStatus(
-                title = earning.string("title").ifBlank { "浏览赚轻币" },
-                subtitle = earning.string("sub_title", "subtitle"),
-                progress = earning.int("progress"),
-                totalProgress = earning.int("total_progress"),
-                progressText = earning.string("progress_text"),
-                rewardAmount = earning.long("reward_amount"),
-                claimed = earning.bool("claimed") == true,
-                claimable = earning.bool("claimable") == true,
-                taskKey = earning.string("task_key"),
-            ).takeIf { earning.bool("enabled") != false },
-            tasks = tasks.array("list", "items").mapNotNull { item ->
-                val task = item as? JsonObject ?: return@mapNotNull null
-                val id = task.long("task_id", "id")
-                val taskKey = task.string("task_key", "key")
-                if (id <= 0L || taskKey.isBlank()) return@mapNotNull null
-                RewardTask(
-                    id = id,
-                    key = taskKey,
-                    title = task.string("title").ifBlank { "轻币任务" },
-                    subtitle = task.string("sub_title", "subtitle"),
-                    rewardAmount = task.long("reward_amount").takeIf { it > 0 }
-                        ?: task.obj("reward")?.long("coin") ?: 0,
-                    claimed = task.bool("claimed") == true,
-                    claimable = task.bool("claimable") == true,
-                    progress = task.int("progress"),
-                    totalProgress = task.int("total_progress"),
-                    buttonText = task.string("button_text"),
-                    available = task.bool("available") != false,
-                )
-            },
         )
     }
 
     suspend fun claimWelfareSign(): RewardResult = rewardResult(
         api.post("api/bff/claim-welfare-sign-v1", jsonBody("security_key" to requireSession())),
-    )
-
-    suspend fun claimWelfareTask(taskId: Long, taskKey: String): RewardResult = rewardResult(
-        api.post(
-            "api/bff/claim-welfare-task-v1",
-            jsonBody("security_key" to requireSession(), "task_id" to taskId, "task_key" to taskKey),
-        ),
-    )
-
-    suspend fun claimWelfareEarnCoin(taskKey: String): RewardResult = rewardResult(
-        api.post(
-            "api/bff/claim-welfare-earn-coin-v1",
-            jsonBody("security_key" to requireSession(), "task_key" to taskKey.takeIf { it.isNotBlank() }),
-        ),
     )
 
     private fun rewardResult(data: JsonObject): RewardResult {

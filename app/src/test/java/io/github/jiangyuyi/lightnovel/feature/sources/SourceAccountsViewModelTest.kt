@@ -7,7 +7,6 @@ import io.github.jiangyuyi.lightnovel.core.source.PasswordCredentials
 import io.github.jiangyuyi.lightnovel.core.source.RewardProvider
 import io.github.jiangyuyi.lightnovel.core.source.RewardCenter
 import io.github.jiangyuyi.lightnovel.core.source.RewardCenterProvider
-import io.github.jiangyuyi.lightnovel.core.source.RewardTask
 import io.github.jiangyuyi.lightnovel.core.source.RewardResult
 import io.github.jiangyuyi.lightnovel.core.source.RewardStatus
 import io.github.jiangyuyi.lightnovel.core.source.SourceCapability
@@ -72,23 +71,6 @@ class SourceAccountsViewModelTest {
         assertEquals(0, second.claimCalls)
     }
 
-    @Test
-    fun `reward center loads and claims only a claimable task`() = runTest(mainDispatcherRule.dispatcher) {
-        val source = FakeWelfareSource()
-        val viewModel = SourceAccountsViewModel(SourceRegistry(listOf(source)))
-        advanceUntilIdle()
-
-        val task = viewModel.state.value.accounts.single().rewardCenter?.tasks?.single()
-        assertTrue(task?.claimable == true)
-
-        viewModel.claimRewardTask("welfare", checkNotNull(task))
-        advanceUntilIdle()
-
-        assertEquals(1, source.claimCalls)
-        assertTrue(viewModel.state.value.accounts.single().rewardCenter?.tasks?.single()?.claimed == true)
-        assertEquals("已领取 6 轻币", viewModel.state.value.accounts.single().notice)
-    }
-
     private class FakeAccountSource(
         id: String,
         private val restored: SourceSession,
@@ -132,37 +114,15 @@ class SourceAccountsViewModelTest {
             "福利来源",
             setOf(SourceCapability.ACCOUNT, SourceCapability.DAILY_REWARD, SourceCapability.REWARD_CENTER),
         )
-        var claimCalls = 0
-        private var taskClaimed = false
-
         override suspend fun restoreSession() = SourceSession(true, accountId = "7", displayName = "用户")
         override suspend fun login(credentials: PasswordCredentials) = restoreSession()
         override suspend fun logout() = Unit
-        override suspend fun getRewardStatus() = RewardStatus(taskClaimed)
+        override suspend fun getRewardStatus() = RewardStatus(false)
         override suspend fun claimDailyReward() = RewardResult(rewardAmount = 10)
         override suspend fun getRewardCenter() = RewardCenter(
             signTitle = "新手签到",
             claimed = false,
             claimable = true,
-            tasks = listOf(
-                RewardTask(
-                    id = 300002,
-                    key = "daily_add_bookshelf_v1",
-                    title = "收藏一个作品",
-                    rewardAmount = 6,
-                    claimed = taskClaimed,
-                    claimable = !taskClaimed,
-                    totalProgress = 1,
-                ),
-            ),
         )
-
-        override suspend fun claimRewardTask(taskId: Long, taskKey: String): RewardResult {
-            claimCalls += 1
-            taskClaimed = true
-            return RewardResult(rewardAmount = 6)
-        }
-
-        override suspend fun claimEarnCoin(taskKey: String) = RewardResult(rewardAmount = 100)
     }
 }

@@ -80,8 +80,6 @@ internal interface LightNovelKingdomGateway {
     suspend fun publishComment(bookId: Long, content: String, ratingStars: Int = 0): Comment = error("comment publishing is not implemented")
     suspend fun welfareCenter(): RewardCenter = error("welfare center is not implemented")
     suspend fun claimDailyReward(): RewardResult = error("daily reward is not implemented")
-    suspend fun claimRewardTask(taskId: Long, taskKey: String): RewardResult = error("reward task is not implemented")
-    suspend fun claimEarnCoin(taskKey: String): RewardResult = error("earn coin is not implemented")
 }
 
 private class RepositoryLightNovelKingdomGateway(
@@ -121,9 +119,6 @@ private class RepositoryLightNovelKingdomGateway(
         repository.publishBookComment(bookId, content, ratingStars)
     override suspend fun welfareCenter() = repository.welfareCenter()
     override suspend fun claimDailyReward() = repository.claimWelfareSign()
-    override suspend fun claimRewardTask(taskId: Long, taskKey: String) =
-        repository.claimWelfareTask(taskId, taskKey)
-    override suspend fun claimEarnCoin(taskKey: String) = repository.claimWelfareEarnCoin(taskKey)
 }
 
 class LightNovelKingdomSource internal constructor(
@@ -246,11 +241,6 @@ class LightNovelKingdomSource internal constructor(
     }
 
     override suspend fun claimDailyReward(): RewardResult = gateway.claimDailyReward()
-
-    override suspend fun claimRewardTask(taskId: Long, taskKey: String): RewardResult =
-        gateway.claimRewardTask(taskId, taskKey)
-
-    override suspend fun claimEarnCoin(taskKey: String): RewardResult = gateway.claimEarnCoin(taskKey)
 
     override suspend fun getRemoteShelf(): List<NovelSummary> = gateway.bookshelf().map(BookSummary::toSource)
 

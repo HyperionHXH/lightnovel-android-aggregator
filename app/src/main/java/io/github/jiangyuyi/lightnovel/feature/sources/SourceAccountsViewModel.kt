@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import io.github.jiangyuyi.lightnovel.core.source.PasswordCredentials
 import io.github.jiangyuyi.lightnovel.core.source.RewardStatus
 import io.github.jiangyuyi.lightnovel.core.source.RewardCenter
-import io.github.jiangyuyi.lightnovel.core.source.RewardTask
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfile
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
@@ -149,53 +148,6 @@ class SourceAccountsViewModel(
                 .onFailure { error ->
                     update(sourceId) {
                         it.copy(rewardLoading = false, rewardActionKey = null, error = error.toSourceUiMessage("签到失败"))
-                    }
-                }
-        }
-    }
-
-    fun claimRewardTask(sourceId: String, task: RewardTask) {
-        val provider = registry.rewardCenterProvider(sourceId) ?: return
-        if (!task.claimable) return
-        runRewardAction(sourceId, "task:${task.key}", "任务奖励领取失败") {
-            provider.claimRewardTask(task.id, task.key)
-        }
-    }
-
-    fun claimEarnCoin(sourceId: String) {
-        val provider = registry.rewardCenterProvider(sourceId) ?: return
-        val earning = _state.value.accounts.firstOrNull { it.descriptor.id == sourceId }
-            ?.rewardCenter?.earning ?: return
-        if (!earning.claimable) return
-        runRewardAction(sourceId, "earning", "浏览奖励领取失败") {
-            provider.claimEarnCoin(earning.taskKey)
-        }
-    }
-
-    private fun runRewardAction(
-        sourceId: String,
-        actionKey: String,
-        fallbackMessage: String,
-        action: suspend () -> io.github.jiangyuyi.lightnovel.core.source.RewardResult,
-    ) {
-        if (_state.value.accounts.firstOrNull { it.descriptor.id == sourceId }?.rewardActionKey != null) return
-        update(sourceId) { it.copy(rewardActionKey = actionKey, error = null, notice = null) }
-        viewModelScope.launch {
-            runSourceCatching { action() }
-                .onSuccess { result ->
-                    update(sourceId) {
-                        it.copy(
-                            rewardActionKey = null,
-                            notice = result.rewardAmount?.takeIf { amount -> amount > 0 }?.let { amount ->
-                                "已领取 $amount 轻币"
-                            } ?: "奖励已领取",
-                        )
-                    }
-                    loadAccountExtras(sourceId, preserveNotice = true)
-                }
-                .onFailure { error ->
-                    update(sourceId) {
-                        it.copy(rewardActionKey = null, error = error.toSourceUiMessage(fallbackMessage))
                     }
                 }
         }

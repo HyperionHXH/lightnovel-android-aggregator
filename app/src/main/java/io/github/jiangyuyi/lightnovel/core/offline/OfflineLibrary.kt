@@ -18,9 +18,13 @@ import io.github.jiangyuyi.lightnovel.core.source.VolumeKey
 import io.github.jiangyuyi.lightnovel.core.epub.EpubExportResult
 import io.github.jiangyuyi.lightnovel.core.epub.EpubExportProgress
 import io.github.jiangyuyi.lightnovel.core.epub.EpubExporter
+import io.github.jiangyuyi.lightnovel.core.txt.TxtExporter
+import io.github.jiangyuyi.lightnovel.core.txt.TxtExportProgress
+import io.github.jiangyuyi.lightnovel.core.txt.TxtExportResult
 import java.io.OutputStream
 import java.io.File
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -152,6 +156,50 @@ class OfflineLibrary(
         )
     }
 
+    override suspend fun exportTxt(
+        key: NovelKey,
+        output: OutputStream,
+        onProgress: (TxtExportProgress) -> Unit,
+    ): TxtExportResult {
+        val record = store.readBook(key) ?: error("离线书籍不存在")
+        return TxtExporter().export(
+            record,
+            { chapterKey -> store.readChapter(key, chapterKey) },
+            output,
+            onProgress,
+        )
+    }
+
+    override suspend fun exportEpubToDownloadDirectory(
+        key: NovelKey,
+        onProgress: (EpubExportProgress) -> Unit,
+    ): OfflineFileExportResult = exportToDownloadDirectory(
+        key = key,
+        extension = "epub",
+        mimeType = "application/epub+zip",
+    ) { output ->
+        val result = exportEpub(key, output, onProgress)
+        result.exportedChapters to result.skippedChapters
+    }
+
+    override suspend fun exportTxtToDownloadDirectory(
+        key: NovelKey,
+        onProgress: (TxtExportProgress) -> Unit,
+    ): OfflineFileExportResult = exportToDownloadDirectory(
+        key = key,
+        extension = "txt",
+        mimeType = "text/plain",
+    ) { output ->
+        val record = store.readBook(key) ?: error("离线书籍不存在")
+        val result = TxtExporter().export(
+            record,
+            { chapterKey -> store.readChapter(key, chapterKey) },
+            output,
+            onProgress,
+        )
+        result.exportedChapters to result.skippedChapters
+    }
+
     internal suspend fun executeDownload(novelKey: NovelKey, selectedVolumeId: String?) {
         val activeStore = store
         val downloader = OfflineDownloader(registry, activeStore, chapterFonts, onUpdated = ::publish)
@@ -194,6 +242,58 @@ class OfflineLibrary(
         uri?.let { value ->
             runCatching { OfflineDocumentStore(applicationContext, Uri.parse(value)) }.getOrNull()
         } ?: defaultStore
+
+    private suspend fun exportToDownloadDirectory(
+        key: NovelKey,
+        extension: String,
+        mimeType: String,
+        writer: suspend (OutputStream) -> Pair<Int, Int>,
+    ): OfflineFileExportResult {
+        val record = store.readBook(key) ?: error("离线书籍不存在")
+        val base = record.novel.title.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .trim()
+            .ifBlank { "novel" }
+            .take(100)
+        val fileName = "$base.$extension"
+        val (exported, skipped) = if (_downloadDirectory.value == null) {
+            val directory = File(applicationContext.filesDir, "$OFFLINE_DIRECTORY/exports")
+                .apply { mkdirs() }
+            val target = File(directory, fileName)
+            val output = target.outputStream()
+            try {
+                writer(output)
+            } catch (error: Throwable) {
+                target.delete()
+                throw error
+            } finally {
+                output.close()
+            }
+        } else {
+            val selectedRoot = requireNotNull(
+                DocumentFile.fromTreeUri(applicationContext, Uri.parse(_downloadDirectory.value)),
+            ) { "无法访问下载文件夹，请重新选择" }
+            val appDirectory = selectedRoot.findFile("Mixn")?.takeIf(DocumentFile::isDirectory)
+                ?: selectedRoot.findFile("诺阅")?.takeIf(DocumentFile::isDirectory)
+                ?: requireNotNull(selectedRoot.createDirectory("Mixn")) { "无法创建 Mixn 文件夹" }
+            val exportDirectory = appDirectory.findFile("exports")?.takeIf(DocumentFile::isDirectory)
+                ?: requireNotNull(appDirectory.createDirectory("exports")) { "无法创建导出文件夹" }
+            exportDirectory.findFile(fileName)?.delete()
+            val target = requireNotNull(exportDirectory.createFile(mimeType, fileName)) { "无法创建导出文件" }
+            try {
+                val output = applicationContext.contentResolver.openOutputStream(target.uri)
+                    ?: error("无法写入导出文件")
+                try {
+                    writer(output)
+                } finally {
+                    output.close()
+                }
+            } catch (error: Throwable) {
+                target.delete()
+                throw error
+            }
+        }
+        return OfflineFileExportResult(fileName, exported, skipped)
+    }
 
     private fun publish(record: OfflineBookRecord) {
         _books.update { current ->

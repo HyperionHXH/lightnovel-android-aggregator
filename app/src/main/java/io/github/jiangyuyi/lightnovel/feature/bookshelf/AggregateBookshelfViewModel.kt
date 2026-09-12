@@ -18,6 +18,8 @@ import io.github.jiangyuyi.lightnovel.core.updates.SourceUpdateSnapshotAccess
 import io.github.jiangyuyi.lightnovel.core.updates.isUpdatedComparedTo
 import io.github.jiangyuyi.lightnovel.core.epub.EpubExportResult
 import io.github.jiangyuyi.lightnovel.core.epub.EpubExportProgress
+import io.github.jiangyuyi.lightnovel.core.offline.OfflineFileExportResult
+import io.github.jiangyuyi.lightnovel.core.txt.TxtExportProgress
 import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -76,6 +78,7 @@ class AggregateBookshelfViewModel(
         ),
     )
     val state: StateFlow<AggregateBookshelfState> = _state.asStateFlow()
+    val downloadDirectory: StateFlow<String?> = offlineLibrary.downloadDirectory
     private var loadJob: Job? = null
     private var requestId = 0L
     private var screenShown = false
@@ -121,6 +124,22 @@ class AggregateBookshelfViewModel(
         output: OutputStream,
         onProgress: (EpubExportProgress) -> Unit = {},
     ): EpubExportResult? = offlineLibrary.exportEpub(record.novel.key, output, onProgress)
+
+    suspend fun exportEpubToDownloadDirectory(
+        record: OfflineBookRecord,
+        onProgress: (EpubExportProgress) -> Unit = {},
+    ): OfflineFileExportResult? = offlineLibrary.exportEpubToDownloadDirectory(record.novel.key, onProgress)
+
+    suspend fun exportTxt(
+        record: OfflineBookRecord,
+        output: OutputStream,
+        onProgress: (TxtExportProgress) -> Unit = {},
+    ) = offlineLibrary.exportTxt(record.novel.key, output, onProgress)
+
+    suspend fun exportTxtToDownloadDirectory(
+        record: OfflineBookRecord,
+        onProgress: (TxtExportProgress) -> Unit = {},
+    ): OfflineFileExportResult? = offlineLibrary.exportTxtToDownloadDirectory(record.novel.key, onProgress)
 
     fun markAllUpdatesSeen() {
         val keys = _state.value.updatedBooks
