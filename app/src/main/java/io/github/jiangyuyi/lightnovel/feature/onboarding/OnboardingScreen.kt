@@ -49,7 +49,7 @@ fun OnboardingScreen(
     readerPreferences: ReaderPreferences,
     onAppPreferencesChange: (AppPreferences) -> Unit,
     onReaderPreferencesChange: (ReaderPreferences) -> Unit,
-    downloadDirectoryLabel: String = "未选择（应用专用目录）",
+    downloadDirectoryLabel: String = "应用专用目录 · 应用数据/offline_library",
     onChooseDownloadDirectory: () -> Unit = {},
     onComplete: () -> Unit,
 ) {
