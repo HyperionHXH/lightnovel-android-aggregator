@@ -16,6 +16,9 @@ import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.ReadingProgress
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourceComment
+import io.github.jiangyuyi.lightnovel.core.source.SourceCommentEmoji
+import io.github.jiangyuyi.lightnovel.core.source.SourceCommentMedia
+import io.github.jiangyuyi.lightnovel.core.source.SourceMentionCandidate
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
@@ -68,6 +71,10 @@ data class SourceBookState(
     val publishingComment: Boolean = false,
     val commentError: String? = null,
     val commentLoginRequired: Boolean = false,
+    val commentEmojis: List<SourceCommentEmoji> = emptyList(),
+    val mentionCandidates: List<SourceMentionCandidate> = emptyList(),
+    val commentMedia: List<SourceCommentMedia> = emptyList(),
+    val uploadingCommentImage: Boolean = false,
 )
 
 class SourceBookViewModel(
@@ -333,12 +340,17 @@ class SourceBookViewModel(
     fun publishComment(
         content: String,
         ratingStars: Int = 0,
+        rootCommentId: String? = null,
+        replyCommentId: String? = null,
+        mentionUids: List<Long> = emptyList(),
+        media: List<SourceCommentMedia> = emptyList(),
         onLoginRequired: () -> Unit,
         onPublished: () -> Unit,
     ) {
         val provider = registry.commentProvider(novelKey.sourceId) ?: return
         val normalized = content.trim()
-        if (normalized.isBlank()) {
+        val selectedMedia = if (media.isNotEmpty()) media else _state.value.commentMedia
+        if (normalized.isBlank() && ratingStars <= 0 && selectedMedia.isEmpty()) {
             _state.value = _state.value.copy(commentError = "请输入评论内容")
             return
         }
@@ -349,10 +361,26 @@ class SourceBookViewModel(
             commentLoginRequired = false,
         )
         viewModelScope.launch {
-            runSourceCatching { provider.publishComment(novelKey, normalized, ratingStars.coerceIn(0, 5)) }
+            runSourceCatching {
+                if (ratingStars in 1..5) provider.rateNovel(novelKey, ratingStars)
+                if (normalized.isNotBlank() || selectedMedia.isNotEmpty()) {
+                    provider.publishComment(
+                        novelKey = novelKey,
+                        content = normalized,
+                        ratingStars = 0,
+                        rootCommentId = rootCommentId,
+                        replyCommentId = replyCommentId,
+                        mentionUids = mentionUids,
+                        media = selectedMedia,
+                    )
+                } else {
+                    null
+                }
+            }
                 .onSuccess {
-                    _state.value = _state.value.copy(publishingComment = false)
+                    _state.value = _state.value.copy(publishingComment = false, commentMedia = emptyList())
                     onPublished()
+                    if (ratingStars in 1..5) load(forceRefresh = true)
                     loadComments(reset = true)
                 }
                 .onFailure { error ->
@@ -364,6 +392,83 @@ class SourceBookViewModel(
                     if (error.isSourceAuthentication()) {
                         onLoginRequired()
                     }
+                }
+        }
+    }
+
+    fun loadCommentEmojis() {
+        val provider = registry.commentProvider(novelKey.sourceId) ?: return
+        if (_state.value.commentEmojis.isNotEmpty()) return
+        viewModelScope.launch {
+            runSourceCatching { provider.getCommentEmojis() }.onSuccess { emojis ->
+                _state.value = _state.value.copy(commentEmojis = emojis)
+            }
+        }
+    }
+
+    fun loadMentionCandidates(query: String = "") {
+        val provider = registry.commentProvider(novelKey.sourceId) ?: return
+        viewModelScope.launch {
+            runSourceCatching { provider.getMentionCandidates(novelKey, query) }.onSuccess { candidates ->
+                _state.value = _state.value.copy(mentionCandidates = candidates)
+            }
+        }
+    }
+
+    fun uploadCommentImage(
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+        onLoginRequired: () -> Unit = {},
+    ) {
+        val provider = registry.commentProvider(novelKey.sourceId) ?: return
+        if (_state.value.uploadingCommentImage) return
+        _state.value = _state.value.copy(uploadingCommentImage = true, commentError = null)
+        viewModelScope.launch {
+            runSourceCatching { provider.uploadCommentImage(novelKey, bytes, fileName, mimeType) }
+                .onSuccess { media ->
+                    _state.value = _state.value.copy(
+                        uploadingCommentImage = false,
+                        commentMedia = _state.value.commentMedia + media,
+                    )
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        uploadingCommentImage = false,
+                        commentError = error.toSourceUiMessage("图片上传失败"),
+                        commentLoginRequired = error.isSourceAuthentication(),
+                    )
+                    if (error.isSourceAuthentication()) onLoginRequired()
+                }
+        }
+    }
+
+    fun removeCommentImage(media: SourceCommentMedia) {
+        _state.value = _state.value.copy(commentMedia = _state.value.commentMedia - media)
+    }
+
+    fun toggleCommentLike(comment: SourceComment, onLoginRequired: () -> Unit = {}) {
+        val provider = registry.commentProvider(novelKey.sourceId) ?: return
+        val id = comment.id
+        val optimisticLiked = !comment.liked
+        updateComment(id) { it.copy(liked = optimisticLiked, likeCount = (it.likeCount + if (optimisticLiked) 1 else -1).coerceAtLeast(0)) }
+        viewModelScope.launch {
+            runSourceCatching { provider.toggleCommentLike(novelKey, id, comment.liked) }
+                .onSuccess { result ->
+                    updateComment(id) {
+                        it.copy(
+                            liked = result.liked,
+                            likeCount = result.likeCount ?: it.likeCount,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    updateComment(id) { it.copy(liked = comment.liked, likeCount = comment.likeCount) }
+                    _state.value = _state.value.copy(
+                        commentError = error.toSourceUiMessage("点赞失败"),
+                        commentLoginRequired = error.isSourceAuthentication(),
+                    )
+                    if (error.isSourceAuthentication()) onLoginRequired()
                 }
         }
     }
@@ -416,6 +521,15 @@ class SourceBookViewModel(
         _state.value = _state.value.copy(
             chapters = _state.value.chapters + (volumeKey to transform(current)),
         )
+    }
+
+    private fun updateComment(id: String, transform: (SourceComment) -> SourceComment) {
+        fun update(item: SourceComment): SourceComment = when {
+            item.id == id -> transform(item)
+            item.replies.isNotEmpty() -> item.copy(replies = item.replies.map(::update))
+            else -> item
+        }
+        _state.value = _state.value.copy(comments = _state.value.comments.map(::update))
     }
 }
 

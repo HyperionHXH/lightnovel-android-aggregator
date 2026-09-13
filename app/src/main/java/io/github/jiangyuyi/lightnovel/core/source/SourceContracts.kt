@@ -83,4 +83,35 @@ interface CommentProvider : SourceProvider {
     ): SourcePage<SourceComment>
 
     suspend fun publishComment(novelKey: NovelKey, content: String, ratingStars: Int = 0): SourceComment
+
+    /** Optional rich-comment capabilities. Sources can keep the defaults when unsupported. */
+    suspend fun getCommentEmojis(): List<SourceCommentEmoji> = emptyList()
+
+    suspend fun getMentionCandidates(novelKey: NovelKey, query: String = ""): List<SourceMentionCandidate> = emptyList()
+
+    suspend fun uploadCommentImage(
+        novelKey: NovelKey,
+        bytes: ByteArray,
+        fileName: String = "comment-image.jpg",
+        mimeType: String = "image/jpeg",
+    ): SourceCommentMedia = error("comment image upload is not supported")
+
+    suspend fun publishComment(
+        novelKey: NovelKey,
+        content: String,
+        ratingStars: Int = 0,
+        rootCommentId: String? = null,
+        replyCommentId: String? = null,
+        mentionUids: List<Long> = emptyList(),
+        media: List<SourceCommentMedia> = emptyList(),
+    ): SourceComment = publishComment(novelKey, content, ratingStars)
+
+    suspend fun toggleCommentLike(
+        novelKey: NovelKey,
+        commentId: String,
+        currentlyLiked: Boolean,
+    ): SourceCommentInteraction = error("comment likes are not supported")
+
+    suspend fun rateNovel(novelKey: NovelKey, ratingStars: Int): SourceCommentInteraction =
+        error("novel ratings are not supported")
 }

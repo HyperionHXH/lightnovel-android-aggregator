@@ -1,6 +1,6 @@
 # Mixn 项目交接记录
 
-更新时间：2026-09-12
+更新时间：2026-09-13
 仓库：`https://github.com/HyperionHXH/lightnovel-android-aggregator.git`
 当前分支：`feature/multi-source-foundation`
 当前分支最新提交以 `git log -1` 为准；本文件记录的最近认证与阅读交互增强均已随分支提交推送。
@@ -56,7 +56,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.17.0`、`versionCode 26`；桌面和 jpackage 默认版本也是 `1.17.0`。tag Release 工作流会从 tag 注入版本。当前正式 Release 为 `v1.17.0`。
+Android 默认版本：`versionName 1.19.0`、`versionCode 28`；桌面和 jpackage 默认版本仍按各自构建配置注入。tag Release 工作流会从 tag 注入版本。当前待发布 Release 为 `v1.19.0`。
 
 ## 2026-09-11 本轮变更
 
@@ -88,6 +88,14 @@ Android 默认版本：`versionName 1.17.0`、`versionCode 26`；桌面和 jpack
 
 1. 修改后运行 `git diff --check` 和相关测试。
 2. 用说明性提交信息 `git commit`，然后推送当前分支：`git push origin feature/multi-source-foundation`。
+
+## 2026-09-13 LK 评论收尾
+
+- LK 评论现已接入官方富评论协议：图片、官方表情、Unicode 表情、@ UID、回复目标、发布时间、点赞状态和回复预览均有独立模型与解析测试。
+- 评论编辑器支持真实图片上传、@ 关注用户、表情插入、回复和点赞；评分通过官方评分字段单独提交，不重复发布评分评论。
+- 评论读取保留图片-only 评论，分页仍按官方 `page_info` 判断；未登录允许读取，发布/点赞/上传按来源认证错误引导登录。
+- `jsonBody` 已支持任意 `JsonElement`，避免 `mention_uids` 被编码成字符串；评论 API 的评分请求与官方 `view` 字段保持一致。
+- 本轮已通过 `:app:testDebugUnitTest`；发布前需执行 `:app:assembleRelease` 并创建 `v1.19.0` Release。轻书架适配尚未开始，等待用户确认。
 3. 大功能或用户可感知修复通过 tag 创建 Release（例如 `v1.4.3`），构建并上传 APK、SHA256、Windows 包。仅文档小改动通常不单独发 Release。
 4. 不要提交账号、Token、密码、`签名密码.txt`、`signing.properties` 或本地小说目录。
 

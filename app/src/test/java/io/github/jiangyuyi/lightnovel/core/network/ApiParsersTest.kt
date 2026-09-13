@@ -3,6 +3,8 @@ package io.github.jiangyuyi.lightnovel.core.network
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import io.github.jiangyuyi.lightnovel.core.model.MessageCategory
 import io.github.jiangyuyi.lightnovel.core.model.UserSummary
 import org.junit.Assert.assertEquals
@@ -12,6 +14,18 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ApiParsersTest {
+    @Test
+    fun `json body preserves structured arrays`() {
+        val body = jsonBody(
+            "mention_uids" to buildJsonArray {
+                add(JsonPrimitive(7))
+                add(JsonPrimitive(9))
+            },
+        )
+
+        assertEquals("[7,9]", body["mention_uids"].toString())
+    }
+
     @Test
     fun `books page prefers live page info when legacy pagination says snapshot ended`() {
         val source = Json.parseToJsonElement(
@@ -100,6 +114,73 @@ class ApiParsersTest {
         )
 
         assertEquals(0, book.unreadChapterCount)
+    }
+
+    @Test
+    fun `book parser prefers the official five star score and converts legacy ten point score`() {
+        val fiveStar = ApiParsers.book(obj("""{"book_id": 1, "title": "评分", "rating_score": 4.6, "rating_score_10": 9.2}"""))
+        val legacy = ApiParsers.book(obj("""{"book_id": 2, "title": "旧评分", "rating_score": 0, "rating_score_10": 8.4}"""))
+
+        assertEquals(4.6, checkNotNull(fiveStar.score), 0.001)
+        assertEquals(4.2, checkNotNull(legacy.score), 0.001)
+    }
+
+    @Test
+    fun `comment parser maps official time interactions media and reply preview`() {
+        val comment = ApiParsers.comment(
+            obj(
+                """
+                {
+                  "comment_id": 1351853,
+                  "root_comment_id": 0,
+                  "author": {"uid": 7, "nickname": "评论者", "avatar": "https://example.test/avatar.jpg"},
+                  "content": "很好看 [s:1]",
+                  "publish_time": "2026-09-12 17:36:01",
+                  "resources": [{"url": "https://example.test/comment.jpg", "width": 640, "height": 480, "res_id": "r-1"}],
+                  "stats": {"like_count": 4, "conversation_count": 1},
+                  "interaction_state": {"liked": 1},
+                  "reply_preview": [{"comment_id": 9, "author": {"uid": 8, "nickname": "回复者"}, "content": "同意", "publish_time": "2026-09-13"}]
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        assertEquals(1351853L, comment.id)
+        assertEquals("2026-09-12 17:36:01", comment.createdAt)
+        assertEquals(4, comment.likeCount)
+        assertEquals(1, comment.replyCount)
+        assertTrue(comment.liked)
+        assertEquals("https://example.test/comment.jpg", comment.media.single().url)
+        assertEquals("回复者", comment.replies.single().author.nickname)
+    }
+
+    @Test
+    fun `comment emoji parser distinguishes image urls from unicode text`() {
+        val emojis = ApiParsers.commentEmojis(
+            obj(
+                """
+                {
+                  "list": [
+                    {
+                      "name": "官方表情",
+                      "items": [
+                        {"code": "[s:1]", "url": "https://static.example/s1.gif"},
+                        {"code": "{:neko3:}", "url": "/smiley/neko3.gif"}
+                      ]
+                    },
+                    {"code": "😀", "url": "😀"}
+                  ]
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        assertEquals(3, emojis.size)
+        assertEquals("https://static.example/s1.gif", emojis.first { it.code == "[s:1]" }.imageUrl)
+        assertEquals("/smiley/neko3.gif", emojis.first { it.code == "{:neko3:}" }.imageUrl)
+        val unicode = emojis.first { it.code == "😀" }
+        assertEquals(null, unicode.imageUrl)
+        assertEquals("😀", unicode.text)
     }
 
     @Test

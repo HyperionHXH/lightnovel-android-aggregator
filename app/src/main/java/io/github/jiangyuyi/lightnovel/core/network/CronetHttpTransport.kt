@@ -36,6 +36,7 @@ internal data class HttpBytesResponse(
 
 internal interface HttpTransport {
     suspend fun postJson(url: String, body: String): HttpResponse
+    suspend fun postMultipart(url: String, body: ByteArray, contentType: String): HttpResponse
     suspend fun getBytes(url: String): HttpBytesResponse
 }
 
@@ -75,17 +76,27 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
     }
 
     override suspend fun postJson(url: String, body: String): HttpResponse {
-        val response = request(url, "POST", body.toByteArray(Charsets.UTF_8))
+        val response = request(url, "POST", body.toByteArray(Charsets.UTF_8), "application/json; charset=utf-8")
         return HttpResponse(response.code, response.body.toString(Charsets.UTF_8), response.protocol)
     }
 
-    override suspend fun getBytes(url: String): HttpBytesResponse = request(url, "GET", null)
+    override suspend fun postMultipart(url: String, body: ByteArray, contentType: String): HttpResponse {
+        val response = request(url, "POST", body, contentType)
+        return HttpResponse(response.code, response.body.toString(Charsets.UTF_8), response.protocol)
+    }
 
-    private suspend fun request(url: String, method: String, upload: ByteArray?): HttpBytesResponse {
+    override suspend fun getBytes(url: String): HttpBytesResponse = request(url, "GET", null, null)
+
+    private suspend fun request(
+        url: String,
+        method: String,
+        upload: ByteArray?,
+        uploadContentType: String?,
+    ): HttpBytesResponse {
         var lastFailure: IOException? = null
         NETWORK_ROUTES.forEachIndexed { index, route ->
             try {
-                return executeWithTimeout(engineFor(route), url, method, upload).also {
+                return executeWithTimeout(engineFor(route), url, method, upload, uploadContentType).also {
                     if (index > 0) {
                         Log.i(TAG, "${Uri.parse(url).host} connected through ${route.label}")
                     }
@@ -110,9 +121,10 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
         url: String,
         method: String,
         upload: ByteArray?,
+        uploadContentType: String?,
     ): HttpBytesResponse = try {
         withTimeout(ROUTE_TIMEOUT_MS) {
-            executeOnce(requestEngine, url, method, upload)
+            executeOnce(requestEngine, url, method, upload, uploadContentType)
         }
     } catch (failure: TimeoutCancellationException) {
         throw RouteTimeoutException(failure)
@@ -123,6 +135,7 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
         url: String,
         method: String,
         upload: ByteArray?,
+        uploadContentType: String?,
     ): HttpBytesResponse =
         suspendCancellableCoroutine { continuation ->
             val responseBytes = ByteArrayOutputStream()
@@ -190,7 +203,7 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
                 .addHeader("Referer", "https://www.lightnovel.fun/")
                 .addHeader("Accept-Language", "zh-CN,zh;q=0.9")
             if (upload != null) {
-                builder.addHeader("Content-Type", "application/json; charset=utf-8")
+                builder.addHeader("Content-Type", uploadContentType ?: "application/octet-stream")
                     .setUploadDataProvider(UploadDataProviders.create(upload), executor)
             }
             val request = builder.build()

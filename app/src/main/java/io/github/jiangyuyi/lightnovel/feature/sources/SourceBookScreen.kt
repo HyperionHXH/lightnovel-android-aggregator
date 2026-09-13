@@ -39,6 +39,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -75,6 +76,9 @@ fun SourceBookScreen(
     var selectedTab by remember { mutableStateOf(0) }
     var draft by remember { mutableStateOf("") }
     var ratingStars by remember { mutableStateOf(0) }
+    var mentionUids by remember { mutableStateOf(emptyList<Long>()) }
+    var replyTo by remember { mutableStateOf<io.github.jiangyuyi.lightnovel.core.source.SourceComment?>(null) }
+    LaunchedEffect(Unit) { viewModel.loadCommentEmojis() }
 
     RefreshableLazyColumn(
         isRefreshing = state.refreshing,
@@ -233,7 +237,10 @@ fun SourceBookScreen(
                 }
                 item {
                     SourceSection("简介") {
-                        Text(novel.synopsis.ifBlank { "暂无简介" })
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(novel.synopsis.ifBlank { "暂无简介" })
+                            WorkScore(score = novel.score)
+                        }
                     }
                 }
                 if (detail.alternateVersions.isNotEmpty()) {
@@ -251,28 +258,34 @@ fun SourceBookScreen(
                 }
                 } else if (selectedTab == 1 && state.commentsSupported) {
                     item(key = "comments-header") {
-                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Column(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                 Text("作品评论", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                                 CommentSort.entries.forEach { sort ->
                                     FilterChip(selected = state.commentSort == sort, onClick = { viewModel.selectCommentSort(sort) }, label = { Text(sort.label) })
                                 }
                             }
-                            OutlinedTextField(
-                                value = draft,
-                                onValueChange = { draft = it.take(1_000) },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("写下你的看法") },
-                                trailingIcon = {
-                                    TextButton(onClick = { viewModel.publishComment(draft, ratingStars, onLoginRequired = onAccounts, onPublished = { draft = "" }) }, enabled = draft.isNotBlank() && !state.publishingComment) {
-                                        if (state.publishingComment) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("发布")
-                                    }
+                            CommentComposer(
+                                viewModel = viewModel,
+                                state = state,
+                                draft = draft,
+                                onDraftChange = { draft = it },
+                                ratingStars = ratingStars,
+                                onRatingChange = { ratingStars = it },
+                                mentionUids = mentionUids,
+                                onMentionUidsChange = { mentionUids = it },
+                                replyTo = replyTo,
+                                onCancelReply = { replyTo = null },
+                                onLoginRequired = onAccounts,
+                                onPublished = {
+                                    draft = ""
+                                    ratingStars = 0
+                                    mentionUids = emptyList()
+                                    replyTo = null
                                 },
-                            )
-                            CommentRatingSelector(
-                                value = ratingStars,
-                                onValueChange = { ratingStars = it },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
                             )
                             when {
                                 state.commentsLoading && state.comments.isEmpty() -> Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
@@ -287,29 +300,12 @@ fun SourceBookScreen(
                                 state.comments.isEmpty() -> Text("暂时没有评论", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 else -> {
                                     state.comments.forEach { comment ->
-                                        Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                        ) {
-                                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                                Text(comment.authorName, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                                                Text(comment.createdAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            }
-                                            comment.ratingStars?.let { stars ->
-                                                CommentRatingDisplay(stars)
-                                            }
-                                            Text(comment.content)
-                                            val meta = listOfNotNull(
-                                                comment.likeCount.takeIf { it > 0 }?.let { "赞 $it" },
-                                                comment.replyCount.takeIf { it > 0 }?.let { "回复 $it" },
-                                            ).joinToString(" · ")
-                                            if (meta.isNotBlank()) {
-                                                Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            }
-                                            }
-                                        }
+                                        SourceCommentCard(
+                                            comment = comment,
+                                            emojis = state.commentEmojis,
+                                            onLike = { viewModel.toggleCommentLike(comment, onAccounts) },
+                                            onReply = { replyTo = comment },
+                                        )
                                     }
                                     if (state.commentsHasMore || state.commentsLoadingMore) {
                                         TextButton(onClick = viewModel::loadMoreComments, enabled = !state.commentsLoadingMore, modifier = Modifier.fillMaxWidth()) {

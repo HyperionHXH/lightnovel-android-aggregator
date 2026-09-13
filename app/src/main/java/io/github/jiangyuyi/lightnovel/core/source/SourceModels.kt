@@ -28,6 +28,35 @@ enum class CommentSort(val label: String) {
 }
 
 @Serializable
+data class SourceCommentMedia(
+    val url: String,
+    val width: Int? = null,
+    val height: Int? = null,
+    val resourceId: String? = null,
+)
+
+@Serializable
+data class SourceCommentEmoji(
+    val code: String,
+    val imageUrl: String? = null,
+    val text: String? = null,
+    val label: String? = null,
+)
+
+@Serializable
+data class SourceMentionCandidate(
+    val uid: Long,
+    val name: String,
+    val avatarUrl: String? = null,
+)
+
+@Serializable
+data class SourceCommentInteraction(
+    val liked: Boolean,
+    val likeCount: Int? = null,
+)
+
+@Serializable
 data class SourceComment(
     val id: String,
     val authorName: String,
@@ -38,6 +67,11 @@ data class SourceComment(
     val replyCount: Int = 0,
     /** Optional 1-5 star rating supplied by the source. */
     val ratingStars: Int? = null,
+    val rootCommentId: String? = null,
+    val replyToName: String? = null,
+    val liked: Boolean = false,
+    val media: List<SourceCommentMedia> = emptyList(),
+    val replies: List<SourceComment> = emptyList(),
 )
 
 @Serializable

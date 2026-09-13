@@ -35,7 +35,7 @@ internal fun CommentRatingSelector(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                if (value == 0) "可不评分" else "$value 星",
+                if (value == 0) "给作品评分（可选）" else "作品评分：$value 星",
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

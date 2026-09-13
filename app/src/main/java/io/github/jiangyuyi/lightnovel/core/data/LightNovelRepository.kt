@@ -10,6 +10,8 @@ import io.github.jiangyuyi.lightnovel.core.model.AccountProfile
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
 import io.github.jiangyuyi.lightnovel.core.model.ChapterSummary
 import io.github.jiangyuyi.lightnovel.core.model.Comment
+import io.github.jiangyuyi.lightnovel.core.model.CommentEmoji
+import io.github.jiangyuyi.lightnovel.core.model.CommentMedia
 import io.github.jiangyuyi.lightnovel.core.model.DmConversation
 import io.github.jiangyuyi.lightnovel.core.model.DmMessage
 import io.github.jiangyuyi.lightnovel.core.model.DiscoverChannel
@@ -47,6 +49,8 @@ import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.math.roundToInt
@@ -790,7 +794,8 @@ class LightNovelRepository(
         )
         val list = data.array("list", "root_comment", "items")
             .mapNotNull { (it as? JsonObject)?.let(ApiParsers::comment) }
-            .filter { it.content.isNotBlank() }
+            // Image-only comments are valid comments and must remain visible.
+            .filter { it.content.isNotBlank() || it.media.isNotEmpty() }
         val pageInfo = data.obj("page_info", "pagination")
         return Page(
             items = list,
@@ -800,9 +805,29 @@ class LightNovelRepository(
         )
     }
 
-    suspend fun publishBookComment(bookId: Long, content: String, ratingStars: Int = 0): Comment {
+    suspend fun publishBookComment(
+        bookId: Long,
+        content: String,
+        ratingStars: Int = 0,
+        rootCommentId: Long = 0,
+        replyCommentId: Long = 0,
+        mentionUids: List<Long> = emptyList(),
+        media: List<CommentMedia> = emptyList(),
+    ): Comment {
         val normalized = content.trim()
-        require(normalized.isNotBlank()) { "评论内容不能为空" }
+        require(normalized.isNotBlank() || media.isNotEmpty()) { "评论内容不能为空" }
+        val mediaJson = buildJsonArray {
+            media.forEach { item ->
+                add(
+                    buildJsonObject {
+                        put("url", item.url)
+                        item.width?.let { put("width", it) }
+                        item.height?.let { put("height", it) }
+                        item.resourceId?.let { put("res_id", it) }
+                    },
+                )
+            }
+        }
         val data = api.post(
             "api/discuss/publish-book-comment",
             jsonBody(
@@ -811,9 +836,11 @@ class LightNovelRepository(
                 "volume_id" to 0,
                 "chapter_id" to 0,
                 "view" to "",
-                "root_comment_id" to 0,
-                "reply_comment_id" to 0,
+                "root_comment_id" to rootCommentId,
+                "reply_comment_id" to replyCommentId,
                 "content" to normalized,
+                "mention_uids" to buildJsonArray { mentionUids.forEach { add(JsonPrimitive(it)) } },
+                "media_json" to mediaJson.toString(),
                 "rating_stars" to ratingStars.coerceIn(0, 5),
                 "read_duration_seconds" to 0,
             ),
@@ -823,6 +850,70 @@ class LightNovelRepository(
         cache.removePrefix(currentScope(), cachePrefix("comments"))
         return comment
     }
+
+    suspend fun rateBook(bookId: Long, ratingStars: Int) {
+        require(ratingStars in 1..5) { "评分必须在 1 到 5 星之间" }
+        api.post(
+            "api/discuss/publish-book-comment",
+            jsonBody(
+                "security_key" to requireSession(),
+                "book_id" to bookId,
+                "volume_id" to 0,
+                "chapter_id" to 0,
+                "view" to "",
+                "root_comment_id" to 0,
+                "reply_comment_id" to 0,
+                "content" to "",
+                "rating_stars" to ratingStars,
+                "read_duration_seconds" to 0,
+            ),
+        )
+        cache.removePrefix(currentScope(), cachePrefix("book"))
+        cache.removePrefix(currentScope(), cachePrefix("comments"))
+    }
+
+    suspend fun toggleCommentLike(bookId: Long, commentId: Long, currentlyLiked: Boolean): Pair<Boolean, Int?> {
+        val data = api.post(
+            "api/discuss/like-book-comment",
+            jsonBody(
+                "security_key" to requireSession(),
+                "book_id" to bookId,
+                "volume_id" to 0,
+                "chapter_id" to 0,
+                "view" to "",
+                "comment_id" to commentId,
+                "root_comment_id" to 0,
+                "act" to if (currentlyLiked) "unlike" else "like",
+            ),
+        )
+        val liked = data.bool("liked", "is_liked", "has_liked") ?: !currentlyLiked
+        val count = data.int("like_count", "likeCount", "likes").takeIf { it >= 0 }
+        cache.removePrefix(currentScope(), cachePrefix("comments"))
+        return liked to count
+    }
+
+    suspend fun uploadCommentImage(bytes: ByteArray, fileName: String, mimeType: String): CommentMedia {
+        val data = api.postMultipart(
+            "api/dynamic/upload-image-v1",
+            fields = mapOf("security_key" to requireSession(), "scene" to "book_comment"),
+            fileField = "file",
+            fileName = fileName,
+            mimeType = mimeType,
+            fileBytes = bytes,
+        )
+        val source = data.obj("image", "media", "resource") ?: data
+        val url = source.string("url", "res_url", "stored_url", "source_url", "src", "image")
+        if (url.isBlank()) throw SourceException(SourceErrorKind.PARSING, "图片上传成功，但服务器未返回图片地址")
+        return CommentMedia(
+            url = url,
+            width = source.int("width", "w").takeIf { it > 0 },
+            height = source.int("height", "h").takeIf { it > 0 },
+            resourceId = source.string("res_id", "resId", "resource_id").ifBlank { null },
+        )
+    }
+
+    suspend fun commentEmojis(): List<CommentEmoji> =
+        ApiParsers.commentEmojis(api.post("api/bff/comment-emoji-list-v1", jsonBody()))
 
     suspend fun welfareCenter(): RewardCenter {
         val sign = api.post(

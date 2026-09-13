@@ -1,45 +1,38 @@
 package io.github.jiangyuyi.lightnovel.feature.sources
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.Icons
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.jiangyuyi.lightnovel.core.source.CommentSort
+import io.github.jiangyuyi.lightnovel.core.source.SourceComment
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
-import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 
@@ -53,6 +46,9 @@ fun SourceCommentsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf("") }
     var ratingStars by remember { mutableStateOf(0) }
+    var mentionUids by remember { mutableStateOf(emptyList<Long>()) }
+    var replyTo by remember { mutableStateOf<SourceComment?>(null) }
+    LaunchedEffect(Unit) { viewModel.loadCommentEmojis() }
     RefreshableLazyColumn(
         isRefreshing = state.commentsLoading,
         onRefresh = { viewModel.loadCommentsForScreen() },
@@ -76,39 +72,27 @@ fun SourceCommentsScreen(
             }
         }
         item {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it.take(1_000) },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 96.dp),
-                label = { Text("说说你对这部作品的看法") },
-                supportingText = { Text("${draft.length} / 1,000") },
-                trailingIcon = {
-                    IconButton(
-                        onClick = {
-                            viewModel.publishComment(
-                                draft,
-                                ratingStars,
-                                onLoginRequired = onAccounts,
-                                onPublished = {
-                                    draft = ""
-                                    ratingStars = 0
-                                },
-                            )
-                        },
-                        enabled = draft.isNotBlank() && !state.publishingComment,
-                    ) {
-                        if (state.publishingComment) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发表评论")
-                    }
-                },
-            )
-        }
-        item {
-            CommentRatingSelector(
-                value = ratingStars,
-                onValueChange = { ratingStars = it },
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            )
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                CommentComposer(
+                    viewModel = viewModel,
+                    state = state,
+                    draft = draft,
+                    onDraftChange = { draft = it },
+                    ratingStars = ratingStars,
+                    onRatingChange = { ratingStars = it },
+                    mentionUids = mentionUids,
+                    onMentionUidsChange = { mentionUids = it },
+                    replyTo = replyTo,
+                    onCancelReply = { replyTo = null },
+                    onLoginRequired = onAccounts,
+                    onPublished = {
+                        draft = ""
+                        ratingStars = 0
+                        mentionUids = emptyList()
+                        replyTo = null
+                    },
+                )
+            }
         }
         state.commentError?.let { message ->
             item {
@@ -123,25 +107,12 @@ fun SourceCommentsScreen(
             state.comments.isEmpty() && state.commentError == null -> item { EmptyPane("暂无评论，来留下第一条评论吧") }
             else -> {
                 items(state.comments, key = { "comment-${it.id}" }) { comment ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    ) {
-                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(comment.authorName, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                                Text(comment.createdAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            comment.ratingStars?.let { CommentRatingDisplay(it) }
-                            Text(comment.content)
-                            val meta = listOfNotNull(
-                                comment.likeCount.takeIf { it > 0 }?.let { "赞 $it" },
-                                comment.replyCount.takeIf { it > 0 }?.let { "回复 $it" },
-                            ).joinToString(" · ")
-                            if (meta.isNotBlank()) Text(meta, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    SourceCommentCard(
+                        comment = comment,
+                        emojis = state.commentEmojis,
+                        onLike = { viewModel.toggleCommentLike(comment, onAccounts) },
+                        onReply = { replyTo = comment },
+                    )
                 }
                 if (state.commentsHasMore || state.commentsLoadingMore) item {
                     TextButton(onClick = viewModel::loadMoreComments, enabled = !state.commentsLoadingMore, modifier = Modifier.fillMaxWidth()) {

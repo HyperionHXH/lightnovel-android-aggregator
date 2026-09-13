@@ -6,6 +6,8 @@ import io.github.jiangyuyi.lightnovel.core.model.BookSummary
 import io.github.jiangyuyi.lightnovel.core.model.AccountProfile
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
 import io.github.jiangyuyi.lightnovel.core.model.Comment
+import io.github.jiangyuyi.lightnovel.core.model.CommentMedia
+import io.github.jiangyuyi.lightnovel.core.model.CommentEmoji
 import io.github.jiangyuyi.lightnovel.core.model.DiscoverChannel
 import io.github.jiangyuyi.lightnovel.core.model.Page
 import io.github.jiangyuyi.lightnovel.core.model.ReadingHistoryItem
@@ -46,6 +48,10 @@ import io.github.jiangyuyi.lightnovel.core.source.SourcePage
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfile
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfileProvider
 import io.github.jiangyuyi.lightnovel.core.source.SourceComment
+import io.github.jiangyuyi.lightnovel.core.source.SourceCommentEmoji
+import io.github.jiangyuyi.lightnovel.core.source.SourceCommentInteraction
+import io.github.jiangyuyi.lightnovel.core.source.SourceCommentMedia
+import io.github.jiangyuyi.lightnovel.core.source.SourceMentionCandidate
 import io.github.jiangyuyi.lightnovel.core.source.SourceSession
 import io.github.jiangyuyi.lightnovel.core.source.VolumeKey
 import io.github.jiangyuyi.lightnovel.core.source.VolumeSummary
@@ -78,6 +84,22 @@ internal interface LightNovelKingdomGateway {
     suspend fun comments(bookId: Long, sort: CommentSort, page: Int, pageSize: Int): Page<Comment> =
         error("comments are not implemented")
     suspend fun publishComment(bookId: Long, content: String, ratingStars: Int = 0): Comment = error("comment publishing is not implemented")
+    suspend fun publishComment(
+        bookId: Long,
+        content: String,
+        ratingStars: Int = 0,
+        rootCommentId: Long = 0,
+        replyCommentId: Long = 0,
+        mentionUids: List<Long> = emptyList(),
+        media: List<CommentMedia> = emptyList(),
+    ): Comment = publishComment(bookId, content, ratingStars)
+    suspend fun commentEmojis(): List<CommentEmoji> = error("comment emojis are not implemented")
+    suspend fun mentionCandidates(query: String): List<io.github.jiangyuyi.lightnovel.core.model.SocialUser> = emptyList()
+    suspend fun uploadCommentImage(bytes: ByteArray, fileName: String, mimeType: String): CommentMedia =
+        error("comment image upload is not implemented")
+    suspend fun toggleCommentLike(bookId: Long, commentId: Long, currentlyLiked: Boolean): Pair<Boolean, Int?> =
+        error("comment likes are not implemented")
+    suspend fun rateBook(bookId: Long, ratingStars: Int): Unit = error("book ratings are not implemented")
     suspend fun welfareCenter(): RewardCenter = error("welfare center is not implemented")
     suspend fun claimDailyReward(): RewardResult = error("daily reward is not implemented")
 }
@@ -117,6 +139,31 @@ private class RepositoryLightNovelKingdomGateway(
         repository.comments(bookId, sort, page, pageSize)
     override suspend fun publishComment(bookId: Long, content: String, ratingStars: Int) =
         repository.publishBookComment(bookId, content, ratingStars)
+    override suspend fun publishComment(
+        bookId: Long,
+        content: String,
+        ratingStars: Int,
+        rootCommentId: Long,
+        replyCommentId: Long,
+        mentionUids: List<Long>,
+        media: List<CommentMedia>,
+    ) = repository.publishBookComment(
+        bookId,
+        content,
+        ratingStars,
+        rootCommentId,
+        replyCommentId,
+        mentionUids,
+        media,
+    )
+    override suspend fun commentEmojis() = repository.commentEmojis()
+    override suspend fun mentionCandidates(query: String) = repository.following(page = 1, pageSize = 50).items
+        .filter { query.isBlank() || it.user.nickname.contains(query, ignoreCase = true) }
+    override suspend fun uploadCommentImage(bytes: ByteArray, fileName: String, mimeType: String) =
+        repository.uploadCommentImage(bytes, fileName, mimeType)
+    override suspend fun toggleCommentLike(bookId: Long, commentId: Long, currentlyLiked: Boolean) =
+        repository.toggleCommentLike(bookId, commentId, currentlyLiked)
+    override suspend fun rateBook(bookId: Long, ratingStars: Int) = repository.rateBook(bookId, ratingStars)
     override suspend fun welfareCenter() = repository.welfareCenter()
     override suspend fun claimDailyReward() = repository.claimWelfareSign()
 }
@@ -223,6 +270,54 @@ class LightNovelKingdomSource internal constructor(
     override suspend fun publishComment(novelKey: NovelKey, content: String, ratingStars: Int): SourceComment =
         gateway.publishComment(novelKey.requireKingdomId(), content, ratingStars).toSource()
 
+    override suspend fun getCommentEmojis(): List<SourceCommentEmoji> = gateway.commentEmojis().map(CommentEmoji::toSource)
+
+    override suspend fun getMentionCandidates(novelKey: NovelKey, query: String): List<SourceMentionCandidate> =
+        gateway.mentionCandidates(query).mapNotNull { social ->
+            social.user.uid.takeIf { it > 0 }?.let { uid ->
+                SourceMentionCandidate(uid, social.user.nickname, social.user.avatarUrl)
+            }
+        }
+
+    override suspend fun uploadCommentImage(
+        novelKey: NovelKey,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+    ): SourceCommentMedia = gateway.uploadCommentImage(bytes, fileName, mimeType).toSource()
+
+    override suspend fun publishComment(
+        novelKey: NovelKey,
+        content: String,
+        ratingStars: Int,
+        rootCommentId: String?,
+        replyCommentId: String?,
+        mentionUids: List<Long>,
+        media: List<SourceCommentMedia>,
+    ): SourceComment = gateway.publishComment(
+        novelKey.requireKingdomId(),
+        content,
+        ratingStars,
+        rootCommentId?.toLongOrNull() ?: 0,
+        replyCommentId?.toLongOrNull() ?: 0,
+        mentionUids,
+        media.map { it.toModel() },
+    ).toSource()
+
+    override suspend fun toggleCommentLike(
+        novelKey: NovelKey,
+        commentId: String,
+        currentlyLiked: Boolean,
+    ): SourceCommentInteraction {
+        val result = gateway.toggleCommentLike(novelKey.requireKingdomId(), commentId.toLong(), currentlyLiked)
+        return SourceCommentInteraction(result.first, result.second)
+    }
+
+    override suspend fun rateNovel(novelKey: NovelKey, ratingStars: Int): SourceCommentInteraction {
+        gateway.rateBook(novelKey.requireKingdomId(), ratingStars)
+        return SourceCommentInteraction(liked = false)
+    }
+
     override suspend fun restoreSession(): SourceSession = gateway.restoreSession().toSource()
 
     override suspend fun login(credentials: PasswordCredentials): SourceSession =
@@ -309,16 +404,25 @@ private fun DiscoverFeed.toKingdomChannel(): DiscoverChannel = when (this) {
     -> error("unsupported light novel kingdom feed: $this")
 }
 
-private fun Comment.toSource() = SourceComment(
+private fun Comment.toSource(): SourceComment = SourceComment(
     id = id.toString(),
     authorName = author.nickname,
     authorAvatarUrl = author.avatarUrl,
     content = content,
     createdAt = createdAt,
-        likeCount = likeCount,
-        replyCount = replyCount,
-        ratingStars = ratingStars,
-    )
+    likeCount = likeCount,
+    replyCount = replyCount,
+    ratingStars = ratingStars,
+    rootCommentId = rootCommentId?.toString(),
+    replyToName = replyTo?.nickname,
+    liked = liked,
+    media = media.map(CommentMedia::toSource),
+    replies = replies.map { reply: Comment -> reply.toSource() },
+)
+
+private fun CommentMedia.toSource() = SourceCommentMedia(url, width, height, resourceId)
+private fun SourceCommentMedia.toModel() = CommentMedia(url, width, height, resourceId)
+private fun CommentEmoji.toSource() = SourceCommentEmoji(code, imageUrl, text, label)
 
 private fun BookSummary.toSource() = NovelSummary(
     key = NovelKey(SOURCE_ID, id.toString()),

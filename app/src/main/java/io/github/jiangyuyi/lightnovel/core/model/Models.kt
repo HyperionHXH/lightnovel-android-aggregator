@@ -109,6 +109,22 @@ data class ReaderBootstrap(
 )
 
 @Serializable
+data class CommentMedia(
+    val url: String,
+    val width: Int? = null,
+    val height: Int? = null,
+    val resourceId: String? = null,
+)
+
+@Serializable
+data class CommentEmoji(
+    val code: String,
+    val imageUrl: String? = null,
+    val text: String? = null,
+    val label: String? = null,
+)
+
+@Serializable
 data class Comment(
     val id: Long,
     val author: UserSummary,
@@ -117,6 +133,11 @@ data class Comment(
     val likeCount: Int = 0,
     val replyCount: Int = 0,
     val ratingStars: Int? = null,
+    val rootCommentId: Long? = null,
+    val replyTo: UserSummary? = null,
+    val liked: Boolean = false,
+    val media: List<CommentMedia> = emptyList(),
+    val replies: List<Comment> = emptyList(),
 )
 
 @Serializable

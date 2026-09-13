@@ -6,6 +6,8 @@ import io.github.jiangyuyi.lightnovel.core.model.AccountProfile
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
 import io.github.jiangyuyi.lightnovel.core.model.ChapterSummary
 import io.github.jiangyuyi.lightnovel.core.model.Comment
+import io.github.jiangyuyi.lightnovel.core.model.CommentMedia
+import io.github.jiangyuyi.lightnovel.core.model.CommentEmoji
 import io.github.jiangyuyi.lightnovel.core.model.DmConversation
 import io.github.jiangyuyi.lightnovel.core.model.DmMessage
 import io.github.jiangyuyi.lightnovel.core.model.MessageCategory
@@ -116,8 +118,14 @@ object ApiParsers {
             wordCount = source.long("word_count").takeIf { it > 0 }
                 ?: stats?.long("word_count")
                 ?: 0,
-            score = source.double("rating_score_10", "rating_stars_average", "score")
-                ?: rating?.double("score_10", "stars_average", "score"),
+            // The live detail API exposes both a five-star score and a legacy
+            // ten-point score. Prefer the display-ready five-star values and
+            // only convert the legacy value when no five-star value exists.
+            score = source.double("rating_score", "rating_stars_average", "score")?.takeIf { it > 0 }
+                ?: rating?.double("stars_average", "score")
+                    ?.takeIf { it > 0 }
+                ?: source.double("rating_score_10")?.takeIf { it > 0 }?.div(2.0)
+                ?: rating?.double("score_10")?.takeIf { it > 0 }?.div(2.0),
             rank = source.int("rank_position").takeIf { it > 0 },
             defaultVolumeId = source.long("default_volume_id").takeIf { it > 0 }
                 ?: readState?.long("default_volume_id")?.takeIf { it > 0 },
@@ -210,17 +218,93 @@ object ApiParsers {
     fun comment(source: JsonObject): Comment {
         val author = user(source.obj("user", "author", "sender", "poster_user"))
             ?: UserSummary(0, "匿名用户")
+        val stats = source.obj("stats")
+        val interaction = source.obj("interaction_state", "interactionState")
+        val replyTo = user(source.obj("reply_to_user", "replyToUser", "to_user", "target_user"))
+            ?: (source.array("reply_to_user").firstOrNull() as? JsonObject)?.let(::user)
+        val replies = source.array("reply_preview", "reply_list", "replies", "children")
+            .mapNotNull { (it as? JsonObject)?.let(::comment) }
+        val media = commentMedia(source)
         return Comment(
-            id = source.long("comment_id", "id"),
+            id = source.long("comment_id", "commentId", "id"),
             author = author,
             content = source.string("content", "content_text", "body", "text"),
-            createdAt = source.string("created_at", "time", "createdAt"),
-            likeCount = source.int("like_count", "likes"),
-            replyCount = source.int("reply_count", "replies"),
+            createdAt = source.string(
+                "publish_time",
+                "created_at",
+                "createdAt",
+                "date_text",
+                "dateText",
+                "time",
+            ),
+            likeCount = source.int("like_count", "likeCount", "likes")
+                .takeIf { it != 0 } ?: stats?.int("like_count", "likes") ?: 0,
+            replyCount = source.int("reply_count", "replyCount", "replies_count")
+                .takeIf { it != 0 } ?: stats?.int("conversation_count", "replies") ?: replies.size,
             ratingStars = source.intOrNull("rating_stars", "rating", "stars", "star")
                 ?.takeIf { it in 1..5 },
+            rootCommentId = source.long("root_comment_id", "rootCommentId")
+                .takeIf { it > 0 },
+            replyTo = replyTo,
+            liked = interaction?.bool("liked", "is_liked")
+                ?: source.bool("liked", "is_liked")
+                ?: false,
+            media = media,
+            replies = replies,
         )
     }
+
+    private fun commentMedia(source: JsonObject): List<CommentMedia> {
+        val objects = source.array("resources", "media", "images", "image_list")
+            .mapNotNull { (it as? JsonObject)?.toCommentMedia() }
+        val urls = source.array("imageUrls", "image_urls")
+            .mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.takeIf(String::isNotBlank) }
+            .map { CommentMedia(url = it) }
+        return (objects + urls).distinctBy { it.url }
+    }
+
+    private fun JsonObject.toCommentMedia(): CommentMedia? {
+        val url = string("url", "res_url", "stored_url", "source_url", "src", "image", "image_url")
+        if (url.isBlank()) return null
+        return CommentMedia(
+            url = url,
+            width = intOrNull("width", "w"),
+            height = intOrNull("height", "h"),
+            resourceId = string("res_id", "resId", "resource_id").ifBlank { null },
+        )
+    }
+
+    fun commentEmojis(source: JsonObject): List<CommentEmoji> {
+        fun parse(item: JsonObject, pack: JsonObject? = null): CommentEmoji? {
+            val code = item.string("code", "token", "text").ifBlank { return null }
+            val rawImage = item.string("url", "image", "src", "icon")
+            // The official endpoint uses the same `url` field for Unicode/kaomoji
+            // entries. Only actual image URLs should reach Coil; otherwise the
+            // value is the text representation of the emoji.
+            val image = rawImage.takeIf(::isCommentImageUrl)
+            val text = item.string("text").takeIf { it.isNotBlank() && it != code }
+                ?: rawImage.takeIf { it.isNotBlank() && !isCommentImageUrl(it) }
+            return CommentEmoji(
+                code = code,
+                imageUrl = image,
+                text = text,
+                label = item.string("label", "name", "title").ifBlank {
+                    pack?.string("name", "title", "label").orEmpty().ifBlank { null }
+                },
+            ).takeIf { it.imageUrl != null || it.text != null }
+        }
+        return source.array("list", "items", "emojis", "default").flatMap { element ->
+            val item = element as? JsonObject ?: return@flatMap emptyList()
+            val nested = item.array("items", "emojis")
+            if (nested.isEmpty()) listOfNotNull(parse(item))
+            else nested.mapNotNull { (it as? JsonObject)?.let { child -> parse(child, item) } }
+        }.distinctBy { it.code }
+    }
+
+    private fun isCommentImageUrl(value: String): Boolean =
+        value.startsWith("http://", ignoreCase = true) ||
+            value.startsWith("https://", ignoreCase = true) ||
+            value.startsWith("/")
 
     fun accountProfile(source: JsonObject): AccountProfile {
         val profile = source.obj("profile", "user") ?: source
