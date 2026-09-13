@@ -339,7 +339,6 @@ class SourceBookViewModel(
 
     fun publishComment(
         content: String,
-        ratingStars: Int = 0,
         rootCommentId: String? = null,
         replyCommentId: String? = null,
         mentionUids: List<Long> = emptyList(),
@@ -350,7 +349,7 @@ class SourceBookViewModel(
         val provider = registry.commentProvider(novelKey.sourceId) ?: return
         val normalized = content.trim()
         val selectedMedia = if (media.isNotEmpty()) media else _state.value.commentMedia
-        if (normalized.isBlank() && ratingStars <= 0 && selectedMedia.isEmpty()) {
+        if (normalized.isBlank() && selectedMedia.isEmpty()) {
             _state.value = _state.value.copy(commentError = "请输入评论内容")
             return
         }
@@ -362,25 +361,19 @@ class SourceBookViewModel(
         )
         viewModelScope.launch {
             runSourceCatching {
-                if (ratingStars in 1..5) provider.rateNovel(novelKey, ratingStars)
-                if (normalized.isNotBlank() || selectedMedia.isNotEmpty()) {
-                    provider.publishComment(
-                        novelKey = novelKey,
-                        content = normalized,
-                        ratingStars = 0,
-                        rootCommentId = rootCommentId,
-                        replyCommentId = replyCommentId,
-                        mentionUids = mentionUids,
-                        media = selectedMedia,
-                    )
-                } else {
-                    null
-                }
+                provider.publishComment(
+                    novelKey = novelKey,
+                    content = normalized,
+                    ratingStars = 0,
+                    rootCommentId = rootCommentId,
+                    replyCommentId = replyCommentId,
+                    mentionUids = mentionUids,
+                    media = selectedMedia,
+                )
             }
                 .onSuccess {
                     _state.value = _state.value.copy(publishingComment = false, commentMedia = emptyList())
                     onPublished()
-                    if (ratingStars in 1..5) load(forceRefresh = true)
                     loadComments(reset = true)
                 }
                 .onFailure { error ->
@@ -392,6 +385,32 @@ class SourceBookViewModel(
                     if (error.isSourceAuthentication()) {
                         onLoginRequired()
                     }
+                }
+        }
+    }
+
+    fun rateNovel(
+        ratingStars: Int,
+        onLoginRequired: () -> Unit,
+        onRated: () -> Unit,
+    ) {
+        val provider = registry.commentProvider(novelKey.sourceId) ?: return
+        if (ratingStars !in 1..5 || _state.value.publishingComment) return
+        _state.value = _state.value.copy(publishingComment = true, commentError = null, commentLoginRequired = false)
+        viewModelScope.launch {
+            runSourceCatching { provider.rateNovel(novelKey, ratingStars) }
+                .onSuccess {
+                    _state.value = _state.value.copy(publishingComment = false)
+                    onRated()
+                    load(forceRefresh = true)
+                }
+                .onFailure { error ->
+                    _state.value = _state.value.copy(
+                        publishingComment = false,
+                        commentError = error.toSourceUiMessage("评分提交失败"),
+                        commentLoginRequired = error.isSourceAuthentication(),
+                    )
+                    if (error.isSourceAuthentication()) onLoginRequired()
                 }
         }
     }

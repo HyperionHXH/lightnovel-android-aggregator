@@ -56,7 +56,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.19.1`、`versionCode 29`；桌面和 jpackage 默认版本仍按各自构建配置注入。tag Release 工作流会从 tag 注入版本。当前待发布 Release 为 `v1.19.1`。
+Android 默认版本：`versionName 1.20.0`、`versionCode 30`；桌面和 jpackage 默认版本仍按各自构建配置注入。tag Release 工作流会从 tag 注入版本。当前待发布 Release 为 `v1.20.0`。
 
 ## 2026-09-11 本轮变更
 
@@ -97,6 +97,7 @@ Android 默认版本：`versionName 1.19.1`、`versionCode 29`；桌面和 jpack
 - `jsonBody` 已支持任意 `JsonElement`，避免 `mention_uids` 被编码成字符串；评论 API 的评分请求与官方 `view` 字段保持一致。
 - 本轮已通过 `:app:testDebugUnitTest`；发布前需执行 `:app:assembleRelease` 并创建 `v1.19.1` Release。轻书架适配尚未开始，等待用户确认。
 - Review 后修复表情菜单只展示前 24 项的问题，改为可滚动展示完整官方分组；轻书架适配尚未开始，等待用户确认。
+- 1.20.0 修复 LK 评分十分制换算；评分通过独立确认按钮提交，评论发布不再携带评分字段。回复输入栏移动到目标评论下方，发送成功后自动清空并收起；轻书架适配尚未开始，等待用户确认。
 3. 大功能或用户可感知修复通过 tag 创建 Release（例如 `v1.4.3`），构建并上传 APK、SHA256、Windows 包。仅文档小改动通常不单独发 Release。
 4. 不要提交账号、Token、密码、`签名密码.txt`、`signing.properties` 或本地小说目录。
 

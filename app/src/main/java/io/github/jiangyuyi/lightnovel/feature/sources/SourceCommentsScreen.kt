@@ -73,23 +73,33 @@ fun SourceCommentsScreen(
         }
         item {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                CommentComposer(
-                    viewModel = viewModel,
-                    state = state,
-                    draft = draft,
-                    onDraftChange = { draft = it },
-                    ratingStars = ratingStars,
-                    onRatingChange = { ratingStars = it },
-                    mentionUids = mentionUids,
-                    onMentionUidsChange = { mentionUids = it },
-                    replyTo = replyTo,
-                    onCancelReply = { replyTo = null },
-                    onLoginRequired = onAccounts,
-                    onPublished = {
-                        draft = ""
-                        ratingStars = 0
-                        mentionUids = emptyList()
-                        replyTo = null
+                if (replyTo == null) {
+                    CommentComposer(
+                        viewModel = viewModel,
+                        state = state,
+                        draft = draft,
+                        onDraftChange = { draft = it },
+                        mentionUids = mentionUids,
+                        onMentionUidsChange = { mentionUids = it },
+                        replyTo = null,
+                        onCancelReply = { replyTo = null },
+                        onLoginRequired = onAccounts,
+                        onPublished = {
+                            draft = ""
+                            mentionUids = emptyList()
+                        },
+                    )
+                }
+                RatingCommitRow(
+                    value = ratingStars,
+                    onValueChange = { ratingStars = it },
+                    enabled = !state.publishingComment,
+                    onConfirm = {
+                        viewModel.rateNovel(
+                            ratingStars,
+                            onLoginRequired = onAccounts,
+                            onRated = { ratingStars = 0 },
+                        )
                     },
                 )
             }
@@ -113,6 +123,24 @@ fun SourceCommentsScreen(
                         onLike = { viewModel.toggleCommentLike(comment, onAccounts) },
                         onReply = { replyTo = comment },
                     )
+                    if (replyTo?.id == comment.id) {
+                        CommentComposer(
+                            viewModel = viewModel,
+                            state = state,
+                            draft = draft,
+                            onDraftChange = { draft = it },
+                            mentionUids = mentionUids,
+                            onMentionUidsChange = { mentionUids = it },
+                            replyTo = replyTo,
+                            onCancelReply = { replyTo = null },
+                            onLoginRequired = onAccounts,
+                            onPublished = {
+                                draft = ""
+                                mentionUids = emptyList()
+                                replyTo = null
+                            },
+                        )
+                    }
                 }
                 if (state.commentsHasMore || state.commentsLoadingMore) item {
                     TextButton(onClick = viewModel::loadMoreComments, enabled = !state.commentsLoadingMore, modifier = Modifier.fillMaxWidth()) {

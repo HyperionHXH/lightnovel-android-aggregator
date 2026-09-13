@@ -118,10 +118,10 @@ class ApiParsersTest {
 
     @Test
     fun `book parser prefers the official five star score and converts legacy ten point score`() {
-        val fiveStar = ApiParsers.book(obj("""{"book_id": 1, "title": "评分", "rating_score": 4.6, "rating_score_10": 9.2}"""))
+        val tenPoint = ApiParsers.book(obj("""{"book_id": 1, "title": "评分", "rating_score": 10.0, "rating_score_10": 10.0}"""))
         val legacy = ApiParsers.book(obj("""{"book_id": 2, "title": "旧评分", "rating_score": 0, "rating_score_10": 8.4}"""))
 
-        assertEquals(4.6, checkNotNull(fiveStar.score), 0.001)
+        assertEquals(5.0, checkNotNull(tenPoint.score), 0.001)
         assertEquals(4.2, checkNotNull(legacy.score), 0.001)
     }
 

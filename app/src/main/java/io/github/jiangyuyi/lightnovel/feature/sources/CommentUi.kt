@@ -47,6 +47,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -62,8 +68,6 @@ internal fun CommentComposer(
     state: SourceBookState,
     draft: String,
     onDraftChange: (String) -> Unit,
-    ratingStars: Int,
-    onRatingChange: (Int) -> Unit,
     mentionUids: List<Long>,
     onMentionUidsChange: (List<Long>) -> Unit,
     replyTo: SourceComment?,
@@ -74,6 +78,8 @@ internal fun CommentComposer(
     var emojiMenu by remember { mutableStateOf(false) }
     var mentionMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         val bytes = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
@@ -91,6 +97,10 @@ internal fun CommentComposer(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         replyTo?.let { target ->
+            LaunchedEffect(target.id) {
+                focusRequester.requestFocus()
+                keyboard?.show()
+            }
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 color = MaterialTheme.colorScheme.secondaryContainer,
@@ -108,7 +118,7 @@ internal fun CommentComposer(
         OutlinedTextField(
             value = draft,
             onValueChange = { onDraftChange(it.take(1_000)) },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp).focusRequester(focusRequester),
             placeholder = { Text("说说本作品...") },
             supportingText = { Text("${draft.length} / 1,000") },
             trailingIcon = {
@@ -116,16 +126,18 @@ internal fun CommentComposer(
                     onClick = {
                         viewModel.publishComment(
                             content = draft,
-                            ratingStars = ratingStars,
                             rootCommentId = replyTo?.rootCommentId ?: replyTo?.id,
                             replyCommentId = replyTo?.id,
                             mentionUids = mentionUids,
                             media = state.commentMedia,
                             onLoginRequired = onLoginRequired,
-                            onPublished = onPublished,
+                            onPublished = {
+                                keyboard?.hide()
+                                onPublished()
+                            },
                         )
                     },
-                    enabled = (draft.isNotBlank() || state.commentMedia.isNotEmpty() || ratingStars > 0) &&
+                    enabled = (draft.isNotBlank() || state.commentMedia.isNotEmpty()) &&
                         !state.publishingComment && !state.uploadingCommentImage,
                 ) {
                     if (state.publishingComment) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -173,7 +185,6 @@ internal fun CommentComposer(
                 else Icon(Icons.Filled.AddPhotoAlternate, contentDescription = "添加图片")
             }
             Spacer(Modifier.weight(1f))
-            Text("评分", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (state.commentMedia.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -190,7 +201,25 @@ internal fun CommentComposer(
                 }
             }
         }
-        CommentRatingSelector(value = ratingStars, onValueChange = onRatingChange)
+    }
+}
+
+@Composable
+internal fun RatingCommitRow(
+    value: Int,
+    onValueChange: (Int) -> Unit,
+    enabled: Boolean,
+    onConfirm: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CommentRatingSelector(value = value, onValueChange = onValueChange, modifier = Modifier.weight(1f))
+        OutlinedButton(onClick = onConfirm, enabled = enabled && value in 1..5) {
+            Text("确认评分")
+        }
     }
 }
 

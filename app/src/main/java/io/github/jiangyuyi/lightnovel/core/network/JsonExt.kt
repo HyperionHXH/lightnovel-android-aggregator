@@ -118,14 +118,13 @@ object ApiParsers {
             wordCount = source.long("word_count").takeIf { it > 0 }
                 ?: stats?.long("word_count")
                 ?: 0,
-            // The live detail API exposes both a five-star score and a legacy
-            // ten-point score. Prefer the display-ready five-star values and
-            // only convert the legacy value when no five-star value exists.
-            score = source.double("rating_score", "rating_stars_average", "score")?.takeIf { it > 0 }
-                ?: rating?.double("stars_average", "score")
-                    ?.takeIf { it > 0 }
-                ?: source.double("rating_score_10")?.takeIf { it > 0 }?.div(2.0)
-                ?: rating?.double("score_10")?.takeIf { it > 0 }?.div(2.0),
+            // LK stores the work score on a ten-point scale. The UI uses five
+            // stars, so normalize every official score field at the boundary.
+            score = source.double("rating_score_10")?.takeIf { it > 0 }?.div(2.0)
+                ?: rating?.double("score_10")?.takeIf { it > 0 }?.div(2.0)
+                ?: source.double("rating_score")?.takeIf { it > 0 }?.div(2.0)
+                ?: source.double("rating_stars_average")?.takeIf { it > 0 }
+                ?: rating?.double("stars_average", "score")?.takeIf { it > 0 },
             rank = source.int("rank_position").takeIf { it > 0 },
             defaultVolumeId = source.long("default_volume_id").takeIf { it > 0 }
                 ?: readState?.long("default_volume_id")?.takeIf { it > 0 },
