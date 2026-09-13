@@ -48,8 +48,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -415,26 +413,29 @@ private fun SourcePagedReader(
                 spacingPx = with(density) { 14.dp.roundToPx() },
             )
         }
-        val pagerState = rememberPagerState { pages.size.coerceAtLeast(1) }
+        val pageCount = pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0
+        val pagerState = rememberPagerState { pageCount }
         val pagerScope = rememberCoroutineScope()
         var currentAnchor by remember(blocks) { mutableIntStateOf(anchorBlock) }
         var scrubValue by remember { mutableFloatStateOf(0f) }
         var scrubbing by remember { mutableStateOf(false) }
-        ReaderVolumeKeyEffect(
-            enabled = volumePagingEnabled,
-            onPrevious = {
-                pagerScope.launch {
-                    if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                    else if (hasPreviousChapter) onPreviousChapter()
-                }
-            },
-            onNext = {
-                pagerScope.launch {
-                    if (pagerState.currentPage < pages.lastIndex) pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                    else if (hasNextChapter) onNextChapter()
-                }
-            },
-        )
+        if (preferences.mode != io.github.jiangyuyi.lightnovel.core.model.ReaderMode.CARD) {
+            ReaderVolumeKeyEffect(
+                enabled = volumePagingEnabled,
+                onPrevious = {
+                    pagerScope.launch {
+                        if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                        else if (hasPreviousChapter) onPreviousChapter()
+                    }
+                },
+                onNext = {
+                    pagerScope.launch {
+                        if (pagerState.currentPage < pages.lastIndex) pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        else if (hasNextChapter) onNextChapter()
+                    }
+                },
+            )
+        }
         LaunchedEffect(pages) {
             val target = pages.indexOfFirst { currentAnchor in it.firstBlockIndex..it.lastBlockIndex }
                 .takeIf { it >= 0 }
@@ -452,88 +453,110 @@ private fun SourcePagedReader(
                 }
             }
         }
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(
-                    top = safeTopPadding + 8.dp,
-                    bottom = 12.dp,
-                )
-                .pointerInput(
-                    pagerState.currentPage,
-                    pages.size,
-                    hasNextChapter,
-                    preferences.tapZone,
-                    preferences.tapInversion,
+        LaunchedEffect(pagerState.currentPage, pages.size, hasNextChapter) {
+            if (hasNextChapter && pagerState.currentPage == pages.size) onNextChapter()
+        }
+
+        fun handleTap(x: Float, y: Float, width: Int, height: Int) {
+            when (readerTapAction(
+                preferences.tapZone,
+                x / width.toFloat().coerceAtLeast(1f),
+                y / height.toFloat().coerceAtLeast(1f),
+                preferences.tapInversion,
+            )) {
+                ReaderTapAction.PREVIOUS -> {
+                    if (pagerState.currentPage > 0) {
+                        pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
+                    } else if (hasPreviousChapter) {
+                        onPreviousChapter()
+                    }
+                }
+                ReaderTapAction.NEXT -> {
+                    if (pagerState.currentPage < pages.lastIndex) {
+                        pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                    } else if (hasNextChapter) {
+                        onNextChapter()
+                    }
+                }
+                ReaderTapAction.CONTROLS -> onToggleControls()
+                ReaderTapAction.NONE -> Unit
+            }
+        }
+
+        val pageContent: @Composable (Int) -> Unit = { pageIndex ->
+            if (pageIndex < pages.size) {
+                Column(
+                    Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
+                    verticalArrangement = if (pages[pageIndex].elements.size == 1 &&
+                        pages[pageIndex].elements.firstOrNull() is ReaderPageElement.Illustration
+                    ) Arrangement.Center else Arrangement.spacedBy(14.dp),
                 ) {
-                    detectTapGestures { position ->
-                        when (readerTapAction(
-                            preferences.tapZone,
-                            position.x / size.width.toFloat().coerceAtLeast(1f),
-                            position.y / size.height.toFloat().coerceAtLeast(1f),
-                            preferences.tapInversion,
-                        )) {
-                            ReaderTapAction.PREVIOUS -> {
-                                if (pagerState.currentPage > 0) {
-                                    pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-                                } else if (hasPreviousChapter) {
-                                    onPreviousChapter()
-                                }
-                            }
-                            ReaderTapAction.NEXT -> {
-                                if (pagerState.currentPage < pages.lastIndex) {
-                                    pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-                                } else if (hasNextChapter) {
-                                    onNextChapter()
-                                }
-                            }
-                            ReaderTapAction.CONTROLS -> onToggleControls()
-                            ReaderTapAction.NONE -> Unit
+                    pages[pageIndex].elements.forEach { element ->
+                        when (element) {
+                            is ReaderPageElement.Text -> Text(
+                                element.text,
+                                style = preferences.sourceTextStyle(colors.text, chapterFontFamily, customFontFamily).copy(
+                                    fontSize = if (element.heading) (preferences.fontSize + 4).sp else preferences.fontSize.sp,
+                                    fontWeight = if (element.heading) FontWeight.SemiBold else FontWeight.Normal,
+                                    textIndent = TextIndent(firstLine = if (element.firstLineIndent) 2.em else 0.em),
+                                ),
+                            )
+                            is ReaderPageElement.Illustration -> ReaderRemoteImage(
+                                url = element.block.url,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).height(with(density) { element.heightPx.toDp() }),
+                                imageScale = preferences.imageScale,
+                            )
                         }
                     }
-                },
-            beyondViewportPageCount = 1,
-            userScrollEnabled = false,
-        ) { pageIndex ->
-            val pageOffset = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
-            val pageTransform = if (preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.BOOK) {
-                Modifier.graphicsLayer {
-                    val offset = pageOffset.coerceIn(-1f, 1f)
-                    rotationY = -offset * 72f
-                    transformOrigin = TransformOrigin(
-                        pivotFractionX = if (offset > 0f) 0f else 1f,
-                        pivotFractionY = 0.5f,
-                    )
-                    cameraDistance = 24f * density.density
-                    shadowElevation = kotlin.math.abs(offset) * 10f
-                    alpha = 1f - kotlin.math.abs(offset) * 0.08f
                 }
-            } else Modifier
-            Column(
-                Modifier.fillMaxSize().padding(horizontal = horizontalPadding).then(pageTransform),
-                verticalArrangement = if (pages[pageIndex].elements.size == 1 &&
-                    pages[pageIndex].elements.firstOrNull() is ReaderPageElement.Illustration
-                ) Arrangement.Center else Arrangement.spacedBy(14.dp),
-            ) {
-                pages[pageIndex].elements.forEach { element ->
-                    when (element) {
-                        is ReaderPageElement.Text -> Text(
-                            element.text,
-                            style = preferences.sourceTextStyle(colors.text, chapterFontFamily, customFontFamily).copy(
-                                fontSize = if (element.heading) (preferences.fontSize + 4).sp else preferences.fontSize.sp,
-                                fontWeight = if (element.heading) FontWeight.SemiBold else FontWeight.Normal,
-                                textIndent = TextIndent(firstLine = if (element.firstLineIndent) 2.em else 0.em),
-                            ),
-                        )
-                        is ReaderPageElement.Illustration -> ReaderRemoteImage(
-                            url = element.block.url,
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 80.dp).height(with(density) { element.heightPx.toDp() }),
-                            imageScale = preferences.imageScale,
-                        )
-                    }
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("正在进入下一章…", color = colors.text.copy(alpha = 0.72f))
                 }
             }
+        }
+
+        if (preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.CARD) {
+            CardPageTurn(
+                pagerState = pagerState,
+                pageCount = pageCount,
+                hasPreviousChapter = hasPreviousChapter,
+                hasNextChapter = hasNextChapter,
+                volumePagingEnabled = volumePagingEnabled,
+                onPreviousChapter = onPreviousChapter,
+                onNextChapter = onNextChapter,
+                onTap = ::handleTap,
+                pageContent = pageContent,
+                pageBackground = colors.background,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = safeTopPadding + 8.dp, bottom = 12.dp),
+            )
+        } else {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = safeTopPadding + 8.dp, bottom = 12.dp),
+                beyondViewportPageCount = 1,
+                userScrollEnabled = false,
+                pageContent = { pageIndex -> pageContent(pageIndex) },
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(
+                        pages.size,
+                        hasPreviousChapter,
+                        hasNextChapter,
+                        preferences.tapZone,
+                        preferences.tapInversion,
+                    ) {
+                        detectTapGestures { position ->
+                            handleTap(position.x, position.y, size.width, size.height)
+                        }
+                    },
+            )
         }
         if (controlsVisible && showProgressBar) {
             val visiblePage = pagerState.currentPage.coerceIn(0, pages.lastIndex.coerceAtLeast(0))

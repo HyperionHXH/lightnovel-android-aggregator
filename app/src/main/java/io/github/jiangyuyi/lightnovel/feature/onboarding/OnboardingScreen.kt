@@ -31,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.jiangyuyi.lightnovel.core.model.ReaderFont
 import io.github.jiangyuyi.lightnovel.core.model.ReaderMode
@@ -259,7 +260,14 @@ private fun <T> ChoiceSection(
                 FilterChip(
                     selected = value == selected,
                     onClick = { onSelected(value) },
-                    label = { Text(label(value)) },
+                    label = {
+                        Text(
+                            label(value),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                 )
             }
         }

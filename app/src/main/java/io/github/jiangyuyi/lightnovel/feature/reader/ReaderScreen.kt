@@ -5,8 +5,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
@@ -14,6 +12,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -63,8 +63,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -329,26 +327,27 @@ private fun PagedReader(
                 spacingPx = spacingPx,
             )
         }
-        val pagerState = rememberPagerState {
-            pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0
-        }
+        val pageCount = pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0
+        val pagerState = rememberPagerState { pageCount }
         val pagerScope = rememberCoroutineScope()
         var scrubValue by remember { mutableFloatStateOf(0f) }
         var scrubbing by remember { mutableStateOf(false) }
         var turnRequest by remember { mutableStateOf<ReaderTurnRequest?>(null) }
         var turnRequestToken by remember { mutableIntStateOf(0) }
 
-        ReaderVolumeKeyEffect(
-            enabled = volumePagingEnabled,
-            onPrevious = {
-                turnRequestToken += 1
-                turnRequest = ReaderTurnRequest(ReaderTurnDirection.PREVIOUS, turnRequestToken)
-            },
-            onNext = {
-                turnRequestToken += 1
-                turnRequest = ReaderTurnRequest(ReaderTurnDirection.NEXT, turnRequestToken)
-            },
-        )
+        if (preferences.mode != ReaderMode.CARD) {
+            ReaderVolumeKeyEffect(
+                enabled = volumePagingEnabled,
+                onPrevious = {
+                    turnRequestToken += 1
+                    turnRequest = ReaderTurnRequest(ReaderTurnDirection.PREVIOUS, turnRequestToken)
+                },
+                onNext = {
+                    turnRequestToken += 1
+                    turnRequest = ReaderTurnRequest(ReaderTurnDirection.NEXT, turnRequestToken)
+                },
+            )
+        }
 
         LaunchedEffect(pages) {
             val containingPage = pages.indexOfFirst { anchorBlock in it.firstBlockIndex..it.lastBlockIndex }
@@ -375,46 +374,28 @@ private fun PagedReader(
         LaunchedEffect(pagerState.currentPage, pages.size, hasNextChapter) {
             if (hasNextChapter && pagerState.currentPage == pages.size) onNextChapter()
         }
-        LaunchedEffect(turnRequest?.token) {
-            val request = turnRequest ?: return@LaunchedEffect
-            when (request.direction) {
-                ReaderTurnDirection.PREVIOUS -> when {
-                    pagerState.currentPage > 0 -> pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                    hasPreviousChapter -> onPreviousChapter()
-                }
-                ReaderTurnDirection.NEXT -> when {
-                    pagerState.currentPage < pages.lastIndex -> pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                    hasNextChapter -> onNextChapter()
-                }
+        fun handleTap(x: Float, y: Float, width: Int, height: Int) {
+            fun requestTurn(direction: ReaderTurnDirection) {
+                turnRequestToken += 1
+                turnRequest = ReaderTurnRequest(direction, turnRequestToken)
             }
-            if (turnRequest == request) turnRequest = null
+            when (readerTapAction(
+                preferences.tapZone,
+                x / width.toFloat().coerceAtLeast(1f),
+                y / height.toFloat().coerceAtLeast(1f),
+                preferences.tapInversion,
+            )) {
+                ReaderTapAction.PREVIOUS -> requestTurn(ReaderTurnDirection.PREVIOUS)
+                ReaderTapAction.NEXT -> requestTurn(ReaderTurnDirection.NEXT)
+                ReaderTapAction.CONTROLS -> onToggleControls()
+                ReaderTapAction.NONE -> Unit
+            }
         }
 
-        HorizontalPager(
-            state = pagerState,
-            beyondViewportPageCount = 1,
-            userScrollEnabled = false,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = pageTopPadding, bottom = pageBottomPadding),
-        ) { pageIndex ->
+        val pageContent: @Composable (Int) -> Unit = { pageIndex ->
             if (pageIndex < pages.size) {
-                val pageOffset = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
-                val pageTransform = if (preferences.mode == ReaderMode.BOOK) {
-                    Modifier.graphicsLayer {
-                        val offset = pageOffset.coerceIn(-1f, 1f)
-                        rotationY = -offset * 72f
-                        transformOrigin = TransformOrigin(
-                            pivotFractionX = if (offset > 0f) 0f else 1f,
-                            pivotFractionY = 0.5f,
-                        )
-                        cameraDistance = 24f * density.density
-                        shadowElevation = kotlin.math.abs(offset) * 10f
-                        alpha = 1f - kotlin.math.abs(offset) * 0.08f
-                    }
-                } else Modifier
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = horizontalPadding).then(pageTransform),
+                    modifier = Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     pages.getOrNull(pageIndex)?.elements.orEmpty().forEach { element ->
@@ -436,58 +417,66 @@ private fun PagedReader(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(
-                    pages.size,
-                    hasPreviousChapter,
-                    hasNextChapter,
-                    preferences.tapZone,
-                    preferences.tapInversion,
-                ) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        val start = down.position
-                        var releasedX: Float? = null
-                        var releasedY: Float? = null
-                        while (releasedX == null) {
-                            val event = awaitPointerEvent()
-                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                            change.consume()
-                            if (!change.pressed) {
-                                releasedX = change.position.x
-                                releasedY = change.position.y
-                            }
+        if (preferences.mode == ReaderMode.CARD) {
+            CardPageTurn(
+                pagerState = pagerState,
+                pageCount = pageCount,
+                hasPreviousChapter = hasPreviousChapter,
+                hasNextChapter = hasNextChapter,
+                volumePagingEnabled = volumePagingEnabled,
+                onPreviousChapter = onPreviousChapter,
+                onNextChapter = onNextChapter,
+                onTap = ::handleTap,
+                pageContent = pageContent,
+                pageBackground = colors.background,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = pageTopPadding, bottom = pageBottomPadding),
+            )
+        } else {
+            HorizontalPager(
+                state = pagerState,
+                beyondViewportPageCount = 1,
+                pageSpacing = 0.dp,
+                userScrollEnabled = false,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = pageTopPadding, bottom = pageBottomPadding),
+                pageContent = { pageIndex -> pageContent(pageIndex) },
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(
+                        pages.size,
+                        hasPreviousChapter,
+                        hasNextChapter,
+                        preferences.tapZone,
+                        preferences.tapInversion,
+                    ) {
+                        detectTapGestures { position ->
+                            handleTap(position.x, position.y, size.width, size.height)
                         }
-                        val endX = releasedX ?: return@awaitEachGesture
-                        val endY = releasedY ?: return@awaitEachGesture
-                        val deltaX = endX - start.x
-                        val deltaY = endY - start.y
+                    },
+            )
+        }
 
-                        fun requestTurn(direction: ReaderTurnDirection) {
-                            turnRequestToken += 1
-                            turnRequest = ReaderTurnRequest(direction, turnRequestToken)
-                        }
-
-                        when {
-                            abs(deltaX) <= viewConfiguration.touchSlop && abs(deltaY) <= viewConfiguration.touchSlop -> {
-                                when (readerTapAction(
-                                    preferences.tapZone,
-                                    endX / size.width.toFloat().coerceAtLeast(1f),
-                                    endY / size.height.toFloat().coerceAtLeast(1f),
-                                    preferences.tapInversion,
-                                )) {
-                                    ReaderTapAction.PREVIOUS -> requestTurn(ReaderTurnDirection.PREVIOUS)
-                                    ReaderTapAction.NEXT -> requestTurn(ReaderTurnDirection.NEXT)
-                                    ReaderTapAction.CONTROLS -> onToggleControls()
-                                    ReaderTapAction.NONE -> Unit
-                                }
-                            }
-                        }
+        if (preferences.mode != ReaderMode.CARD) {
+            LaunchedEffect(turnRequest?.token) {
+                val request = turnRequest ?: return@LaunchedEffect
+                when (request.direction) {
+                    ReaderTurnDirection.PREVIOUS -> when {
+                        pagerState.currentPage > 0 -> pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                        hasPreviousChapter -> onPreviousChapter()
                     }
-                },
-        )
+                    ReaderTurnDirection.NEXT -> when {
+                        pagerState.currentPage < pages.lastIndex -> pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        hasNextChapter -> onNextChapter()
+                    }
+                }
+                if (turnRequest == request) turnRequest = null
+            }
+        }
 
         if (pagerState.currentPage < pages.size) {
             Text(
@@ -741,6 +730,7 @@ private fun ReaderStatusBanner(message: String, colors: ReaderColors) {
     )
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ReaderSettingsDialog(
     preferences: ReaderPreferences,
@@ -757,7 +747,11 @@ internal fun ReaderSettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("翻页方式")
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     ReaderMode.entries.forEach { mode ->
                         ReaderOptionChip(
                             selected = preferences.mode == mode,
@@ -767,19 +761,25 @@ internal fun ReaderSettingsDialog(
                     }
                 }
                 Text("点击区域")
-                ReaderTapZone.entries.chunked(3).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { zone ->
-                            ReaderOptionChip(
-                                selected = preferences.tapZone == zone,
-                                onClick = { onChange(preferences.copy(tapZone = zone)) },
-                                label = zone.label,
-                            )
-                        }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ReaderTapZone.entries.forEach { zone ->
+                        ReaderOptionChip(
+                            selected = preferences.tapZone == zone,
+                            onClick = { onChange(preferences.copy(tapZone = zone)) },
+                            label = zone.label,
+                        )
                     }
                 }
                 Text("反转点击区域")
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     ReaderTapInversion.entries.forEach { inversion ->
                         ReaderOptionChip(
                             selected = preferences.tapInversion == inversion,
@@ -789,7 +789,11 @@ internal fun ReaderSettingsDialog(
                     }
                 }
                 Text("屏幕方向")
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     ReaderOrientation.entries.forEach { orientation ->
                         ReaderOptionChip(
                             selected = preferences.orientation == orientation,
@@ -799,15 +803,17 @@ internal fun ReaderSettingsDialog(
                     }
                 }
                 Text("图片缩放")
-                ReaderImageScale.entries.chunked(3).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { scale ->
-                            ReaderOptionChip(
-                                selected = preferences.imageScale == scale,
-                                onClick = { onChange(preferences.copy(imageScale = scale)) },
-                                label = scale.label,
-                            )
-                        }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ReaderImageScale.entries.forEach { scale ->
+                        ReaderOptionChip(
+                            selected = preferences.imageScale == scale,
+                            onClick = { onChange(preferences.copy(imageScale = scale)) },
+                            label = scale.label,
+                        )
                     }
                 }
                 ReaderSettingSwitch(
@@ -821,15 +827,17 @@ internal fun ReaderSettingsDialog(
                     onCheckedChange = { onChange(preferences.copy(keepScreenOn = it)) },
                 )
                 Text("背景")
-                ReaderTheme.entries.chunked(2).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        row.forEach { theme ->
-                            ReaderOptionChip(
-                                selected = preferences.theme == theme,
-                                onClick = { onChange(preferences.copy(theme = theme)) },
-                                label = theme.label,
-                            )
-                        }
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    ReaderTheme.entries.forEach { theme ->
+                        ReaderOptionChip(
+                            selected = preferences.theme == theme,
+                            onClick = { onChange(preferences.copy(theme = theme)) },
+                            label = theme.label,
+                        )
                     }
                 }
             }
@@ -909,7 +917,15 @@ private fun ReaderOptionChip(selected: Boolean, onClick: () -> Unit, label: Stri
     FilterChip(
         selected = selected,
         onClick = onClick,
-        label = { Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
+        label = {
+            Text(
+                label,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            )
+        },
         leadingIcon = if (selected) {
             { Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold) }
         } else {

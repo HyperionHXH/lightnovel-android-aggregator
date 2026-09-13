@@ -175,7 +175,7 @@ enum class ReaderTheme(val label: String) {
 @Serializable
 enum class ReaderMode(val label: String) {
     PAGED("左右翻页"),
-    BOOK("仿真翻书"),
+    CARD("卡片翻页"),
     SCROLL("上下滚动"),
 }
 
