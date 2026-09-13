@@ -56,7 +56,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.19.0`、`versionCode 28`；桌面和 jpackage 默认版本仍按各自构建配置注入。tag Release 工作流会从 tag 注入版本。当前待发布 Release 为 `v1.19.0`。
+Android 默认版本：`versionName 1.19.1`、`versionCode 29`；桌面和 jpackage 默认版本仍按各自构建配置注入。tag Release 工作流会从 tag 注入版本。当前待发布 Release 为 `v1.19.1`。
 
 ## 2026-09-11 本轮变更
 
@@ -95,7 +95,8 @@ Android 默认版本：`versionName 1.19.0`、`versionCode 28`；桌面和 jpack
 - 评论编辑器支持真实图片上传、@ 关注用户、表情插入、回复和点赞；评分通过官方评分字段单独提交，不重复发布评分评论。
 - 评论读取保留图片-only 评论，分页仍按官方 `page_info` 判断；未登录允许读取，发布/点赞/上传按来源认证错误引导登录。
 - `jsonBody` 已支持任意 `JsonElement`，避免 `mention_uids` 被编码成字符串；评论 API 的评分请求与官方 `view` 字段保持一致。
-- 本轮已通过 `:app:testDebugUnitTest`；发布前需执行 `:app:assembleRelease` 并创建 `v1.19.0` Release。轻书架适配尚未开始，等待用户确认。
+- 本轮已通过 `:app:testDebugUnitTest`；发布前需执行 `:app:assembleRelease` 并创建 `v1.19.1` Release。轻书架适配尚未开始，等待用户确认。
+- Review 后修复表情菜单只展示前 24 项的问题，改为可滚动展示完整官方分组；轻书架适配尚未开始，等待用户确认。
 3. 大功能或用户可感知修复通过 tag 创建 Release（例如 `v1.4.3`），构建并上传 APK、SHA256、Windows 包。仅文档小改动通常不单独发 Release。
 4. 不要提交账号、Token、密码、`签名密码.txt`、`signing.properties` 或本地小说目录。
 

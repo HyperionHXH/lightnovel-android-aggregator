@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -203,18 +205,22 @@ private fun BoxedEmojiMenu(
         if (emojis.isEmpty()) {
             DropdownMenuItem(text = { Text("表情加载中…") }, onClick = onDismiss)
         } else {
-            emojis.take(24).forEach { emoji ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            emoji.imageUrl
-                                ?.takeIf { it.startsWith("http://") || it.startsWith("https://") || it.startsWith("/") }
-                                ?.let { AsyncImage(model = it, contentDescription = emoji.label, modifier = Modifier.size(24.dp)) }
-                            Text(emoji.label ?: emoji.code, Modifier.padding(start = 8.dp))
-                        }
-                    },
-                    onClick = { onSelect(emoji) },
-                )
+            LazyColumn(
+                modifier = Modifier.widthIn(min = 220.dp, max = 320.dp).heightIn(max = 420.dp),
+            ) {
+                items(emojis, key = { it.code }) { emoji ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                emoji.imageUrl
+                                    ?.takeIf { it.startsWith("http://") || it.startsWith("https://") || it.startsWith("/") }
+                                    ?.let { AsyncImage(model = it, contentDescription = emoji.label, modifier = Modifier.size(24.dp)) }
+                                Text(emoji.label ?: emoji.code, Modifier.padding(start = 8.dp))
+                            }
+                        },
+                        onClick = { onSelect(emoji) },
+                    )
+                }
             }
         }
     }
