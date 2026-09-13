@@ -57,6 +57,7 @@ fun ProfileScreen(
     onMessages: () -> Unit,
     onSourceAccount: (String) -> Unit,
     onDownloads: () -> Unit,
+    onDataAndStorage: () -> Unit,
     onSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -119,6 +120,7 @@ fun ProfileScreen(
                 Text("聚合功能", style = MaterialTheme.typography.titleMedium)
                 ProfileEntry("阅读记录", "两站历史和在线阅读进度", onHistory)
                 ProfileEntry("下载与导出", "查看离线书籍、重试下载和导出 EPUB", onDownloads)
+                ProfileEntry("数据与统计", "阅读、离线下载、缓存和存储占用", onDataAndStorage)
 
                 Text("应用设置", style = MaterialTheme.typography.titleMedium)
                 ProfileEntry("设置", "阅读、外观、下载与通知", onSettings)

@@ -74,6 +74,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onRestartOnboarding: () -> Unit,
     onFontSelection: () -> Unit = {},
+    onDataAndStorage: () -> Unit = {},
     onAbout: () -> Unit = {},
 ) {
     val wifiOnly by offlineLibrary.wifiOnly.collectAsStateWithLifecycle()
@@ -137,6 +138,7 @@ fun SettingsScreen(
         onBack = onBack,
         onRestartOnboarding = onRestartOnboarding,
         onFontSelection = onFontSelection,
+        onDataAndStorage = onDataAndStorage,
         onAbout = onAbout,
     )
 }
@@ -159,6 +161,7 @@ internal fun SettingsScreenContent(
     onBack: () -> Unit,
     onRestartOnboarding: () -> Unit = {},
     onFontSelection: () -> Unit = {},
+    onDataAndStorage: () -> Unit = {},
     onAbout: () -> Unit = {},
 ) {
     LazyColumn(
@@ -208,6 +211,7 @@ internal fun SettingsScreenContent(
         item {
             OtherSettingsSection(
                 onRestartOnboarding = onRestartOnboarding,
+                onDataAndStorage = onDataAndStorage,
                 onAbout = onAbout,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
@@ -276,11 +280,12 @@ private fun SettingsGroup(
 @Composable
 private fun OtherSettingsSection(
     onRestartOnboarding: () -> Unit,
+    onDataAndStorage: () -> Unit,
     onAbout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("其他", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Text("应用", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
         Card(
             Modifier.fillMaxWidth(),
             colors = androidx.compose.material3.CardDefaults.cardColors(
@@ -300,6 +305,18 @@ private fun OtherSettingsSection(
                     )
                 }
                 TextButton(onClick = onRestartOnboarding) { Text("打开") }
+            }
+        }
+        Card(
+            Modifier.fillMaxWidth(),
+            colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("数据与统计", fontWeight = FontWeight.SemiBold)
+                    Text("阅读记录、离线下载、缓存和存储位置", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = onDataAndStorage) { Text("查看") }
             }
         }
         Card(

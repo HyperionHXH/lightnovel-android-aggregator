@@ -71,6 +71,7 @@ import io.github.jiangyuyi.lightnovel.feature.profile.ProfileViewModel
 import io.github.jiangyuyi.lightnovel.feature.profile.SettingsScreen
 import io.github.jiangyuyi.lightnovel.feature.profile.FontSelectionScreen
 import io.github.jiangyuyi.lightnovel.feature.profile.AboutScreen
+import io.github.jiangyuyi.lightnovel.feature.profile.DataStatsScreen
 import io.github.jiangyuyi.lightnovel.feature.onboarding.OnboardingScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadScreen
 import io.github.jiangyuyi.lightnovel.feature.messages.DmThreadViewModel
@@ -198,6 +199,7 @@ private object Routes {
     const val SETTINGS = "settings"
     const val FONT_SELECTION = "font-selection"
     const val ABOUT = "about"
+    const val DATA_STATS = "data-stats"
     const val AUTH = "auth"
     const val SOCIAL = "social/{mode}"
     const val HISTORY = "history"
@@ -233,6 +235,7 @@ private val bottomDestinations = listOf(
     BottomDestination(Routes.PROFILE, "我的", Icons.Filled.Person),
 )
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun LightNovelApp() {
     val application = LocalContext.current.applicationContext as LightNovelApplication
@@ -337,6 +340,7 @@ private fun LightNovelApp() {
                     onMessages = { navController.navigate(Routes.MESSAGES) },
                     onSourceAccount = { sourceId -> navController.navigate(Routes.sourceAccounts(sourceId)) },
                     onDownloads = { navController.navigate(Routes.DOWNLOADS) },
+                    onDataAndStorage = { navController.navigate(Routes.DATA_STATS) },
                     onSettings = { navController.navigate(Routes.SETTINGS) },
                 )
             }
@@ -351,6 +355,7 @@ private fun LightNovelApp() {
                         scope.launch { container.appPreferences.restartOnboarding() }
                     },
                     onFontSelection = { navController.navigate(Routes.FONT_SELECTION) },
+                    onDataAndStorage = { navController.navigate(Routes.DATA_STATS) },
                     onAbout = { navController.navigate(Routes.ABOUT) },
                 )
             }
@@ -363,6 +368,12 @@ private fun LightNovelApp() {
             }
             composable(Routes.ABOUT) {
                 AboutScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.DATA_STATS) {
+                DataStatsScreen(
+                    offlineLibrary = container.offlineLibrary,
+                    onBack = { navController.popBackStack() },
+                )
             }
             composable(Routes.DOWNLOADS) {
                 val vm: AggregateBookshelfViewModel = viewModel(

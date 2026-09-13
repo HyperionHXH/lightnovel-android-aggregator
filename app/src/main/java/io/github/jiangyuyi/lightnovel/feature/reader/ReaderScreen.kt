@@ -63,6 +63,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -170,7 +172,7 @@ fun ReaderScreen(
                 modifier = Modifier.align(Alignment.Center),
                 onRetry = viewModel::retry,
             )
-            state.preferences.mode == ReaderMode.PAGED -> PagedReader(
+            state.preferences.mode != ReaderMode.SCROLL -> PagedReader(
                 blocks = blocks,
                 chapterTitle = state.chapter?.chapter?.title ?: "当前章节",
                 preferences = state.preferences,
@@ -397,8 +399,22 @@ private fun PagedReader(
                 .padding(top = pageTopPadding, bottom = pageBottomPadding),
         ) { pageIndex ->
             if (pageIndex < pages.size) {
+                val pageOffset = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
+                val pageTransform = if (preferences.mode == ReaderMode.BOOK) {
+                    Modifier.graphicsLayer {
+                        val offset = pageOffset.coerceIn(-1f, 1f)
+                        rotationY = -offset * 72f
+                        transformOrigin = TransformOrigin(
+                            pivotFractionX = if (offset > 0f) 0f else 1f,
+                            pivotFractionY = 0.5f,
+                        )
+                        cameraDistance = 24f * density.density
+                        shadowElevation = kotlin.math.abs(offset) * 10f
+                        alpha = 1f - kotlin.math.abs(offset) * 0.08f
+                    }
+                } else Modifier
                 Column(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
+                    modifier = Modifier.fillMaxSize().padding(horizontal = horizontalPadding).then(pageTransform),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     pages.getOrNull(pageIndex)?.elements.orEmpty().forEach { element ->

@@ -48,6 +48,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -185,7 +187,7 @@ fun SourceReaderScreen(
                 contentColor = colors.text,
             )
             chapter == null -> EmptyPane("章节不存在或暂不可见")
-            else -> if (state.preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.PAGED) {
+            else -> if (state.preferences.mode != io.github.jiangyuyi.lightnovel.core.model.ReaderMode.SCROLL) {
                 SourcePagedReader(
                     blocks = blocks,
                     chapterTitle = chapter.chapter.title,
@@ -494,8 +496,22 @@ private fun SourcePagedReader(
             beyondViewportPageCount = 1,
             userScrollEnabled = false,
         ) { pageIndex ->
+            val pageOffset = (pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction
+            val pageTransform = if (preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.BOOK) {
+                Modifier.graphicsLayer {
+                    val offset = pageOffset.coerceIn(-1f, 1f)
+                    rotationY = -offset * 72f
+                    transformOrigin = TransformOrigin(
+                        pivotFractionX = if (offset > 0f) 0f else 1f,
+                        pivotFractionY = 0.5f,
+                    )
+                    cameraDistance = 24f * density.density
+                    shadowElevation = kotlin.math.abs(offset) * 10f
+                    alpha = 1f - kotlin.math.abs(offset) * 0.08f
+                }
+            } else Modifier
             Column(
-                Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
+                Modifier.fillMaxSize().padding(horizontal = horizontalPadding).then(pageTransform),
                 verticalArrangement = if (pages[pageIndex].elements.size == 1 &&
                     pages[pageIndex].elements.firstOrNull() is ReaderPageElement.Illustration
                 ) Arrangement.Center else Arrangement.spacedBy(14.dp),
