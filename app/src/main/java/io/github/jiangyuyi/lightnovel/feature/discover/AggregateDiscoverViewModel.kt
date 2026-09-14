@@ -4,19 +4,24 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverFeed
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverProvider
+import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.NovelSummary
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
 
 data class DiscoverSourceOption(
@@ -66,6 +71,7 @@ class AggregateDiscoverViewModel(
     val state: StateFlow<AggregateDiscoverState> = _state.asStateFlow()
     private var loadJob: Job? = null
     private var requestId = 0L
+    private val synopsisCache = ConcurrentHashMap<NovelKey, String>()
 
     init {
         require(perSourceTimeoutMillis > 0) { "discover timeout must be positive" }
@@ -156,8 +162,8 @@ class AggregateDiscoverViewModel(
             updateSource(provider.descriptor.id, currentRequestId) { current ->
                 current.copy(
                     items = if (append) {
-                        (current.items + page.items).distinctBy { it.key }
-                    } else page.items.distinctBy { it.key },
+                        (current.items + page.items.map(::withCachedSynopsis)).distinctBy { it.key }
+                    } else page.items.map(::withCachedSynopsis).distinctBy { it.key },
                     page = page.page,
                     total = page.total,
                     hasMore = page.hasMore,
@@ -169,6 +175,9 @@ class AggregateDiscoverViewModel(
                     errorMessage = null,
                 )
             }
+            // Some sources (notably 轻书架) omit synopsis from list responses.
+            // Enrich cards in the background so the first page remains fast.
+            hydrateMissingSynopsis(provider, page.items, currentRequestId)
         } catch (error: TimeoutCancellationException) {
             updateSourceFailure(provider, currentRequestId, SourceErrorKind.TIMEOUT, "请求超时，请稍后重试")
         } catch (error: CancellationException) {
@@ -178,6 +187,49 @@ class AggregateDiscoverViewModel(
             updateSourceFailure(provider, currentRequestId, kind, error.toDiscoverUiMessage(kind))
         }
     }
+
+    private suspend fun hydrateMissingSynopsis(
+        provider: DiscoverProvider,
+        items: List<NovelSummary>,
+        currentRequestId: Long,
+    ) {
+        val detailProvider = registry.detailProvider(provider.descriptor.id) ?: return
+        val candidates = items
+            .map(::withCachedSynopsis)
+            .filter { it.synopsis.isBlank() && !synopsisCache.containsKey(it.key) }
+        if (candidates.isEmpty()) return
+
+        val permits = Semaphore(SYNOPSIS_HYDRATION_CONCURRENCY)
+        supervisorScope {
+            candidates.forEach { novel ->
+                launch {
+                    val synopsis = permits.withPermit {
+                        runCatching {
+                            withTimeout(SYNOPSIS_REQUEST_TIMEOUT_MILLIS) {
+                                detailProvider.getNovelDetail(novel.key).novel.synopsis
+                            }
+                        }.getOrNull()
+                    }?.trim().orEmpty()
+                    if (synopsis.isBlank()) return@launch
+                    synopsisCache[novel.key] = synopsis
+                    updateSource(provider.descriptor.id, currentRequestId) { current ->
+                        current.copy(
+                            items = current.items.map { item ->
+                                if (item.key == novel.key && item.synopsis.isBlank()) {
+                                    item.copy(synopsis = synopsis)
+                                } else item
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun withCachedSynopsis(novel: NovelSummary): NovelSummary =
+        if (novel.synopsis.isNotBlank()) novel else {
+            synopsisCache[novel.key]?.let { novel.copy(synopsis = it) } ?: novel
+        }
 
     private fun updateSourceFailure(
         provider: DiscoverProvider,
@@ -203,15 +255,20 @@ class AggregateDiscoverViewModel(
         transform: (DiscoverSourceUiState) -> DiscoverSourceUiState,
     ) {
         if (requestId != currentRequestId) return
-        _state.value = _state.value.copy(
-            sources = _state.value.sources.map { source ->
-                if (source.descriptor.id == sourceId) transform(source) else source
-            },
-        )
+        _state.update { state ->
+            if (requestId != currentRequestId) return@update state
+            state.copy(
+                sources = state.sources.map { source ->
+                    if (source.descriptor.id == sourceId) transform(source) else source
+                },
+            )
+        }
     }
 
     private companion object {
         const val PAGE_SIZE = 20
+        const val SYNOPSIS_HYDRATION_CONCURRENCY = 4
+        const val SYNOPSIS_REQUEST_TIMEOUT_MILLIS = 8_000L
     }
 }
 

@@ -56,7 +56,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.21.1`、`versionCode 32`；桌面和 jpackage 默认版本仍按各自构建配置注入。tag Release 工作流会从 tag 注入版本。本轮 `v1.21.1` 仅在本地验证，尚未提交、推送或创建 Release。
+Android 默认版本：`versionName 1.21.2`、`versionCode 33`；桌面和 jpackage 默认版本仍按各自构建配置注入。tag Release 工作流会从 tag 注入版本。
 
 ## 2026-09-11 本轮变更
 
@@ -108,6 +108,8 @@ Android 默认版本：`versionName 1.21.1`、`versionCode 32`；桌面和 jpack
 - 轻书架阅读进度通过 `SaveReadPosition({ Bid, Cid, XPath })` 同步；专用章节字体仍在正文显示前加载，避免混淆文本。
 - 已实测轻书架发现、详情、章节目录和正文；正文截图显示为正常中文，无新的崩溃或 ANR。`uiautomator` 导出的混淆字符串不代表屏幕实际字形。
 - 轻书架评论接口未在官网前端发现，当前不伪造评论能力；轻币/经验进度上报结果由官方服务器决定。
+- 发现列表对缺少简介的条目使用后台详情补全，最多 4 个并发、单项 8 秒超时；列表首屏不再等待详情请求。简介通过原子状态更新逐条显示。
+- “我的”页来源账号卡片不再重复提供退出登录，统一从“账号管理”进入。
 3. 大功能或用户可感知修复通过 tag 创建 Release（例如 `v1.4.3`），构建并上传 APK、SHA256、Windows 包。仅文档小改动通常不单独发 Release。
 4. 不要提交账号、Token、密码、`签名密码.txt`、`signing.properties` 或本地小说目录。
 

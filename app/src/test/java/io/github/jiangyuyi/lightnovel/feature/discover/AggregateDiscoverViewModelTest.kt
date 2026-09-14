@@ -3,8 +3,10 @@ package io.github.jiangyuyi.lightnovel.feature.discover
 import io.github.jiangyuyi.lightnovel.MainDispatcherRule
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverFeed
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverProvider
+import io.github.jiangyuyi.lightnovel.core.source.DetailProvider
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.NovelSource
+import io.github.jiangyuyi.lightnovel.core.source.NovelDetail
 import io.github.jiangyuyi.lightnovel.core.source.NovelSummary
 import io.github.jiangyuyi.lightnovel.core.source.SourceCapability
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
@@ -51,6 +53,35 @@ class AggregateDiscoverViewModelTest {
             advanceUntilIdle()
             assertEquals(listOf("second-1", "second-2"), viewModel.state.value.sources.single().items.map { it.title })
             assertEquals(1, secondCalls)
+        }
+
+    @Test
+    fun `missing list synopsis is hydrated from detail without blocking list result`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var detailCalls = 0
+            val source = FakeDetailedDiscoverSource { key ->
+                detailCalls += 1
+                NovelDetail(
+                    novel = NovelSummary(
+                        key = key,
+                        title = "详情标题",
+                        synopsis = "详情简介",
+                    ),
+                )
+            }
+            val viewModel = AggregateDiscoverViewModel(SourceRegistry(listOf(source)))
+
+            advanceUntilIdle()
+
+            val item = viewModel.state.value.sources.single().items.single()
+            assertEquals("详情简介", item.synopsis)
+            assertEquals(1, detailCalls)
+
+            viewModel.refresh()
+            advanceUntilIdle()
+
+            assertEquals("详情简介", viewModel.state.value.sources.single().items.single().synopsis)
+            assertEquals(1, detailCalls)
         }
 
     @Test
@@ -178,6 +209,29 @@ class AggregateDiscoverViewModelTest {
             page: Int,
             pageSize: Int,
         ): SourcePage<NovelSummary> = response(feed, page, pageSize)
+    }
+
+    private class FakeDetailedDiscoverSource(
+        private val detail: suspend (NovelKey) -> NovelDetail,
+    ) : NovelSource, DiscoverProvider, DetailProvider {
+        override val descriptor = SourceDescriptor(
+            "detailed",
+            "detailed",
+            setOf(SourceCapability.DISCOVER, SourceCapability.DETAIL),
+        )
+        override val discoverFeeds = listOf(DiscoverFeed.POPULAR)
+
+        override suspend fun discover(feed: DiscoverFeed, page: Int, pageSize: Int): SourcePage<NovelSummary> = SourcePage(
+            items = listOf(
+                NovelSummary(
+                    key = NovelKey("detailed", "1"),
+                    title = "detailed-1",
+                ),
+            ),
+            page = page,
+        )
+
+        override suspend fun getNovelDetail(key: NovelKey): NovelDetail = detail(key)
     }
 
     private fun novel(sourceId: String, remoteId: String) = NovelSummary(

@@ -49,7 +49,6 @@ import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
 fun ProfileScreen(
     viewModel: ProfileViewModel,
     session: Session,
-    onLogout: () -> Unit,
     onFollowing: () -> Unit,
     onFollowers: () -> Unit,
     onHistory: () -> Unit,
@@ -89,7 +88,6 @@ fun ProfileScreen(
                     loading = BuiltInSourceIds.LIGHT_NOVEL_KINGDOM in state.sourceProfileLoading,
                     error = state.sourceProfileErrors[BuiltInSourceIds.LIGHT_NOVEL_KINGDOM],
                     onManage = { onSourceAccount(BuiltInSourceIds.LIGHT_NOVEL_KINGDOM) },
-                    onLogout = onLogout.takeIf { kingdomSession?.loggedIn == true },
                 ) {
                     val profile = state.profile
                     if (profile != null) {
@@ -139,7 +137,6 @@ private fun SourceAccountCard(
     loading: Boolean,
     error: String?,
     onManage: () -> Unit,
-    onLogout: (() -> Unit)? = null,
     content: @Composable () -> Unit = {},
 ) {
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
@@ -178,10 +175,7 @@ private fun SourceAccountCard(
                     TextButton(onClick = onManage, modifier = Modifier.fillMaxWidth()) { Text("去签到") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onManage, modifier = Modifier.weight(1f)) { Text("账号管理") }
-                    onLogout?.let { logout ->
-                        TextButton(onClick = logout, modifier = Modifier.weight(1f)) { Text("退出登录") }
-                    }
+                    OutlinedButton(onClick = onManage, modifier = Modifier.fillMaxWidth()) { Text("账号管理") }
                 }
             } else if (!loading) {
                 Text("登录后可查看资料、轻币和该来源的专属功能", color = MaterialTheme.colorScheme.onSurfaceVariant)
