@@ -65,7 +65,7 @@ class LightNovelShelfSourceTest {
             override suspend fun search(query: String, page: Int, pageSize: Int) = ShelfBookPage(
                 page = 1,
                 totalPages = 2,
-                items = listOf(ShelfBookItem(9, "书名", "https://cover", "作者")),
+                items = listOf(ShelfBookItem(9, "书名", "https://cover", "作者", "列表简介")),
             )
         })
 
@@ -73,6 +73,7 @@ class LightNovelShelfSourceTest {
 
         assertEquals(NovelKey(BuiltInSourceIds.LIGHT_NOVEL_SHELF, "9"), result.items.single().key)
         assertEquals(listOf("作者"), result.items.single().authors)
+        assertEquals("列表简介", result.items.single().synopsis)
         assertEquals(true, result.hasMore)
     }
 

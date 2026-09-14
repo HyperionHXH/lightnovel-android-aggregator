@@ -17,6 +17,8 @@ import io.github.jiangyuyi.lightnovel.core.source.NovelSummary
 import io.github.jiangyuyi.lightnovel.core.source.PasswordCredentials
 import io.github.jiangyuyi.lightnovel.core.source.ReaderProvider
 import io.github.jiangyuyi.lightnovel.core.source.ReadingHistoryEntry
+import io.github.jiangyuyi.lightnovel.core.source.ReadingProgress
+import io.github.jiangyuyi.lightnovel.core.source.ReadingProgressSyncProvider
 import io.github.jiangyuyi.lightnovel.core.source.RewardProvider
 import io.github.jiangyuyi.lightnovel.core.source.RewardResult
 import io.github.jiangyuyi.lightnovel.core.source.RewardStatus
@@ -52,6 +54,7 @@ class LightNovelShelfSource internal constructor(
     RewardProvider,
     ShelfProvider,
     HistoryProvider,
+    ReadingProgressSyncProvider,
     SourceProfileProvider {
 
     private val rewardMutex = Mutex()
@@ -221,6 +224,16 @@ class LightNovelShelfSource internal constructor(
         )
     }
 
+    override suspend fun saveReadingProgress(progress: ReadingProgress) {
+        val bookId = progress.novelKey.requireShelfBookId()
+        val sortNumber = progress.chapterKey.requireSortNumber()
+        val chapterId = gateway.getBookDetail(bookId).chapters
+            .firstOrNull { it.sortNumber == sortNumber }
+            ?.id
+            ?: return
+        gateway.saveReadPosition(bookId, chapterId, ".")
+    }
+
     override suspend fun restoreSession(): SourceSession = SourceSession(
         loggedIn = gateway.restoreSession(),
     )
@@ -382,6 +395,7 @@ private fun ShelfBookItem.toSource(inRemoteShelf: Boolean? = null) = NovelSummar
     key = NovelKey(SOURCE_ID, id.toString()),
     title = title,
     authors = authorName?.takeIf(String::isNotBlank)?.let(::listOf).orEmpty(),
+    synopsis = introduction,
     coverUrl = coverUrl,
     inRemoteShelf = inRemoteShelf,
 )

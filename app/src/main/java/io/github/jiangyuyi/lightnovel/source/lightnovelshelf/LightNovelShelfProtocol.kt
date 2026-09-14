@@ -24,6 +24,7 @@ internal data class ShelfBookItem(
     val title: String,
     val coverUrl: String?,
     val authorName: String?,
+    val introduction: String = "",
 )
 
 internal data class ShelfBookPage(
@@ -109,6 +110,7 @@ internal interface LightNovelShelfGateway {
     /** Official web client sends an optional conversion mode (null, t2s, or s2t). */
     suspend fun getNovelContent(bookId: Long, sortNumber: Int, convert: String?): ShelfNovelContent =
         getNovelContent(bookId, sortNumber)
+    suspend fun saveReadPosition(bookId: Long, chapterId: Long, xpath: String) = Unit
     suspend fun getShelf(): ShelfRemoteSnapshot
     suspend fun saveShelf(snapshot: ShelfRemoteSnapshot)
     suspend fun getBooksByIds(ids: List<Long>): List<ShelfBookItem>
@@ -225,7 +227,13 @@ internal class DefaultLightNovelShelfGateway(
             coverUrl = normalizeShelfCoverUrl(book.optionalString("Cover", "cover", "CoverUrl", "coverUrl")),
             authorName = book.optionalString("Author", "author")
                 ?: classification?.optionalString("author"),
-            introduction = cleanShelfHtml(book.optionalString("Introduction", "introduction", "Synopsis", "synopsis").orEmpty()),
+            introduction = cleanShelfHtml(
+                book.optionalText(
+                    "Introduction", "introduction", "Synopsis", "synopsis",
+                    "Description", "description", "Summary", "summary",
+                    "Brief", "brief", "Intro", "intro",
+                ).orEmpty(),
+            ),
             tags = (classification?.stringListAny("tags", "Tags")
                 ?: book.stringListAny("Tags", "tags")).orEmpty(),
             favoriteCount = book.intAny("Favorite", "favorite", "FavoriteCount", "favoriteCount", fallback = 0).coerceAtLeast(0),
@@ -260,6 +268,17 @@ internal class DefaultLightNovelShelfGateway(
             fontUrl = chapter.optionalString("Font", "font", "FontUrl", "fontUrl"),
             sortNumber = chapter.intAny("SortNum", "sortNum", "SortNumber", "sortNumber", fallback = sortNumber),
             chapterTitles = chapter.stringListAny("Chapters", "chapters", "ChapterTitles", "chapterTitles"),
+        )
+    }
+
+    override suspend fun saveReadPosition(bookId: Long, chapterId: Long, xpath: String) {
+        invoke(
+            "SaveReadPosition",
+            buildJsonObject {
+                put("Bid", bookId)
+                put("Cid", chapterId)
+                put("XPath", xpath)
+            },
         )
     }
 
@@ -411,6 +430,15 @@ private fun JsonObject.toBookItem(): ShelfBookItem = ShelfBookItem(
     title = stringAny("Title", "title", "Name", "name"),
     coverUrl = normalizeShelfCoverUrl(optionalString("Cover", "cover", "CoverUrl", "coverUrl")),
     authorName = optionalString("UserName", "userName", "Author", "author"),
+    introduction = cleanShelfHtml(
+        optionalText(
+            "Introduction", "introduction",
+            "Synopsis", "synopsis",
+            "Description", "description",
+            "Summary", "summary",
+            "Brief", "brief", "Intro", "intro",
+        ).orEmpty(),
+    ),
 )
 
 private fun JsonObject.toBookPage(requestedPage: Int): ShelfBookPage = ShelfBookPage(
@@ -548,6 +576,19 @@ private fun JsonObject.arrayAny(vararg keys: String): JsonArray = keys.asSequenc
     .firstOrNull()
     ?: JsonArray(emptyList())
 
+/** List and detail endpoints use both plain strings and small text wrapper objects. */
+private fun JsonObject.optionalText(vararg keys: String): String? {
+    val element = value(*keys) ?: return null
+    return when (element) {
+        is JsonPrimitive -> element.contentOrNull
+        is JsonObject -> element.optionalString(
+            "Html", "html", "Content", "content", "Text", "text",
+            "Value", "value", "Description", "description",
+        )
+        else -> null
+    }?.takeIf(String::isNotBlank)
+}
+
 private fun JsonObject.unwrapContainer(vararg keys: String): JsonObject {
     val nested = keys.asSequence().mapNotNull { get(it) as? JsonObject }.firstOrNull()
     return nested ?: this
@@ -577,13 +618,16 @@ private fun JsonElement?.asTextContent(): String = when (this) {
 
 /** Details are rendered with plain Compose Text; remove markup returned by the web editor. */
 private fun cleanShelfHtml(value: String): String = value
-    .replace(Regex("(?i)<br\\s*/?>"), "\\n")
-    .replace(Regex("(?i)</(p|div|h[1-6]|li)>"), "\\n")
+    .replace("\\r\\n", "\n")
+    .replace("\\n", "\n")
+    .replace("\\r", "")
+    .replace(Regex("(?i)<br\\s*/?>"), "\n")
+    .replace(Regex("(?i)</(p|div|h[1-6]|li)>"), "\n")
     .replace(Regex("(?i)<(p|div|h[1-6]|li)\\b[^>]*>"), "")
     .replace(Regex("<[^>]+>"), "")
     .replace("&nbsp;", " ")
     .replace("&amp;", "&")
     .replace("&lt;", "<")
     .replace("&gt;", ">")
-    .replace(Regex("\\n{3,}"), "\\n\\n")
+    .replace(Regex("\n{3,}"), "\n\n")
     .trim()

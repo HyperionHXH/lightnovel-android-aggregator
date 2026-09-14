@@ -40,7 +40,7 @@ class LightNovelShelfProtocolTest {
             responses = ArrayDeque(
                 listOf(
                     envelope(
-                        """{"Page":2,"TotalPages":3,"Data":[{"Id":7,"Title":"书名","Cover":"$legacyCover","UserName":"作者"}]}""",
+                        """{"Page":2,"TotalPages":3,"Data":[{"Id":7,"Title":"书名","Cover":"$legacyCover","UserName":"作者","Introduction":"<p>第一段</p><br>第二段"}]}""",
                     ),
                 ),
             ),
@@ -53,10 +53,24 @@ class LightNovelShelfProtocolTest {
         assertEquals("关键字", (hub.calls.single().second as JsonObject)["KeyWords"]?.jsonPrimitive?.content)
         assertEquals(7, result.items.single().id)
         assertEquals("作者", result.items.single().authorName)
+        assertEquals("第一段\n\n第二段", result.items.single().introduction)
         assertEquals(
             "https://img.example/7.webp?placeholder=LEHV6nWB2yk8pyo0adR*%23.7kCMdnj&t=signed-token",
             result.items.single().coverUrl,
         )
+    }
+
+    @Test
+    fun `book list reads wrapped brief text and alternate field names`() = runTest {
+        val hub = RecordingHub(
+            responses = ArrayDeque(
+                listOf(envelope("""{"Page":1,"TotalPages":1,"Data":[{"Id":7,"Title":"书名","Brief":{"Text":"列表简介"}}]}""")),
+            ),
+        )
+
+        val result = gateway(hub).listBooks(ShelfBookOrder.LATEST, page = 1, pageSize = 20)
+
+        assertEquals("列表简介", result.items.single().introduction)
     }
 
     @Test
@@ -124,6 +138,19 @@ class LightNovelShelfProtocolTest {
         assertEquals(7L, detail.id)
         assertEquals("书名", detail.title)
         assertEquals(4, detail.chapters.single().sortNumber)
+    }
+
+    @Test
+    fun `book detail converts escaped newlines and html to readable synopsis`() = runTest {
+        val hub = RecordingHub(
+            responses = ArrayDeque(
+                listOf(envelope("""{"Book":{"Id":7,"Title":"书名","Introduction":"<p>第一段\\n第二段</p><br><p>第三段</p>","Chapters":[]}}""")),
+            ),
+        )
+
+        val detail = gateway(hub).getBookDetail(bookId = 7)
+
+        assertEquals("第一段\n第二段\n\n第三段", detail.introduction)
     }
 
     @Test
@@ -207,6 +234,19 @@ class LightNovelShelfProtocolTest {
 
         assertEquals("<p>正文</p>", result.html)
         assertEquals("t2s", (hub.calls.single().second as JsonObject)["Convert"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `save read position uses official payload`() = runTest {
+        val hub = RecordingHub(responses = ArrayDeque(listOf(envelope("{}"))))
+
+        gateway(hub).saveReadPosition(bookId = 7, chapterId = 30, xpath = ".")
+
+        assertEquals("SaveReadPosition", hub.calls.single().first)
+        val payload = hub.calls.single().second as JsonObject
+        assertEquals("7", payload["Bid"]?.jsonPrimitive?.content)
+        assertEquals("30", payload["Cid"]?.jsonPrimitive?.content)
+        assertEquals(".", payload["XPath"]?.jsonPrimitive?.content)
     }
 
     @Test

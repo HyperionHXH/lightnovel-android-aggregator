@@ -77,13 +77,17 @@ fun SourceNovelCard(
                         color = MaterialTheme.colorScheme.tertiary,
                     )
                 }
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    novel.synopsis.ifBlank { "暂无简介" },
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // Some source list endpoints omit introductions and expose them
+                // only on the detail endpoint; avoid a misleading empty row.
+                novel.synopsis.takeIf(String::isNotBlank)?.let { synopsis ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        synopsis,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
