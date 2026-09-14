@@ -106,6 +106,9 @@ internal interface LightNovelShelfGateway {
     suspend fun search(query: String, page: Int, pageSize: Int): ShelfBookPage
     suspend fun getBookDetail(bookId: Long): ShelfBookDetail
     suspend fun getNovelContent(bookId: Long, sortNumber: Int): ShelfNovelContent
+    /** Official web client sends an optional conversion mode (null, t2s, or s2t). */
+    suspend fun getNovelContent(bookId: Long, sortNumber: Int, convert: String?): ShelfNovelContent =
+        getNovelContent(bookId, sortNumber)
     suspend fun getShelf(): ShelfRemoteSnapshot
     suspend fun saveShelf(snapshot: ShelfRemoteSnapshot)
     suspend fun getBooksByIds(ids: List<Long>): List<ShelfBookItem>
@@ -133,7 +136,7 @@ internal class DefaultLightNovelShelfGateway(
                 put("IgnoreJapanese", true)
                 put("IgnoreAI", true)
             },
-        ).requiredObject("书籍列表")
+        ).requiredObject("书籍列表").unwrapContainer("Data", "data", "Books", "books")
         return response.toBookPage(page)
     }
 
@@ -144,7 +147,7 @@ internal class DefaultLightNovelShelfGateway(
         )
         val items = when (response) {
             is JsonArray -> response
-            is JsonObject -> response.array("Data")
+            is JsonObject -> response.arrayAny("Data", "data", "Books", "books")
             else -> JsonArray(emptyList())
         }
         return items.mapNotNull { item -> (item as? JsonObject)?.toBookItem() }
@@ -160,7 +163,7 @@ internal class DefaultLightNovelShelfGateway(
                 put("IgnoreJapanese", false)
                 put("IgnoreAI", false)
             },
-        ).requiredObject("书籍列表")
+        ).requiredObject("书籍列表").unwrapContainer("Data", "data", "Books", "books")
         return response.toBookPage(page)
     }
 
@@ -169,18 +172,31 @@ internal class DefaultLightNovelShelfGateway(
             "GetBookInfo",
             buildJsonObject { put("Id", bookId) },
         ).requiredObject("书籍详情")
-        val book = (response["Book"] as? JsonObject) ?: response
-        val extra = book["Extra"] as? JsonObject
+        val book = response.objectValue("Book", "book", "BookInfo", "bookInfo")
+            ?: response.objectValue("Data", "data")?.objectValue("Book", "book", "BookInfo", "bookInfo")
+            ?: response
+        val extra = book.objectValue("Extra", "extra")
         val classification = extra?.get("classification") as? JsonObject
         // Production responses use Chapters; older responses use Chapter. A null
         // or malformed plural field must not hide a valid legacy catalog.
-        val chapterArray = listOf("Chapters", "Chapter")
+        val chapterArray = listOf(book, response, response.objectValue("Data", "data"))
+            .filterNotNull()
             .asSequence()
-            .mapNotNull { book[it] }
-            .firstOrNull { it is JsonArray }
+            .flatMap { container -> sequenceOf("Chapters", "chapters", "Chapter", "chapter", "ChapterList", "chapterList").mapNotNull { container[it] } }
+            .mapNotNull { value ->
+                when (value) {
+                    is JsonArray -> value
+                    is JsonObject -> JsonArray(listOf(value))
+                    else -> null
+                }
+            }
+            // Some deployments return an empty `Chapters` placeholder and put
+            // the real catalog in the legacy `Chapter` field. Prefer a
+            // populated array, while still accepting a genuinely empty catalog.
+            .toList()
+            .let { arrays -> arrays.firstOrNull { it.isNotEmpty() } ?: arrays.firstOrNull() }
             ?: throw SourceException(SourceErrorKind.PARSING, "轻书架书籍详情缺少章节目录")
-        val chapters = chapterArray as? JsonArray
-            ?: throw SourceException(SourceErrorKind.PARSING, "轻书架书籍详情包含无效章节目录")
+        val chapters = chapterArray
         val explicitSortNumbers = chapters.mapNotNull { item ->
             (item as? JsonObject)?.int("SortNum", fallback = 0)?.takeIf { it > 0 }
         }.toMutableSet()
@@ -193,47 +209,57 @@ internal class DefaultLightNovelShelfGateway(
         val usedSortNumbers = mutableSetOf<Int>()
         val parsedChapters = chapters.mapIndexedNotNull { index, item ->
             val chapter = item as? JsonObject ?: return@mapIndexedNotNull null
-            val explicit = chapter.int("SortNum", fallback = 0).takeIf { it > 0 }
+            val explicit = chapter.intAny("SortNum", "sortNum", "SortNumber", "sortNumber", fallback = 0).takeIf { it > 0 }
             var sortNumber = explicit ?: (index + 1)
             while (sortNumber in usedSortNumbers || (explicit == null && sortNumber in explicitSortNumbers)) sortNumber++
             while (!usedSortNumbers.add(sortNumber)) sortNumber++
             ShelfBookChapter(
-                id = chapter.long("Id"),
-                title = chapter.string("Title"),
+                id = chapter.longAny("Id", "id"),
+                title = chapter.stringAny("Title", "title"),
                 sortNumber = sortNumber,
             )
         }.sortedBy { it.sortNumber ?: Int.MAX_VALUE }
         return ShelfBookDetail(
-            id = book.long("Id"),
-            title = book.string("Title"),
-            coverUrl = normalizeShelfCoverUrl(book.optionalString("Cover")),
-            authorName = book.optionalString("Author")
+            id = book.longAny("Id", "id"),
+            title = book.stringAny("Title", "title"),
+            coverUrl = normalizeShelfCoverUrl(book.optionalString("Cover", "cover", "CoverUrl", "coverUrl")),
+            authorName = book.optionalString("Author", "author")
                 ?: classification?.optionalString("author"),
-            introduction = book.optionalString("Introduction").orEmpty(),
-            tags = classification?.stringList("tags").orEmpty(),
-            favoriteCount = book.int("Favorite", fallback = 0).coerceAtLeast(0),
+            introduction = cleanShelfHtml(book.optionalString("Introduction", "introduction", "Synopsis", "synopsis").orEmpty()),
+            tags = (classification?.stringListAny("tags", "Tags")
+                ?: book.stringListAny("Tags", "tags")).orEmpty(),
+            favoriteCount = book.intAny("Favorite", "favorite", "FavoriteCount", "favoriteCount", fallback = 0).coerceAtLeast(0),
             chapters = parsedChapters,
         )
     }
 
     override suspend fun getNovelContent(bookId: Long, sortNumber: Int): ShelfNovelContent {
+        return getNovelContent(bookId, sortNumber, null)
+    }
+
+    override suspend fun getNovelContent(bookId: Long, sortNumber: Int, convert: String?): ShelfNovelContent {
         val response = invoke(
             "GetNovelContent",
             buildJsonObject {
                 put("Bid", bookId)
                 put("SortNum", sortNumber)
+                convert?.trim()?.takeIf { it.isNotEmpty() }?.let { put("Convert", it) }
             },
         ).requiredObject("小说正文")
-        val chapter = (response["Chapter"] as? JsonObject)
+        val chapter = response.objectValue("Chapter", "chapter")
+            ?: response.objectValue("Data", "data")?.objectValue("Chapter", "chapter")
+            ?: response.objectValue("Result", "result")?.objectValue("Chapter", "chapter")
+            ?: response.takeIf { it.value("Content", "content", "Html", "html", "Text", "text") != null }
             ?: throw SourceException(SourceErrorKind.PARSING, "轻书架正文响应缺少章节")
+        val content = chapter.value("Content", "content", "Html", "html", "Text", "text")
         return ShelfNovelContent(
-            id = chapter.long("Id"),
-            bookId = chapter.long("BookId", fallback = bookId),
-            title = chapter.string("Title"),
-            html = chapter.optionalString("Content").orEmpty(),
-            fontUrl = chapter.optionalString("Font"),
-            sortNumber = chapter.int("SortNum", fallback = sortNumber),
-            chapterTitles = chapter.stringList("Chapters"),
+            id = chapter.longAny("Id", "id"),
+            bookId = chapter.longAny("BookId", "bookId", fallback = bookId),
+            title = chapter.stringAny("Title", "title"),
+            html = content.asTextContent(),
+            fontUrl = chapter.optionalString("Font", "font", "FontUrl", "fontUrl"),
+            sortNumber = chapter.intAny("SortNum", "sortNum", "SortNumber", "sortNumber", fallback = sortNumber),
+            chapterTitles = chapter.stringListAny("Chapters", "chapters", "ChapterTitles", "chapterTitles"),
         )
     }
 
@@ -266,7 +292,7 @@ internal class DefaultLightNovelShelfGateway(
         )
         val items = when (response) {
             is JsonArray -> response
-            is JsonObject -> response.array("Data")
+            is JsonObject -> response.arrayAny("Data", "data", "Books", "books")
             else -> JsonArray(emptyList())
         }
         return items.mapNotNull { item -> (item as? JsonObject)?.toBookItem() }
@@ -348,14 +374,15 @@ internal class ShelfResponseDecoder(
             ?: throw SourceException(SourceErrorKind.PARSING, "轻书架响应缺少成功状态")
         if (!success) {
             val status = envelope.value("Status", "status")?.jsonPrimitive?.intOrNull
-            val kind = if (status == 401 || status == -100) {
+            val kind = if (status == 401 || status == -100 || status == 1001) {
                 SourceErrorKind.AUTHENTICATION
             } else {
                 SourceErrorKind.SERVER
             }
             throw SourceException(
                 kind,
-                envelope.optionalString("Msg", "msg") ?: "轻书架请求失败",
+                envelope.optionalString("Msg", "msg", "Message", "message", "Error", "error")
+                    ?: "轻书架请求失败",
             )
         }
         return decompress(envelope.value("Response", "response") ?: JsonPrimitive(""))
@@ -380,16 +407,16 @@ private fun JsonElement.requiredObject(name: String): JsonObject = this as? Json
     ?: throw SourceException(SourceErrorKind.PARSING, "轻书架返回了无效的$name")
 
 private fun JsonObject.toBookItem(): ShelfBookItem = ShelfBookItem(
-    id = long("Id"),
-    title = string("Title"),
-    coverUrl = normalizeShelfCoverUrl(optionalString("Cover")),
-    authorName = optionalString("UserName"),
+    id = longAny("Id", "id", "BookId", "bookId"),
+    title = stringAny("Title", "title", "Name", "name"),
+    coverUrl = normalizeShelfCoverUrl(optionalString("Cover", "cover", "CoverUrl", "coverUrl")),
+    authorName = optionalString("UserName", "userName", "Author", "author"),
 )
 
 private fun JsonObject.toBookPage(requestedPage: Int): ShelfBookPage = ShelfBookPage(
-    page = int("Page", fallback = requestedPage.coerceAtLeast(1)),
-    totalPages = int("TotalPages", fallback = 1).coerceAtLeast(1),
-    items = array("Data").mapNotNull { item -> (item as? JsonObject)?.toBookItem() },
+    page = intAny("Page", "page", fallback = requestedPage.coerceAtLeast(1)),
+    totalPages = intAny("TotalPages", "totalPages", "PageCount", "pageCount", fallback = 1).coerceAtLeast(1),
+    items = arrayAny("Data", "data", "Books", "books", "Items", "items").mapNotNull { item -> (item as? JsonObject)?.toBookItem() },
 )
 
 private fun JsonElement.toRemoteShelf(): ShelfRemoteSnapshot {
@@ -486,6 +513,22 @@ private fun JsonObject.int(key: String, fallback: Int? = null): Int {
         ?: throw SourceException(SourceErrorKind.PARSING, "轻书架响应缺少 $key 字段")
 }
 
+private fun JsonObject.stringAny(vararg keys: String): String = optionalString(*keys)
+    ?: throw SourceException(SourceErrorKind.PARSING, "轻书架响应缺少 ${keys.firstOrNull().orEmpty()} 字段")
+
+private fun JsonObject.intAny(vararg keys: String, fallback: Int? = null): Int {
+    return keys.asSequence().mapNotNull { key ->
+        get(key)?.jsonPrimitive?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() }
+    }.firstOrNull() ?: fallback
+    ?: throw SourceException(SourceErrorKind.PARSING, "轻书架响应缺少 ${keys.firstOrNull().orEmpty()} 字段")
+}
+
+private fun JsonObject.longAny(vararg keys: String, fallback: Long? = null): Long {
+    return keys.asSequence().mapNotNull { key -> get(key)?.jsonPrimitive?.contentOrNull?.toLongOrNull() }
+        .firstOrNull() ?: fallback
+        ?: throw SourceException(SourceErrorKind.PARSING, "轻书架响应缺少 ${keys.firstOrNull().orEmpty()} 字段")
+}
+
 private fun JsonObject.long(key: String, fallback: Long? = null): Long {
     val element = get(key)?.jsonPrimitive
     return element?.contentOrNull?.toLongOrNull()
@@ -500,6 +543,47 @@ private fun JsonObject.boolean(key: String, fallback: Boolean? = null): Boolean 
 
 private fun JsonObject.array(key: String): JsonArray = get(key) as? JsonArray ?: JsonArray(emptyList())
 
+private fun JsonObject.arrayAny(vararg keys: String): JsonArray = keys.asSequence()
+    .mapNotNull { get(it) as? JsonArray }
+    .firstOrNull()
+    ?: JsonArray(emptyList())
+
+private fun JsonObject.unwrapContainer(vararg keys: String): JsonObject {
+    val nested = keys.asSequence().mapNotNull { get(it) as? JsonObject }.firstOrNull()
+    return nested ?: this
+}
+
 private fun JsonObject.stringList(key: String): List<String> = array(key).mapNotNull { item ->
     (item as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
 }
+
+private fun JsonObject.stringListAny(vararg keys: String): List<String> = keys.asSequence()
+    .mapNotNull { key -> get(key) as? JsonArray }
+    .firstOrNull()
+    ?.mapNotNull { item ->
+        when (item) {
+            is JsonPrimitive -> item.contentOrNull?.takeIf(String::isNotBlank)
+            is JsonObject -> item.optionalString("Name", "name", "Title", "title")
+            else -> null
+        }
+    }
+    .orEmpty()
+
+private fun JsonElement?.asTextContent(): String = when (this) {
+    is JsonPrimitive -> contentOrNull.orEmpty()
+    is JsonObject -> optionalString("Html", "html", "Content", "content", "Text", "text").orEmpty()
+    else -> ""
+}
+
+/** Details are rendered with plain Compose Text; remove markup returned by the web editor. */
+private fun cleanShelfHtml(value: String): String = value
+    .replace(Regex("(?i)<br\\s*/?>"), "\\n")
+    .replace(Regex("(?i)</(p|div|h[1-6]|li)>"), "\\n")
+    .replace(Regex("(?i)<(p|div|h[1-6]|li)\\b[^>]*>"), "")
+    .replace(Regex("<[^>]+>"), "")
+    .replace("&nbsp;", " ")
+    .replace("&amp;", "&")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace(Regex("\\n{3,}"), "\\n\\n")
+    .trim()

@@ -329,9 +329,17 @@ class LightNovelShelfSource internal constructor(
                 ),
                 tokenStore = tokenStore,
             )
-            val hub = OkHttpShelfSignalRConnection(
-                client = client,
-                accessToken = auth::accessToken,
+            val hub = FallbackShelfHubConnection(
+                primary = OkHttpShelfSignalRConnection(
+                    client = client,
+                    accessToken = auth::accessToken,
+                    hubUrl = LIGHT_NOVEL_SHELF_HUB_URL,
+                ),
+                fallback = OkHttpShelfSignalRConnection(
+                    client = client,
+                    accessToken = auth::accessToken,
+                    hubUrl = LIGHT_NOVEL_SHELF_FALLBACK_HUB_URL,
+                ),
             )
             return LightNovelShelfSource(
                 DefaultLightNovelShelfGateway(

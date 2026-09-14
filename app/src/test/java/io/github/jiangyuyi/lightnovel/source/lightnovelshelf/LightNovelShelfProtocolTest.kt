@@ -108,6 +108,25 @@ class LightNovelShelfProtocolTest {
     }
 
     @Test
+    fun `book detail accepts lower camel case and nested data`() = runTest {
+        val hub = RecordingHub(
+            responses = ArrayDeque(
+                listOf(
+                    envelope(
+                        """{"data":{"book":{"id":7,"title":"书名","coverUrl":"https://img.example/7.webp","chapters":[{"id":10,"title":"第一章","sortNum":4}]}}}""",
+                    ),
+                ),
+            ),
+        )
+
+        val detail = gateway(hub).getBookDetail(bookId = 7)
+
+        assertEquals(7L, detail.id)
+        assertEquals("书名", detail.title)
+        assertEquals(4, detail.chapters.single().sortNumber)
+    }
+
+    @Test
     fun `book detail falls back when plural chapters is null`() = runTest {
         val hub = RecordingHub(
             responses = ArrayDeque(
@@ -170,6 +189,24 @@ class LightNovelShelfProtocolTest {
         val result = gateway(hub).getNovelContent(bookId = 7, sortNumber = 3)
 
         assertEquals("/fonts/chapter.woff2", result.fontUrl)
+    }
+
+    @Test
+    fun `novel content sends convert and accepts nested text content`() = runTest {
+        val hub = RecordingHub(
+            responses = ArrayDeque(
+                listOf(
+                    envelope(
+                        """{"data":{"chapter":{"id":30,"bookId":7,"title":"第三章","content":{"html":"<p>正文</p>"},"sortNum":3}}}""",
+                    ),
+                ),
+            ),
+        )
+
+        val result = gateway(hub).getNovelContent(bookId = 7, sortNumber = 3, convert = "t2s")
+
+        assertEquals("<p>正文</p>", result.html)
+        assertEquals("t2s", (hub.calls.single().second as JsonObject)["Convert"]?.jsonPrimitive?.content)
     }
 
     @Test

@@ -75,6 +75,25 @@ internal interface ShelfHubConnection {
     fun reset()
 }
 
+/** Tries the Cloudflare endpoint once when the primary SignalR endpoint is unavailable. */
+internal class FallbackShelfHubConnection(
+    private val primary: ShelfHubConnection,
+    private val fallback: ShelfHubConnection,
+) : ShelfHubConnection {
+    override suspend fun invoke(target: String, params: JsonElement): JsonElement = try {
+        primary.invoke(target, params)
+    } catch (error: SourceException) {
+        if (error.kind != SourceErrorKind.NETWORK) throw error
+        primary.reset()
+        fallback.invoke(target, params)
+    }
+
+    override fun reset() {
+        primary.reset()
+        fallback.reset()
+    }
+}
+
 internal class OkHttpShelfSignalRConnection(
     private val client: OkHttpClient,
     private val accessToken: () -> String?,

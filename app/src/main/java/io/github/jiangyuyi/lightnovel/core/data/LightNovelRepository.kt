@@ -860,7 +860,10 @@ class LightNovelRepository(
                 "book_id" to bookId,
                 "volume_id" to 0,
                 "chapter_id" to 0,
-                "view" to "",
+                // LK distinguishes a work rating from a normal book comment
+                // through this scope marker. Omitting it yields
+                // `comment payload invalid` even when rating_stars is valid.
+                "view" to "rating",
                 "root_comment_id" to 0,
                 "reply_comment_id" to 0,
                 "content" to "",

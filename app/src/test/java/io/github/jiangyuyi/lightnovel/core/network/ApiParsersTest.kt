@@ -126,6 +126,15 @@ class ApiParsersTest {
     }
 
     @Test
+    fun `book parser normalizes official rating score to five star display`() {
+        val official = ApiParsers.book(
+            obj("""{"book_id": 3, "title": "十分制作品", "rating_score": 10.0}"""),
+        )
+
+        assertEquals(5.0, checkNotNull(official.score), 0.001)
+    }
+
+    @Test
     fun `comment parser maps official time interactions media and reply preview`() {
         val comment = ApiParsers.comment(
             obj(

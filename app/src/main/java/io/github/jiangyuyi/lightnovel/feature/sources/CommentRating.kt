@@ -1,6 +1,7 @@
 package io.github.jiangyuyi.lightnovel.feature.sources
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,18 +26,19 @@ internal fun CommentRatingSelector(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier,
+        modifier = modifier.height(44.dp),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Row(
-            modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+            modifier = Modifier.padding(start = 8.dp, end = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                if (value == 0) "给作品评分（可选）" else "作品评分：$value 星",
+                if (value == 0) "评分" else "评分 $value/5",
                 modifier = Modifier.weight(1f),
+                maxLines = 1,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -44,7 +46,7 @@ internal fun CommentRatingSelector(
                 val selected = stars <= value
                 IconButton(
                     onClick = { onValueChange(if (value == stars) 0 else stars) },
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(30.dp),
                 ) {
                     Icon(
                         imageVector = if (selected) Icons.Filled.Star else Icons.Outlined.StarOutline,
@@ -54,7 +56,7 @@ internal fun CommentRatingSelector(
                         } else {
                             MaterialTheme.colorScheme.outline
                         },
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }

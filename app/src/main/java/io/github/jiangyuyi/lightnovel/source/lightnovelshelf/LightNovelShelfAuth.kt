@@ -36,7 +36,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 
 internal const val LIGHT_NOVEL_SHELF_API_ORIGIN = "https://api.lightnovel.life"
+internal const val LIGHT_NOVEL_SHELF_FALLBACK_API_ORIGIN = "https://cf-api.lightnovel.life"
 internal const val LIGHT_NOVEL_SHELF_HUB_URL = "$LIGHT_NOVEL_SHELF_API_ORIGIN/hub/api"
+internal const val LIGHT_NOVEL_SHELF_FALLBACK_HUB_URL = "$LIGHT_NOVEL_SHELF_FALLBACK_API_ORIGIN/hub/api"
 
 internal data class ShelfTokens(
     val accessToken: String,
@@ -186,6 +188,7 @@ internal class LightNovelShelfAuthApi(
     private val limiter: ShelfRateLimiter,
     private val json: Json = Json { ignoreUnknownKeys = true; isLenient = true },
     private val apiOrigin: String = LIGHT_NOVEL_SHELF_API_ORIGIN,
+    private val fallbackApiOrigin: String? = LIGHT_NOVEL_SHELF_FALLBACK_API_ORIGIN,
 ) {
     suspend fun login(email: String, password: String): ShelfTokens {
         val normalizedEmail = email.trim()
@@ -230,13 +233,7 @@ internal class LightNovelShelfAuthApi(
         authStatuses: Set<Int>,
         authenticationContext: Boolean = false,
     ): JsonObject {
-        val response = try {
-            limiter.run {
-                transport.postJson(apiOrigin.trimEnd('/') + path, body.toString())
-            }
-        } catch (error: IOException) {
-            throw SourceException(SourceErrorKind.NETWORK, "无法连接轻书架", error)
-        }
+        val response = postWithFallback(path, body)
         val root = response.body.takeIf(String::isNotBlank)?.let { raw ->
             runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
         }
@@ -255,6 +252,26 @@ internal class LightNovelShelfAuthApi(
         root ?: throw SourceException(SourceErrorKind.PARSING, "轻书架返回了无法识别的数据")
         root.throwIfFailed(authenticationContext)
         return root
+    }
+
+    private suspend fun postWithFallback(path: String, body: JsonObject): ShelfHttpResponse {
+        val origins = listOfNotNull(apiOrigin, fallbackApiOrigin).distinct()
+        var lastError: Throwable? = null
+        origins.forEachIndexed { index, origin ->
+            try {
+                val response = limiter.run {
+                    transport.postJson(origin.trimEnd('/') + path, body.toString())
+                }
+                if (response.code !in 500..599 || index == origins.lastIndex) return response
+                lastError = SourceException(SourceErrorKind.SERVER, "轻书架主服务返回 ${response.code}")
+            } catch (error: IOException) {
+                lastError = error
+                if (index == origins.lastIndex) {
+                    throw SourceException(SourceErrorKind.NETWORK, "无法连接轻书架", error)
+                }
+            }
+        }
+        throw SourceException(SourceErrorKind.NETWORK, "无法连接轻书架", lastError)
     }
 }
 
