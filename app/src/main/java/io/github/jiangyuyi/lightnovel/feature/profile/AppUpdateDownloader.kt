@@ -43,6 +43,9 @@ internal class AppUpdateDownloader(private val context: Context) {
         partialFile(tag).delete()
     }
 
+    /** Deletes one completed package downloaded by Mixn. */
+    fun deletePackage(tag: String): Boolean = apkFile(tag).delete()
+
     /** Returns the size of completed and resumable update packages kept locally. */
     fun storedBytes(): Long = updateDirectory().listFiles().orEmpty()
         .filter { it.isFile && (it.extension.equals("apk", true) || it.name.endsWith(".apk.part", true)) }

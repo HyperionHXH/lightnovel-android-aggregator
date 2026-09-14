@@ -190,6 +190,17 @@ fun AboutScreen(onBack: () -> Unit) {
         downloadError = null
     }
 
+    fun deleteDownloadedPackage() {
+        val tag = release?.tag ?: return
+        downloader.deletePackage(tag)
+        downloadedFile = null
+        downloadedBytes = 0L
+        totalBytes = 0L
+        bytesPerSecond = 0L
+        downloadStatus = UpdateDownloadStatus.IDLE
+        status = "已删除更新安装包"
+    }
+
     val currentDownloadJob by rememberUpdatedState(downloadJob)
     DisposableEffect(Unit) { onDispose { currentDownloadJob?.cancel() } }
     LaunchedEffect(Unit) { checkForUpdate() }
@@ -232,6 +243,7 @@ fun AboutScreen(onBack: () -> Unit) {
                 onPause = ::pauseDownload,
                 onResume = ::startDownload,
                 onCancel = ::cancelDownload,
+                onDeletePackage = ::deleteDownloadedPackage,
                 onInstall = { downloadedFile?.let { context.installApk(it) } },
                 onReleaseNotes = { latest?.releaseUrl?.let(context::openWeb) },
             )
@@ -273,6 +285,7 @@ private fun UpdateCard(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onCancel: () -> Unit,
+    onDeletePackage: () -> Unit,
     onInstall: () -> Unit,
     onReleaseNotes: () -> Unit,
 ) {
@@ -350,6 +363,10 @@ private fun UpdateCard(
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Text("更新包已准备好 · " + formatBytes(downloadedBytes), modifier = Modifier.padding(start = 8.dp).weight(1f), style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = onDeletePackage) {
+                                Icon(Icons.Filled.DeleteOutline, contentDescription = "删除安装包")
+                                Text("删除")
+                            }
                             Button(onClick = onInstall) { Text("安装") }
                         }
                     }
