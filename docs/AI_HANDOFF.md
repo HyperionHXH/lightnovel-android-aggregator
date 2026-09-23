@@ -1,6 +1,6 @@
 # Mixn 项目交接记录
 
-更新时间：2026-09-14
+更新时间：2026-09-23
 仓库：`https://github.com/HyperionHXH/lightnovel-android-aggregator.git`
 当前分支：`feature/multi-source-foundation`
 当前分支最新提交以 `git log -1` 为准；本文件记录的最近认证与阅读交互增强均已随分支提交推送。
@@ -56,7 +56,14 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.21.2`、`versionCode 33`；桌面和 jpackage 默认版本仍按各自构建配置注入。tag Release 工作流会从 tag 注入版本。
+Android 默认版本：`versionName 1.21.3`、`versionCode 34`；桌面和 jpackage 默认版本仍按各自构建配置注入。tag Release 工作流会从 tag 注入版本。
+
+## 2026-09-23 图片点击回归修复
+
+- 修复 `ReaderScreen` 和 `SourceReaderScreen` 在分页/滚动阅读中由父级全屏手势层抢占 `ReaderImagePreview` 点击的问题。
+- 父级阅读手势现在只处理未被子节点消费的点击；图片点击优先打开预览，图片长按保存操作栏、关闭预览和相册下载逻辑未改动。
+- 新增 `ReaderImagePreviewTest.parentTapHandlerDoesNotStealImageClick`，并在 API 35 AVD 上通过图片预览、长按保存、卡片翻页、音量键、阅读菜单和加载状态共 12 项定向测试。
+- `v1.21.3` 已完成 Debug APK、Android 单元测试、Lint 和模拟器定向回归后再发布。
 
 ## 2026-09-11 本轮变更
 

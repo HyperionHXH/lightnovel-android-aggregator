@@ -3,6 +3,12 @@ package io.github.jiangyuyi.lightnovel.core.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -65,5 +71,36 @@ class ReaderImagePreviewTest {
         compose.waitForIdle()
         compose.onNodeWithTag("reader-image-actions").assertIsDisplayed()
         compose.onNodeWithTag("reader-image-save").assertIsDisplayed()
+    }
+
+    @Test
+    fun parentTapHandlerDoesNotStealImageClick() {
+        compose.setContent {
+            MaterialTheme {
+                Box(
+                    Modifier
+                        .size(240.dp)
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = true)
+                                waitForUpOrCancellation()
+                                // A real reader uses this handler for blank-page controls.
+                                // Child image clicks must remain available to the preview.
+                            }
+                        },
+                ) {
+                    ReaderImagePreview(
+                        url = "https://cdn.example.test/illustration.jpg",
+                        modifier = Modifier.fillMaxSize(),
+                        imageScale = ReaderImageScale.FIT,
+                        contentDescription = "插图",
+                        errorText = "插图加载失败",
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithTag("reader-image-inline").performClick()
+        compose.onNodeWithTag("reader-image-dialog").assertIsDisplayed()
     }
 }

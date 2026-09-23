@@ -3,7 +3,9 @@ package io.github.jiangyuyi.lightnovel.feature.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -211,11 +213,15 @@ fun SourceReaderScreen(
                     .fillMaxSize()
                     .padding(top = safeTopPadding)
                     .pointerInput(chapter.chapter.key) {
-                        detectTapGestures { position ->
-                            val horizontal = position.x / size.width.toFloat().coerceAtLeast(1f)
-                            val vertical = position.y / size.height.toFloat().coerceAtLeast(1f)
-                            if (horizontal in 0.30f..0.70f && vertical in 0.25f..0.75f) {
-                                viewModel.toggleControls()
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = true)
+                            val up = waitForUpOrCancellation()
+                            if (up != null) {
+                                val horizontal = down.position.x / size.width.toFloat().coerceAtLeast(1f)
+                                val vertical = down.position.y / size.height.toFloat().coerceAtLeast(1f)
+                                if (horizontal in 0.30f..0.70f && vertical in 0.25f..0.75f) {
+                                    viewModel.toggleControls()
+                                }
                             }
                         }
                     },
@@ -537,14 +543,7 @@ private fun SourcePagedReader(
                 state = pagerState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = safeTopPadding + 8.dp, bottom = 12.dp),
-                beyondViewportPageCount = 1,
-                userScrollEnabled = false,
-                pageContent = { pageIndex -> pageContent(pageIndex) },
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
+                    .padding(top = safeTopPadding + 8.dp, bottom = 12.dp)
                     .pointerInput(
                         pages.size,
                         hasPreviousChapter,
@@ -552,10 +551,17 @@ private fun SourcePagedReader(
                         preferences.tapZone,
                         preferences.tapInversion,
                     ) {
-                        detectTapGestures { position ->
-                            handleTap(position.x, position.y, size.width, size.height)
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = true)
+                            val up = waitForUpOrCancellation()
+                            if (up != null) {
+                                handleTap(down.position.x, down.position.y, size.width, size.height)
+                            }
                         }
                     },
+                beyondViewportPageCount = 1,
+                userScrollEnabled = false,
+                pageContent = { pageIndex -> pageContent(pageIndex) },
             )
         }
         if (controlsVisible && showProgressBar) {

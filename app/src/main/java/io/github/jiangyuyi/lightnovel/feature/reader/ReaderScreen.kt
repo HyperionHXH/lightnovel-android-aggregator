@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -441,12 +443,7 @@ private fun PagedReader(
                 userScrollEnabled = false,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = pageTopPadding, bottom = pageBottomPadding),
-                pageContent = { pageIndex -> pageContent(pageIndex) },
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
+                    .padding(top = pageTopPadding, bottom = pageBottomPadding)
                     .pointerInput(
                         pages.size,
                         hasPreviousChapter,
@@ -454,10 +451,15 @@ private fun PagedReader(
                         preferences.tapZone,
                         preferences.tapInversion,
                     ) {
-                        detectTapGestures { position ->
-                            handleTap(position.x, position.y, size.width, size.height)
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = true)
+                            val up = waitForUpOrCancellation()
+                            if (up != null) {
+                                handleTap(down.position.x, down.position.y, size.width, size.height)
+                            }
                         }
                     },
+                pageContent = { pageIndex -> pageContent(pageIndex) },
             )
         }
 
@@ -571,15 +573,19 @@ private fun ScrollingReader(
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(top = safeTopPadding)
-                .pointerInput(onToggleControls) {
-                    detectTapGestures { position ->
-                        val horizontalFraction = position.x / size.width.toFloat().coerceAtLeast(1f)
-                        val verticalFraction = position.y / size.height.toFloat().coerceAtLeast(1f)
-                        if (horizontalFraction in 0.30f..0.70f && verticalFraction in 0.25f..0.75f) {
-                            onToggleControls()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = safeTopPadding)
+                    .pointerInput(onToggleControls) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = true)
+                        val up = waitForUpOrCancellation()
+                        if (up != null) {
+                            val horizontalFraction = down.position.x / size.width.toFloat().coerceAtLeast(1f)
+                            val verticalFraction = down.position.y / size.height.toFloat().coerceAtLeast(1f)
+                            if (horizontalFraction in 0.30f..0.70f && verticalFraction in 0.25f..0.75f) {
+                                onToggleControls()
+                            }
                         }
                     }
                 },
