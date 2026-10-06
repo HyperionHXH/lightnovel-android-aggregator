@@ -10,7 +10,6 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 
 - Android Release：[v1.21.3](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.21.3)
 - Android APK：[Mixn-1.21.3.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.21.3/Mixn-1.21.3.apk)
-- Windows 桌面端：随源码构建，仍属于预览版
 
 > 本项目是非官方客户端，不隶属于轻之国度或轻书架。请遵守两个站点的服务条款和内容版权要求，不要批量抓取、分发或商业使用站点内容。
 
@@ -56,25 +55,14 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 
 ### Android
 
-Android 使用 Kotlin、Jetpack Compose、Material 3，最低支持 Android 8.0（API 26），目标 SDK 35。Android 是功能最完整、主要面向日常使用的客户端。
+Android 使用 Kotlin、Jetpack Compose、Material 3，最低支持 Android 8.0（API 26），目标 SDK 35。Android 是当前唯一受支持并发布的客户端。
 
-### Windows
-
-桌面端位于 [`desktopApp`](desktopApp/)，使用 Kotlin/JVM 与 Swing，提供与 Android 相同的三项主导航：发现、书架、我的。当前已支持：
-
-- 双源发现、搜索、详情、目录和正文阅读；
-- 双源账号、会话恢复、书架和阅读历史；
-- 阅读进度、离线章节保存和 EPUB 导出；
-- 宽屏窗口、鼠标/键盘交互以及发现和搜索触底分页。
-
-桌面端版本与当前发布版本同步为 `1.21.3`，仍是预览版；评论、Android 通知/WorkManager、相册保存、音量键和部分移动端阅读设置暂未承诺与 Android 完全一致。详见 [`desktopApp/README.md`](desktopApp/README.md)。
+桌面端开发已无限期搁置，不属于当前支持或发布范围；仓库中的桌面端代码不代表 Mixn 提供可用的桌面版本。
 
 ## 截图
 
 <p align="center">
-  <img src="docs/screenshots/discover.png" width="250" alt="发现页">
-  <img src="docs/screenshots/reader-illustration.png" width="250" alt="分页阅读与正文插图">
-  <img src="docs/screenshots/reader-scroll.png" width="250" alt="上下滚动与护眼背景">
+  <img src="docs/screenshots/discover.png" width="300" alt="Mixn Android 1.21.3 发现页">
 </p>
 
 ## 构建与运行
@@ -83,7 +71,6 @@ Android 使用 Kotlin、Jetpack Compose、Material 3，最低支持 Android 8.0�
 
 - JDK 17
 - Android SDK 35（构建 Android 端）
-- Windows 打包需要 JDK 17+ 的 `jpackage`
 - 不需要全局 Gradle，仓库自带 Gradle Wrapper
 
 ### Android
@@ -99,16 +86,6 @@ Debug APK：
 ```text
 app/build/outputs/apk/debug/app-debug.apk
 ```
-
-### Windows 桌面端
-
-```powershell
-./gradlew.bat :desktopApp:run
-./gradlew.bat :desktopApp:installDist
-./scripts/package-windows.ps1
-```
-
-`installDist` 输出到 `desktopApp/build/install/Mixn`；`package-windows.ps1` 会尝试生成 `desktopApp/build/windows/Mixn/Mixn` app-image。桌面端的详细说明、限制和接口边界见 [`desktopApp/README.md`](desktopApp/README.md)。
 
 ### Release 签名
 
@@ -127,7 +104,7 @@ app/build/outputs/apk/debug/app-debug.apk
 默认测试使用固定响应，不访问真实账号或外网。完整本地回归命令：
 
 ```powershell
-./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :desktopApp:test --no-daemon "-Pkotlin.incremental=false"
+./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon "-Pkotlin.incremental=false"
 ```
 
 轻书架匿名 SignalR 冒烟测试需要显式开启，网络不可用时保持跳过：
@@ -156,7 +133,6 @@ app/src/main/java/io/github/jiangyuyi/lightnovel/
 ├─ core/       统一模型、来源契约、网络、缓存、会话、离线和阅读设置
 ├─ feature/    发现、搜索、书架、详情、阅读、账号、消息、字体和设置页面
 └─ source/     轻之国度与轻书架的内置来源适配器
-desktopApp/    Kotlin/JVM + Swing 桌面端和独立来源适配器
 docs/          聚合方案、ADR、测试/交接记录和截图
 ```
 
@@ -164,7 +140,7 @@ docs/          聚合方案、ADR、测试/交接记录和截图
 
 请在 [GitHub Issues](https://github.com/HyperionHXH/lightnovel-android-aggregator/issues) 提交问题，附上：
 
-- 平台、系统版本和 Mixn 版本；
+- Android 系统版本和 Mixn 版本；
 - 来源（轻之国度/轻书架）、页面和复现步骤；
 - 是否登录、是否使用缓存或离线模式；
 - 脱敏后的错误文案、截图或测试响应。

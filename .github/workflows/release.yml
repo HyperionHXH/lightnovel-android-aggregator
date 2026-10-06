@@ -79,7 +79,7 @@ jobs:
           done
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/lightnovel-release.jks"
 
-      - name: Test, lint, and build signed APK and desktop app
+      - name: Test, lint, and build signed APK
         shell: bash
         env:
           APP_VERSION_NAME: ${{ steps.version.outputs.name }}
@@ -90,7 +90,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest lintDebug assembleRelease :desktopApp:test --no-daemon -Pkotlin.incremental=false
+          ./gradlew testDebugUnitTest lintDebug assembleRelease --no-daemon -Pkotlin.incremental=false
 
       - name: Verify and package APK
         id: package

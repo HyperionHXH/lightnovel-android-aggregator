@@ -8,7 +8,7 @@ labels: "bug"
 ## 环境
 
 - Mixn 版本：
-- 平台（Android/Windows）：
+- Android 设备/型号：
 - 系统版本：
 - 来源（轻之国度/轻书架/无）：
 - 是否登录或使用离线模式：
