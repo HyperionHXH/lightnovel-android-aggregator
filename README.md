@@ -6,10 +6,10 @@
 
 Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK）与轻书架（LNS）两个来源。它把发现、搜索、书架、阅读进度和离线导出放在一个应用中，同时保持两站的登录态、接口协议和错误相互隔离。
 
-当前稳定发布版本：**1.17.0**
+当前稳定发布版本：**1.21.3**
 
-- Android Release：[v1.17.0](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.17.0)
-- Android APK：[Mixn-1.17.0.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.17.0/Mixn-1.17.0.apk)
+- Android Release：[v1.21.3](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.21.3)
+- Android APK：[Mixn-1.21.3.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.21.3/Mixn-1.21.3.apk)
 - Windows 桌面端：随源码构建，仍属于预览版
 
 > 本项目是非官方客户端，不隶属于轻之国度或轻书架。请遵守两个站点的服务条款和内容版权要求，不要批量抓取、分发或商业使用站点内容。
@@ -67,7 +67,7 @@ Android 使用 Kotlin、Jetpack Compose、Material 3，最低支持 Android 8.0�
 - 阅读进度、离线章节保存和 EPUB 导出；
 - 宽屏窗口、鼠标/键盘交互以及发现和搜索触底分页。
 
-桌面端仍是预览版，评论、Android 通知/WorkManager、相册保存、音量键和部分移动端阅读设置暂未承诺与 Android 完全一致。详见 [`desktopApp/README.md`](desktopApp/README.md)。
+桌面端版本与当前发布版本同步为 `1.21.3`，仍是预览版；评论、Android 通知/WorkManager、相册保存、音量键和部分移动端阅读设置暂未承诺与 Android 完全一致。详见 [`desktopApp/README.md`](desktopApp/README.md)。
 
 ## 截图
 
@@ -112,7 +112,7 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ### Release 签名
 
-Release APK 必须使用本地 Android Keystore 签名。首次配置可运行：
+`1.21.3` 的 Android Release APK 使用 Android Keystore 签名。首次配置可运行：
 
 ```powershell
 ./scripts/setup-release-signing.ps1
@@ -120,7 +120,7 @@ Release APK 必须使用本地 Android Keystore 签名。首次配置可运行�
 
 签名密钥、密码、`signing.properties` 和本地账号信息均不应提交到 Git。丢失同一签名密钥后，无法覆盖安装后续版本。
 
-推送 `v*` 标签会触发 [Android Release 工作流](.github/workflows/release.yml)，执行测试、Lint、签名构建、`apksigner` 校验并上传 APK 与 SHA-256 文件。普通文档修改不需要单独创建 Release。
+推送 `v*` 标签会触发 [Android Release 工作流](.github/workflows/release.yml)，执行测试、Lint、签名构建、`apksigner` 校验并上传 APK 与 SHA-256 文件。当前版本标签为 `v1.21.3`；普通文档修改不会触发该工作流，也不需要单独创建 Release。
 
 ## 测试
 

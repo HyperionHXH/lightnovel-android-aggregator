@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 私密安全漏洞报告
+    url: https://github.com/HyperionHXH/lightnovel-android-aggregator/security/advisories/new
+    about: 请勿在公开 Issue 中发布可利用漏洞或任何凭据。

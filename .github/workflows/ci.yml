@@ -41,8 +41,8 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Test, lint, and build debug APK
+      - name: Test, lint, and build debug APK and desktop app
         shell: bash
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest lintDebug assembleDebug --no-daemon -Pkotlin.incremental=false
+          ./gradlew testDebugUnitTest lintDebug assembleDebug :desktopApp:test --no-daemon -Pkotlin.incremental=false

@@ -13,3 +13,8 @@ artifacts/
 *.aab
 .signing/
 signing.properties
+
+# Local release credentials and private reading material
+签名密码.txt
+魔法禁书目录/
+青春猪头少年系列/

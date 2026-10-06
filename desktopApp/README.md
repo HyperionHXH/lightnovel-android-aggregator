@@ -2,7 +2,7 @@
 
 这是 Mixn 的 Kotlin/JVM + Swing 桌面端预览版。它复用 Android 端的来源模型和接口边界，在 Windows 上提供宽屏窗口、侧边导航、封面列表和正文阅读流程。
 
-当前版本：**1.17.0**
+当前版本：**1.21.3**
 
 ## 当前能力
 
@@ -49,7 +49,7 @@ desktopApp/build/windows/Mixn/Mixn/Mixn.exe
 版本可通过环境变量覆盖，Release 工作流会从 Git tag 注入：
 
 ~~~powershell
-$env:APP_VERSION_NAME = "1.17.0"
+$env:APP_VERSION_NAME = "1.21.3"
 ./gradlew.bat :desktopApp:installDist
 ~~~
 

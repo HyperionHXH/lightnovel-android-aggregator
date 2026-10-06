@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Semantic release tag, for example v1.0.2"
+        description: "Semantic release tag, for example v1.21.3"
         required: true
-        default: "v1.0.2"
+        default: "v1.21.3"
 
 permissions:
   contents: write
@@ -79,7 +79,7 @@ jobs:
           done
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/lightnovel-release.jks"
 
-      - name: Test, lint, and build signed APK
+      - name: Test, lint, and build signed APK and desktop app
         shell: bash
         env:
           APP_VERSION_NAME: ${{ steps.version.outputs.name }}
@@ -90,7 +90,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest lintDebug assembleRelease --no-daemon -Pkotlin.incremental=false
+          ./gradlew testDebugUnitTest lintDebug assembleRelease :desktopApp:test --no-daemon -Pkotlin.incremental=false
 
       - name: Verify and package APK
         id: package
