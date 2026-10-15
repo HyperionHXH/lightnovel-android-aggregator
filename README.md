@@ -6,10 +6,10 @@
 
 Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK）与轻书架（LNS）两个来源。它把发现、搜索、书架、阅读进度和离线导出放在一个应用中，同时保持两站的登录态、接口协议和错误相互隔离。
 
-当前稳定发布版本：**1.21.3**
+当前稳定发布版本：**1.21.4**
 
-- Android Release：[v1.21.3](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.21.3)
-- Android APK：[Mixn-1.21.3.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.21.3/Mixn-1.21.3.apk)
+- Android Release：[v1.21.4](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.21.4)
+- Android APK：[Mixn-1.21.4.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.21.4/Mixn-1.21.4.apk)
 
 > 本项目是非官方客户端，不隶属于轻之国度或轻书架。请遵守两个站点的服务条款和内容版权要求，不要批量抓取、分发或商业使用站点内容。
 
@@ -89,7 +89,7 @@ app/build/outputs/apk/debug/app-debug.apk
 
 ### Release 签名
 
-`1.21.3` 的 Android Release APK 使用 Android Keystore 签名。首次配置可运行：
+Android Release APK 使用 Android Keystore 签名。首次配置可运行：
 
 ```powershell
 ./scripts/setup-release-signing.ps1
@@ -97,7 +97,7 @@ app/build/outputs/apk/debug/app-debug.apk
 
 签名密钥、密码、`signing.properties` 和本地账号信息均不应提交到 Git。丢失同一签名密钥后，无法覆盖安装后续版本。
 
-推送 `v*` 标签会触发 [Android Release 工作流](.github/workflows/release.yml)，执行测试、Lint、签名构建、`apksigner` 校验并上传 APK 与 SHA-256 文件。当前版本标签为 `v1.21.3`；普通文档修改不会触发该工作流，也不需要单独创建 Release。
+推送 `v*` 标签会触发 [Android Release 工作流](.github/workflows/release.yml)，执行测试、Lint、签名构建、`apksigner` 校验并上传 APK 与 SHA-256 文件。当前版本标签为 `v1.21.4`；`versionCode` 使用源码中的单调递增值，不依赖工作流运行次数。普通文档修改不会触发该工作流，也不需要单独创建 Release。
 
 ## 测试
 
@@ -115,6 +115,10 @@ $env:RUN_LNS_SMOKE = "true"
 ```
 
 最近的 Android 真机/AVD 验证覆盖发现、双源搜索、登录态恢复、书架、详情/目录、分页与滚动阅读、正文图片、字体设置、缓存恢复、下载和 EPUB/TXT 导出。真实账号相关功能仍应由使用者自行确认，因为站点接口、登录态和付费权限会变化。
+
+`1.21.4` 修复详情被目录/书架请求阻塞：详情、目录与书架状态分别更新，刷新保留已有内容。LK 网络层按域名在当前进程记住成功线路，避免持续重复等待同一坏线路；JSON 单线路 4 秒截止允许在页面 10 秒总截止内尝试备用线路，图片/上传保留 12 秒。页面取消不会误触发线路回退。LNS SignalR 也保留外部取消，不把已取消的请求重放到备用端点。本地网络回归只访问回环服务器，Debug 构建仅对 `127.0.0.1` 放行 HTTP，Release 仍只允许 HTTPS。
+
+排查发现原 AVD 的系统 DNS 线路多次等待 12 秒后才能通过备用线路成功，而独立 AVD 和官网正常请求可在数秒内完成；这不构成服务端高负荷的证据。HTTP 418、认证失败和站点真实错误不会被线路偏好逻辑掩盖。LNS 登录后正文/专用字体本轮未重新验收，需有效账号登录态。
 
 ## 隐私、数据和已知限制
 

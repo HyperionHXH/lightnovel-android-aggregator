@@ -5,11 +5,11 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -138,9 +138,8 @@ internal class OkHttpShelfSignalRConnection(
             throw SourceException(SourceErrorKind.NETWORK, "无法向轻书架发送请求")
         }
         return try {
-            withTimeout(invocationTimeoutMillis) { result.await() }
-        } catch (error: TimeoutCancellationException) {
-            throw SourceException(SourceErrorKind.NETWORK, "轻书架请求超时", error)
+            withTimeoutOrNull(invocationTimeoutMillis) { result.await() }
+                ?: throw SourceException(SourceErrorKind.NETWORK, "轻书架请求超时")
         } finally {
             pending.remove(id)
         }
@@ -170,10 +169,11 @@ internal class OkHttpShelfSignalRConnection(
                 frameBuffer.clear()
             }
             try {
-                withTimeout(handshakeTimeoutMillis) { ready.await() }
-            } catch (error: TimeoutCancellationException) {
+                withTimeoutOrNull(handshakeTimeoutMillis) { ready.await() }
+                    ?: throw SourceException(SourceErrorKind.NETWORK, "连接轻书架超时")
+            } catch (error: CancellationException) {
                 reset()
-                throw SourceException(SourceErrorKind.NETWORK, "连接轻书架超时", error)
+                throw error
             } catch (error: SourceException) {
                 reset()
                 throw error

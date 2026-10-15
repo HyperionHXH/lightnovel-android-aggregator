@@ -27,6 +27,7 @@ import io.github.jiangyuyi.lightnovel.core.source.VolumeKey
 import io.github.jiangyuyi.lightnovel.core.source.VolumeSummary
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -130,45 +131,75 @@ class SourceBookViewModel(
             refreshing = hasContent && forceRefresh,
             error = null,
             directoryError = null,
-            // A book screen can be revisited with the same ViewModel after a purchase.
-            // Re-read chapter summaries so the server's unlocked state is reflected.
-            chapters = emptyMap(),
+            shelfLoading = shelfProvider != null,
+            shelfError = null,
+            // Keep visible chapters while re-reading page one after a purchase or refresh.
+            chapters = _state.value.chapters.mapValues { (_, chapters) ->
+                chapters.copy(page = 0, hasMore = true, loading = false)
+            },
         )
         loadJob = viewModelScope.launch {
             supervisorScope {
-                val detailRequest = async { detailProvider.getNovelDetail(novelKey) }
-                val volumesRequest = async { readerProvider.getVolumes(novelKey, page = 1, pageSize = 50) }
-                val shelfRequest = shelfProvider?.let { provider ->
-                    async { provider.isInRemoteShelf(novelKey) }
+                var detailPending = true
+                var volumesPending = true
+                var detailShelfMembership: Boolean? = null
+                val offlineRequest = async {
+                    val record = runSourceCatching { offlineLibrary.readBook(novelKey) }.getOrNull()
+                    ensureActive()
+                    if (record != null) {
+                        _state.value = _state.value.copy(offlineRecord = record)
+                    }
+                    record
                 }
-                val offlineRequest = async { offlineLibrary.readBook(novelKey) }
-                val detailResult = runSourceCatching { detailRequest.await() }
-                val volumeResult = runSourceCatching { volumesRequest.await() }
-                val shelfResult = shelfRequest?.let { request -> runSourceCatching { request.await() } }
-                val offlineRecord = offlineRequest.await()
-                val detail = detailResult.getOrNull()
-                    ?: offlineRecord?.let { NovelDetail(novel = it.novel) }
-                val volumes = volumeResult.getOrNull()?.items ?: offlineRecord?.volumes.orEmpty()
-                val firstVolume = volumes.firstOrNull()?.key
-                _state.value = _state.value.copy(
-                    detail = detail ?: _state.value.detail,
-                    volumes = volumes.ifEmpty { _state.value.volumes },
-                    expandedVolumeKey = firstVolume ?: _state.value.expandedVolumeKey,
-                    loading = false,
-                    refreshing = false,
-                    inRemoteShelf = detailResult.getOrNull()?.novel?.inRemoteShelf
-                        ?: shelfResult?.getOrNull()
-                        ?: _state.value.inRemoteShelf,
-                    shelfError = shelfResult?.exceptionOrNull()?.toSourceUiMessage("书架状态加载失败"),
-                    offlineRecord = offlineRecord ?: _state.value.offlineRecord,
-                    error = detailResult.exceptionOrNull()
-                        ?.takeIf { detail == null }
-                        ?.toSourceUiMessage("书籍详情加载失败"),
-                    directoryError = volumeResult.exceptionOrNull()
-                        ?.takeIf { volumes.isEmpty() }
-                        ?.toSourceUiMessage("目录加载失败"),
-                )
-                if (firstVolume != null) loadMoreChapters(firstVolume)
+                launch {
+                    val result = runSourceCatching { detailProvider.getNovelDetail(novelKey) }
+                    val offline = if (result.isFailure) offlineRequest.await() else null
+                    ensureActive()
+                    val detail = result.getOrNull() ?: offline?.let { NovelDetail(novel = it.novel) }
+                    detailShelfMembership = result.getOrNull()?.novel?.inRemoteShelf
+                    detailPending = false
+                    _state.value = _state.value.copy(
+                        detail = detail ?: _state.value.detail,
+                        loading = false,
+                        refreshing = hasContent && forceRefresh && volumesPending,
+                        inRemoteShelf = detailShelfMembership ?: _state.value.inRemoteShelf,
+                        error = result.exceptionOrNull()
+                            ?.takeIf { detail == null }
+                            ?.toSourceUiMessage("书籍详情加载失败"),
+                    )
+                }
+                launch {
+                    val result = runSourceCatching {
+                        readerProvider.getVolumes(novelKey, page = 1, pageSize = 50)
+                    }
+                    val offline = if (result.isFailure) offlineRequest.await() else null
+                    ensureActive()
+                    val volumes = result.getOrNull()?.items ?: offline?.volumes.orEmpty()
+                    val firstVolume = volumes.firstOrNull()?.key
+                    volumesPending = false
+                    _state.value = _state.value.copy(
+                        volumes = volumes.ifEmpty { _state.value.volumes },
+                        expandedVolumeKey = firstVolume ?: _state.value.expandedVolumeKey,
+                        refreshing = hasContent && forceRefresh && detailPending,
+                        directoryError = result.exceptionOrNull()
+                            ?.takeIf { volumes.isEmpty() }
+                            ?.toSourceUiMessage("目录加载失败"),
+                    )
+                    if (firstVolume != null) loadMoreChapters(firstVolume)
+                }
+                shelfProvider?.let { provider ->
+                    launch {
+                        val result = runSourceCatching { provider.isInRemoteShelf(novelKey) }
+                        ensureActive()
+                        _state.value = _state.value.copy(
+                            inRemoteShelf = detailShelfMembership
+                                ?: result.getOrNull()
+                                ?: _state.value.inRemoteShelf,
+                            shelfLoading = false,
+                            shelfError = result.exceptionOrNull()?.toSourceUiMessage("书架状态加载失败"),
+                        )
+                    }
+                }
             }
         }
         loadComments(reset = true)
@@ -242,7 +273,7 @@ class SourceBookViewModel(
     fun toggleVolume(volumeKey: VolumeKey) {
         val expanding = _state.value.expandedVolumeKey != volumeKey
         _state.value = _state.value.copy(expandedVolumeKey = volumeKey.takeIf { expanding })
-        if (expanding && _state.value.chapters[volumeKey]?.items.isNullOrEmpty()) {
+        if (expanding && (_state.value.chapters[volumeKey]?.page ?: 0) == 0) {
             loadMoreChapters(volumeKey)
         }
     }
@@ -268,6 +299,7 @@ class SourceBookViewModel(
                 runSourceCatching {
                     val offline = offlineLibrary.readBook(novelKey)
                     val items = offline?.chapters.orEmpty().filter { it.volumeKey == volumeKey }
+                    if (items.isEmpty()) throw checkNotNull(onlineResult.exceptionOrNull())
                     val from = (current.page * 50).coerceAtMost(items.size)
                     val to = (from + 50).coerceAtMost(items.size)
                     SourcePage(
@@ -278,10 +310,12 @@ class SourceBookViewModel(
                     )
                 }
             }
+            ensureActive()
             pageResult.onSuccess { page ->
                 updateChapters(volumeKey) { latest ->
                     latest.copy(
-                        items = (latest.items + page.items).distinctBy { it.key },
+                        items = (if (current.page == 0) page.items else latest.items + page.items)
+                            .distinctBy { it.key },
                         page = page.page,
                         hasMore = page.hasMore,
                         loading = false,

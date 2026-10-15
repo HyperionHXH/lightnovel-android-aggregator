@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Semantic release tag, for example v1.21.3"
+        description: "Semantic release tag, for example v1.21.4"
         required: true
-        default: "v1.21.3"
+        default: "v1.21.4"
 
 permissions:
   contents: write
@@ -83,7 +83,6 @@ jobs:
         shell: bash
         env:
           APP_VERSION_NAME: ${{ steps.version.outputs.name }}
-          APP_VERSION_CODE: ${{ github.run_number }}
           ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/lightnovel-release.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}

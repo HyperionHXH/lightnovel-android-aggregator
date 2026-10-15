@@ -29,8 +29,12 @@ import io.github.jiangyuyi.lightnovel.core.source.SourcePage
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
 import io.github.jiangyuyi.lightnovel.core.source.VolumeKey
 import io.github.jiangyuyi.lightnovel.core.source.VolumeSummary
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.Flow
@@ -61,6 +65,321 @@ class SourceBookViewModelTest {
             assertEquals(listOf("1"), state.chapters.getValue(source.volumeKey).items.map { it.key.remoteId })
             assertFalse(state.loading)
             assertNull(state.error)
+        }
+
+    @Test
+    fun `detail and first chapters appear without waiting for remote shelf`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val catalog = CompletableDeferred<SourcePage<VolumeSummary>>()
+            val shelf = CompletableDeferred<List<NovelSummary>>()
+            val source = object : FakeReadableSource() {
+                override suspend fun getVolumes(key: NovelKey, page: Int, pageSize: Int) = catalog.await()
+                override suspend fun getRemoteShelf(): List<NovelSummary> = shelf.await()
+            }
+            val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)))
+
+            try {
+                runCurrent()
+
+                assertEquals("测试书", viewModel.state.value.detail?.novel?.title)
+                assertFalse(viewModel.state.value.loading)
+                assertTrue(viewModel.state.value.volumes.isEmpty())
+                assertFalse(shelf.isCompleted)
+
+                catalog.complete(
+                    SourcePage(
+                        items = listOf(VolumeSummary(source.volumeKey, source.novelKey, "正文")),
+                        page = 1,
+                    ),
+                )
+                runCurrent()
+
+                assertEquals(source.volumeKey, viewModel.state.value.expandedVolumeKey)
+                assertEquals(
+                    listOf("1"),
+                    viewModel.state.value.chapters.getValue(source.volumeKey).items.map { it.key.remoteId },
+                )
+                assertFalse(shelf.isCompleted)
+
+                shelf.complete(listOf(NovelSummary(source.novelKey, "测试书")))
+                runCurrent()
+
+                assertTrue(viewModel.state.value.inRemoteShelf == true)
+                assertFalse(viewModel.state.value.loading)
+                assertNull(viewModel.state.value.error)
+            } finally {
+                catalog.complete(SourcePage(emptyList(), page = 1))
+                shelf.complete(emptyList())
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun `slow offline lookup and secondary failures do not hide available detail`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val offlineResult = CompletableDeferred<OfflineBookRecord?>()
+            val source = object : FakeReadableSource() {
+                override suspend fun getVolumes(key: NovelKey, page: Int, pageSize: Int): SourcePage<VolumeSummary> =
+                    throw SourceException(SourceErrorKind.AUTHENTICATION, "请先登录")
+
+                override suspend fun getRemoteShelf(): List<NovelSummary> =
+                    throw SourceException(SourceErrorKind.TIMEOUT, "超时")
+            }
+            val offline = object : FakeOfflineLibrary() {
+                override suspend fun readBook(key: NovelKey) = offlineResult.await()
+            }
+            val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)), offline)
+
+            try {
+                runCurrent()
+
+                assertEquals("测试书", viewModel.state.value.detail?.novel?.title)
+                assertFalse(viewModel.state.value.loading)
+                assertEquals("请求超时，请稍后重试", viewModel.state.value.shelfError)
+                assertFalse(viewModel.state.value.shelfLoading)
+                assertNull(viewModel.state.value.inRemoteShelf)
+                assertNull(viewModel.state.value.error)
+
+                offlineResult.complete(null)
+                runCurrent()
+
+                assertEquals("请先登录该来源", viewModel.state.value.directoryError)
+                assertEquals("测试书", viewModel.state.value.detail?.novel?.title)
+                assertFalse(viewModel.state.value.loading)
+                assertNull(viewModel.state.value.error)
+            } finally {
+                offlineResult.complete(null)
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun `offline detail directory and chapters remain available after online failures`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val source = object : FakeReadableSource() {
+                override suspend fun getNovelDetail(key: NovelKey): NovelDetail =
+                    throw SourceException(SourceErrorKind.NETWORK, "离线")
+
+                override suspend fun getVolumes(key: NovelKey, page: Int, pageSize: Int): SourcePage<VolumeSummary> =
+                    throw SourceException(SourceErrorKind.NETWORK, "离线")
+
+                override suspend fun getChapters(
+                    novelKey: NovelKey,
+                    volumeKey: VolumeKey,
+                    page: Int,
+                    pageSize: Int,
+                ): SourcePage<ChapterSummary> = throw SourceException(SourceErrorKind.NETWORK, "离线")
+            }
+            val record = OfflineBookRecord(
+                novel = NovelSummary(source.novelKey, "离线书"),
+                volumes = listOf(VolumeSummary(source.volumeKey, source.novelKey, "离线卷")),
+                chapters = listOf(
+                    ChapterSummary(
+                        ChapterKey(source.descriptor.id, "cached"),
+                        source.novelKey,
+                        source.volumeKey,
+                        "离线章",
+                    ),
+                ),
+            )
+            val offline = object : FakeOfflineLibrary() {
+                override suspend fun readBook(key: NovelKey) = record
+            }
+            val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)), offline)
+
+            advanceUntilIdle()
+
+            val state = viewModel.state.value
+            assertEquals(record.novel, state.detail?.novel)
+            assertEquals(record.volumes, state.volumes)
+            assertEquals(record.chapters, state.chapters.getValue(source.volumeKey).items)
+            assertEquals(record, state.offlineRecord)
+            assertFalse(state.loading)
+            assertNull(state.error)
+            assertNull(state.directoryError)
+        }
+
+    @Test
+    fun `refresh keeps visible content until replacement chapters reflect unlocked state`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val detail = CompletableDeferred<NovelDetail>()
+            val catalog = CompletableDeferred<SourcePage<VolumeSummary>>()
+            val chapters = CompletableDeferred<SourcePage<ChapterSummary>>()
+            var refreshing = false
+            val source = object : FakeReadableSource() {
+                override suspend fun getNovelDetail(key: NovelKey) =
+                    if (refreshing) detail.await() else super.getNovelDetail(key)
+
+                override suspend fun getVolumes(key: NovelKey, page: Int, pageSize: Int) =
+                    if (refreshing) catalog.await() else super.getVolumes(key, page, pageSize)
+
+                override suspend fun getChapters(novelKey: NovelKey, volumeKey: VolumeKey, page: Int, pageSize: Int) =
+                    if (refreshing) chapters.await() else super.getChapters(novelKey, volumeKey, page, pageSize).let {
+                        it.copy(items = it.items.map { chapter -> chapter.copy(locked = true) })
+                    }
+            }
+            val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)))
+            advanceUntilIdle()
+            val previous = viewModel.state.value
+            val unlocked = previous.chapters.getValue(source.volumeKey).items.first().copy(locked = false)
+
+            try {
+                refreshing = true
+                viewModel.load(forceRefresh = true)
+                runCurrent()
+
+                assertEquals(previous.detail, viewModel.state.value.detail)
+                assertEquals(previous.volumes, viewModel.state.value.volumes)
+                assertEquals(
+                    previous.chapters.getValue(source.volumeKey).items,
+                    viewModel.state.value.chapters.getValue(source.volumeKey).items,
+                )
+                assertTrue(viewModel.state.value.refreshing)
+                assertFalse(viewModel.state.value.loading)
+
+                detail.complete(NovelDetail(NovelSummary(source.novelKey, "更新后的书")))
+                runCurrent()
+                assertEquals("更新后的书", viewModel.state.value.detail?.novel?.title)
+
+                catalog.complete(SourcePage(previous.volumes, page = 1))
+                runCurrent()
+                assertTrue(viewModel.state.value.chapters.getValue(source.volumeKey).items.first().locked)
+                assertTrue(viewModel.state.value.chapters.getValue(source.volumeKey).loading)
+
+                chapters.complete(SourcePage(listOf(unlocked), page = 1))
+                runCurrent()
+
+                assertEquals(listOf(unlocked), viewModel.state.value.chapters.getValue(source.volumeKey).items)
+                assertEquals(1, viewModel.state.value.chapters.getValue(source.volumeKey).page)
+                assertFalse(viewModel.state.value.refreshing)
+            } finally {
+                detail.complete(checkNotNull(previous.detail))
+                catalog.complete(SourcePage(previous.volumes, page = 1))
+                chapters.complete(SourcePage(listOf(unlocked), page = 1))
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun `refresh ignores superseded detail catalog shelf and offline responses`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val oldDetail = CompletableDeferred<NovelDetail>()
+            val oldCatalog = CompletableDeferred<SourcePage<VolumeSummary>>()
+            val oldShelf = CompletableDeferred<List<NovelSummary>>()
+            val oldOffline = CompletableDeferred<OfflineBookRecord?>()
+            var detailRequests = 0
+            var catalogRequests = 0
+            var shelfRequests = 0
+            var offlineRequests = 0
+            val source = object : FakeReadableSource() {
+                override suspend fun getNovelDetail(key: NovelKey) =
+                    if (detailRequests++ == 0) withContext(NonCancellable) { oldDetail.await() }
+                    else NovelDetail(NovelSummary(key, "新详情"))
+
+                override suspend fun getVolumes(key: NovelKey, page: Int, pageSize: Int) =
+                    if (catalogRequests++ == 0) withContext(NonCancellable) { oldCatalog.await() }
+                    else super.getVolumes(key, page, pageSize)
+
+                override suspend fun getRemoteShelf(): List<NovelSummary> =
+                    if (shelfRequests++ == 0) withContext(NonCancellable) { oldShelf.await() }
+                    else emptyList()
+            }
+            val latestOffline = OfflineBookRecord(NovelSummary(source.novelKey, "新离线记录"))
+            val offline = object : FakeOfflineLibrary() {
+                override suspend fun readBook(key: NovelKey) =
+                    if (offlineRequests++ == 0) withContext(NonCancellable) { oldOffline.await() }
+                    else latestOffline
+            }
+            val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)), offline)
+            val staleVolume = VolumeSummary(VolumeKey(source.descriptor.id, "old"), source.novelKey, "旧目录")
+            val staleDetail = NovelDetail(NovelSummary(source.novelKey, "旧详情", inRemoteShelf = true))
+
+            try {
+                runCurrent()
+                viewModel.load(forceRefresh = true)
+                runCurrent()
+
+                oldDetail.complete(staleDetail)
+                oldCatalog.complete(SourcePage(listOf(staleVolume), page = 1))
+                oldShelf.complete(listOf(staleDetail.novel))
+                oldOffline.complete(OfflineBookRecord(staleDetail.novel))
+                runCurrent()
+
+                val state = viewModel.state.value
+                assertEquals("新详情", state.detail?.novel?.title)
+                assertEquals(listOf(source.volumeKey), state.volumes.map { it.key })
+                assertEquals(source.volumeKey, state.expandedVolumeKey)
+                assertEquals(listOf("1"), state.chapters.getValue(source.volumeKey).items.map { it.key.remoteId })
+                assertEquals(false, state.inRemoteShelf)
+                assertEquals(latestOffline, state.offlineRecord)
+                assertFalse(state.loading)
+                assertFalse(state.refreshing)
+                assertNull(state.error)
+                assertNull(state.directoryError)
+                assertNull(state.shelfError)
+            } finally {
+                oldDetail.complete(staleDetail)
+                oldCatalog.complete(SourcePage(listOf(staleVolume), page = 1))
+                oldShelf.complete(emptyList())
+                oldOffline.complete(null)
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun `refresh ignores superseded first chapter response`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val oldChapters = CompletableDeferred<SourcePage<ChapterSummary>>()
+            var chapterRequests = 0
+            val source = object : FakeReadableSource() {
+                override suspend fun getChapters(novelKey: NovelKey, volumeKey: VolumeKey, page: Int, pageSize: Int) =
+                    if (chapterRequests++ == 0) withContext(NonCancellable) { oldChapters.await() }
+                    else super.getChapters(novelKey, volumeKey, page, pageSize)
+            }
+            val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)))
+            val stale = ChapterSummary(ChapterKey(source.descriptor.id, "stale"), source.novelKey, source.volumeKey, "旧章节")
+
+            try {
+                runCurrent()
+                viewModel.load(forceRefresh = true)
+                runCurrent()
+
+                oldChapters.complete(SourcePage(listOf(stale), page = 1))
+                runCurrent()
+
+                val chapters = viewModel.state.value.chapters.getValue(source.volumeKey)
+                assertEquals(listOf("1"), chapters.items.map { it.key.remoteId })
+                assertFalse(chapters.loading)
+                assertNull(chapters.error)
+            } finally {
+                oldChapters.complete(SourcePage(listOf(stale), page = 1))
+                runCurrent()
+            }
+        }
+
+    @Test
+    fun `failed chapter refresh keeps old chapters and reports the real failure without offline data`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var failChapters = false
+            val source = object : FakeReadableSource() {
+                override suspend fun getChapters(novelKey: NovelKey, volumeKey: VolumeKey, page: Int, pageSize: Int) =
+                    if (failChapters) throw SourceException(SourceErrorKind.TIMEOUT, "超时")
+                    else super.getChapters(novelKey, volumeKey, page, pageSize)
+            }
+            val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)))
+            advanceUntilIdle()
+            val previous = viewModel.state.value.chapters.getValue(source.volumeKey).items
+
+            failChapters = true
+            viewModel.load(forceRefresh = true)
+            advanceUntilIdle()
+
+            val chapters = viewModel.state.value.chapters.getValue(source.volumeKey)
+            assertEquals(previous, chapters.items)
+            assertEquals("请求超时，请稍后重试", chapters.error)
+            assertFalse(chapters.loading)
+            assertFalse(viewModel.state.value.loading)
+            assertNull(viewModel.state.value.error)
         }
 
     @Test
@@ -279,7 +598,7 @@ class SourceBookViewModelTest {
         }
     }
 
-    private class FakeOfflineLibrary : OfflineLibraryAccess {
+    private open class FakeOfflineLibrary : OfflineLibraryAccess {
         override val books = MutableStateFlow<List<OfflineBookRecord>>(emptyList())
         override val wifiOnly = MutableStateFlow(true)
         val enqueued = mutableListOf<Pair<NovelKey, VolumeKey?>>()

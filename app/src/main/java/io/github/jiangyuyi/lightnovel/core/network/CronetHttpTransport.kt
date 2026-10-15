@@ -4,10 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.chromium.net.CronetEngine
 import org.chromium.net.CronetException
 import org.chromium.net.ExperimentalCronetEngine
@@ -47,6 +46,7 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
     }
 
     private val engines = mutableMapOf<NetworkRoute, CronetEngine>()
+    private val routePreference = NetworkRoutePreference(NETWORK_ROUTES.size)
 
     private fun createEngine(route: NetworkRoute): CronetEngine =
         ExperimentalCronetEngine.Builder(applicationContext).run {
@@ -93,24 +93,26 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
         upload: ByteArray?,
         uploadContentType: String?,
     ): HttpBytesResponse {
+        val host = Uri.parse(url).host.orEmpty()
+        val routeOrder = routePreference.order(host)
         var lastFailure: IOException? = null
-        NETWORK_ROUTES.forEachIndexed { index, route ->
+        routeOrder.forEachIndexed { attempt, routeIndex ->
+            val route = NETWORK_ROUTES[routeIndex]
             try {
-                return executeWithTimeout(engineFor(route), url, method, upload, uploadContentType).also {
-                    if (index > 0) {
-                        Log.i(TAG, "${Uri.parse(url).host} connected through ${route.label}")
+                return executeWithTimeout(engineFor(route), url, method, upload, uploadContentType).also { response ->
+                    // HTTP errors are not evidence that an alternate connection works better.
+                    if (response.code in 200..299) routePreference.succeeded(host, routeIndex)
+                    if (routeIndex > 0) {
+                        Log.i(TAG, "$host connected through ${route.label}")
                     }
                 }
             } catch (failure: IOException) {
                 lastFailure = failure
-                if (index == NETWORK_ROUTES.lastIndex || !failure.isRetryableConnectionFailure()) {
+                routePreference.failed(host, routeIndex)
+                if (attempt == routeOrder.lastIndex || !failure.isRetryableConnectionFailure()) {
                     throw failure
                 }
-                Log.w(
-                    TAG,
-                    "${Uri.parse(url).host} failed through ${route.label}; trying fallback",
-                    failure,
-                )
+                Log.w(TAG, "$host failed through ${route.label}; trying fallback", failure)
             }
         }
         throw lastFailure ?: IOException("网络连接失败")
@@ -122,13 +124,12 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
         method: String,
         upload: ByteArray?,
         uploadContentType: String?,
-    ): HttpBytesResponse = try {
-        withTimeout(ROUTE_TIMEOUT_MS) {
+    ): HttpBytesResponse =
+        // JSON pages have a 10s deadline. Leave time for a working fallback;
+        // image transfers and multipart uploads retain their longer allowance.
+        withTimeoutOrNull(if (uploadContentType == "application/json; charset=utf-8") API_ROUTE_TIMEOUT_MS else ROUTE_TIMEOUT_MS) {
             executeOnce(requestEngine, url, method, upload, uploadContentType)
-        }
-    } catch (failure: TimeoutCancellationException) {
-        throw RouteTimeoutException(failure)
-    }
+        } ?: throw RouteTimeoutException()
 
     private suspend fun executeOnce(
         requestEngine: CronetEngine,
@@ -221,6 +222,7 @@ internal class CronetHttpTransport(context: Context) : HttpTransport {
     private companion object {
         const val TAG = "LightNovelNetwork"
         const val ROUTE_TIMEOUT_MS = 12_000L
+        const val API_ROUTE_TIMEOUT_MS = 4_000L
 
         val NETWORK_ROUTES = listOf(
             NetworkRoute("system DNS"),
@@ -245,4 +247,4 @@ private data class NetworkRoute(
     val address: String? = null,
 )
 
-private class RouteTimeoutException(cause: Throwable) : IOException("网络请求超时", cause)
+private class RouteTimeoutException : IOException("网络请求超时")
