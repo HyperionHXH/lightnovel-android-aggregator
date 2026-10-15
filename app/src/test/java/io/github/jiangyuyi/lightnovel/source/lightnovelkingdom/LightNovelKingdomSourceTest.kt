@@ -1,6 +1,7 @@
 package io.github.jiangyuyi.lightnovel.source.lightnovelkingdom
 
 import io.github.jiangyuyi.lightnovel.core.model.BookDetail
+import io.github.jiangyuyi.lightnovel.core.model.AccountProfile
 import io.github.jiangyuyi.lightnovel.core.model.BookSummary
 import io.github.jiangyuyi.lightnovel.core.model.ChapterDetail
 import io.github.jiangyuyi.lightnovel.core.model.ChapterSummary
@@ -19,6 +20,7 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceCapability
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -124,6 +126,34 @@ class LightNovelKingdomSourceTest {
 
         assertTrue(error is IllegalArgumentException)
         assertFalse(networkCalled)
+    }
+
+    @Test
+    fun `kingdom level progress does not invent experience thresholds or default exp to zero`() = runTest {
+        val source = LightNovelKingdomSource(object : StubGateway() {
+            override suspend fun profile() = AccountProfile(UserSummary(7, "reader"), level = 2)
+        })
+
+        val profile = source.getProfile()
+
+        assertEquals(2, profile.level)
+        assertEquals("骑士", profile.levelLabel)
+        assertEquals(9, profile.maximumLevel)
+        assertNull(profile.experience)
+    }
+
+    @Test
+    fun `kingdom exposes actual experience without interpreting unknown next exp semantics`() = runTest {
+        val source = LightNovelKingdomSource(object : StubGateway() {
+            override suspend fun profile() = AccountProfile(UserSummary(7, "reader"), level = 2, experience = 0)
+        })
+
+        val experience = checkNotNull(source.getProfile().experience)
+
+        assertEquals(0L, experience.total)
+        assertNull(experience.levelStart)
+        assertNull(experience.nextLevelAt)
+        assertNull(experience.fraction)
     }
 
     @Test

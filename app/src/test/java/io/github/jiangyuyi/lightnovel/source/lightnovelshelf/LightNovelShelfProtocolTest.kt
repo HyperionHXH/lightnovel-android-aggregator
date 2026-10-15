@@ -337,6 +337,57 @@ class LightNovelShelfProtocolTest {
         assertEquals(1, hub.resetCount)
     }
 
+    @Test
+    fun `profile preserves growth boundaries and separates growth from access level`() = runTest {
+        val hub = RecordingHub(ArrayDeque(listOf(envelope(
+            """{"Id":7,"UserName":"reader","Growth":{"Coin":88,"Exp":140,"Level":5,"GrowthLevel":2,"CurrentLevelExp":100,"NextLevelExp":200,"SignStreak":3,"TodaySigned":true}}""",
+        ))))
+
+        val profile = gateway(hub).getProfile()
+
+        assertEquals(5, profile.level)
+        assertEquals(2, profile.growthLevel)
+        assertEquals(140L, profile.experience)
+        assertEquals(100L, profile.currentLevelExp)
+        assertEquals(200L, profile.nextLevelExp)
+        assertTrue(profile.signedToday)
+        assertTrue(!profile.maxLevel)
+    }
+
+    @Test
+    fun `explicit null next threshold denotes max level but missing growth does not`() = runTest {
+        val hub = RecordingHub(ArrayDeque(listOf(
+            envelope("""{"Id":7,"Growth":{"Exp":9000,"GrowthLevel":6,"CurrentLevelExp":8000,"NextLevelExp":null}}"""),
+            envelope("""{"Id":8}"""),
+        )))
+        val gateway = gateway(hub)
+
+        val max = gateway.getProfile()
+        val missing = gateway.getProfile()
+
+        assertTrue(max.maxLevel)
+        assertNull(max.nextLevelExp)
+        assertNull(missing.experience)
+        assertNull(missing.growthLevel)
+        assertTrue(!missing.maxLevel)
+    }
+
+    @Test
+    fun `sign in uses refreshed growth instead of interpreting reward as coins`() = runTest {
+        val hub = RecordingHub(ArrayDeque(listOf(
+            envelope("""{"Id":7,"Growth":{"Coin":88,"Exp":140,"TodaySigned":false,"SignStreak":3}}"""),
+            envelope("""{"Reward":100,"CoinReward":5,"Streak":4,"Exp":240,"Level":2}"""),
+            envelope("""{"Id":7,"Growth":{"Coin":93,"Exp":240,"TodaySigned":true,"SignStreak":4}}"""),
+        )))
+
+        val result = LightNovelShelfSource(gateway(hub)).claimDailyReward()
+
+        assertEquals(5L, result.rewardAmount)
+        assertEquals(100L, result.experienceAmount)
+        assertEquals(93L, result.balance)
+        assertEquals(4, result.streakDays)
+    }
+
     private fun gateway(hub: RecordingHub): DefaultLightNovelShelfGateway {
         val auth = LightNovelShelfAuthManager(
             api = LightNovelShelfAuthApi(

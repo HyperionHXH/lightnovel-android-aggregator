@@ -30,6 +30,7 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourcePage
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfile
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfileProvider
+import io.github.jiangyuyi.lightnovel.core.source.SourceExperience
 import io.github.jiangyuyi.lightnovel.core.source.SourceSession
 import io.github.jiangyuyi.lightnovel.core.source.VolumeKey
 import io.github.jiangyuyi.lightnovel.core.source.VolumeSummary
@@ -318,10 +319,22 @@ class LightNovelShelfSource internal constructor(
             )
         }
         val result = gateway.checkIn()
+        val after = try {
+            gateway.getProfile()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Signing succeeded. A failed read must not turn it into a failed claim
+            // or invent balances from the ambiguous SignIn.Reward field.
+            null
+        }
         RewardResult(
-            rewardAmount = result.reward,
-            balance = before.coin + result.reward,
-            streakDays = result.streak,
+            rewardAmount = after?.let { (it.coin - before.coin).takeIf { amount -> amount >= 0 } },
+            balance = after?.coin,
+            streakDays = after?.signInStreak ?: result.streak,
+            experienceAmount = after?.experience?.let { total ->
+                before.experience?.let { previous -> (total - previous).takeIf { it >= 0 } }
+            },
         )
     }
 
@@ -370,9 +383,16 @@ private fun ShelfProfile.toSourceProfile() = SourceProfile(
     accountId = id.takeIf { it > 0 }?.toString(),
     displayName = userName,
     balance = coin,
+    level = growthLevel,
+    levelLabel = "成长等级",
+    experience = experience?.let {
+        SourceExperience(it, currentLevelExp, nextLevelExp, maxLevel)
+    },
     extra = mapOf(
         "连续签到" to "${signInStreak} 天",
         "今日签到" to if (signedToday) "已完成" else "未完成",
+        "经验获取" to "每日签到累积经验，连签有额外奖励；实际奖励以来源返回为准。",
+        "访问等级" to (level?.let { "Lv.$it" } ?: "未提供"),
     ),
 )
 

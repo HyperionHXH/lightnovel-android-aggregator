@@ -19,6 +19,7 @@ data class AccountProfile(
     val fansCount: Int = 0,
     val followingCount: Int = 0,
     val postCount: Int = 0,
+    val experience: Long? = null,
 )
 
 @Serializable

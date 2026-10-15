@@ -335,6 +335,18 @@ class ApiParsersTest {
     }
 
     @Test
+    fun `account growth preserves explicit zero and nested level identity without inventing experience`() {
+        val zero = ApiParsers.accountProfile(obj("""{"profile":{"uid":7,"level":{"id":2,"name":"骑士"},"exp":0,"next_exp":100}}"""))
+        val missing = ApiParsers.accountProfile(obj("""{"profile":{"uid":8,"level_id":3}}"""))
+
+        assertEquals(2, zero.level)
+        assertEquals("骑士", zero.levelName)
+        assertEquals(0L, zero.experience)
+        assertEquals(3, missing.level)
+        assertNull(missing.experience)
+    }
+
+    @Test
     fun `social page parses relationship and page info`() {
         val page = ApiParsers.socialPage(
             obj(

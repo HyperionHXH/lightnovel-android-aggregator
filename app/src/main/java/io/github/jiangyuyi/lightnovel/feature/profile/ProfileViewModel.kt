@@ -9,6 +9,7 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceProfile
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
 import io.github.jiangyuyi.lightnovel.core.source.SourceSession
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -97,11 +98,9 @@ class ProfileViewModel(
             finishSource(sourceId, null, "该来源不支持账号")
             return
         }
-        runCatching {
+        try {
             val session = accountProvider.restoreSession()
             val profile = if (session.loggedIn && profileProvider != null) profileProvider.getProfile() else null
-            session to profile
-        }.onSuccess { (session, profile) ->
             val state = _state.value
             _state.value = state.copy(
                 sourceSessions = state.sourceSessions + (sourceId to session),
@@ -109,8 +108,10 @@ class ProfileViewModel(
                 sourceProfileLoading = state.sourceProfileLoading - sourceId,
                 sourceProfileErrors = state.sourceProfileErrors - sourceId,
             )
-        }.onFailure { throwable ->
-            finishSource(sourceId, null, throwable.message ?: "来源资料加载失败")
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            finishSource(sourceId, null, error.message ?: "来源资料加载失败")
         }
     }
 

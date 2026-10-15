@@ -311,6 +311,7 @@ object ApiParsers {
         val balance = profile.obj("balance")
         val level = profile.obj("level")
         val group = profile.obj("user_group", "group", "rank")
+        val experience = (profile["exp"] as? JsonPrimitive)?.longOrNull?.takeIf { it >= 0 }
         val user = user(profile) ?: UserSummary(
             uid = profile.long("uid", "user_id", "id"),
             nickname = profile.string("nickname", "username", "name").ifBlank { "已登录用户" },
@@ -327,9 +328,10 @@ object ApiParsers {
                 "user_group_name",
                 "rank_name",
                 "role_name",
-            ).ifBlank { group?.string("name", "title").orEmpty() },
-            level = profile.int("level").takeIf { it > 0 }
-                ?: level?.int("level")?.takeIf { it > 0 },
+            ).ifBlank { level?.string("name").orEmpty() }
+                .ifBlank { group?.string("name", "title").orEmpty() },
+            level = profile.intOrNull("level", "level_id", "levelId")?.takeIf { it > 0 }
+                ?: level?.intOrNull("level", "id")?.takeIf { it > 0 },
             coin = profile.int("coin", "light_coin", "lightCoin", "balance").takeIf { it > 0 }
                 ?: balance?.int("coin", "light_coin", "lightCoin")
                 ?: 0,
@@ -339,6 +341,7 @@ object ApiParsers {
                 ?: profile.int("following", "following_count", "followingCount"),
             postCount = stats.int("publish_articles", "post_count", "posts").takeIf { it > 0 }
                 ?: profile.int("publish_articles", "post_count", "posts", "postCount"),
+            experience = experience,
         )
     }
 

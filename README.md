@@ -6,10 +6,10 @@
 
 Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK）与轻书架（LNS）两个来源。它把发现、搜索、书架、阅读进度和离线导出放在一个应用中，同时保持两站的登录态、接口协议和错误相互隔离。
 
-当前稳定发布版本：**1.21.4**
+当前稳定发布版本：**1.22.0**
 
-- Android Release：[v1.21.4](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.21.4)
-- Android APK：[Mixn-1.21.4.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.21.4/Mixn-1.21.4.apk)
+- Android Release：[v1.22.0](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.22.0)
+- Android APK：[Mixn-1.22.0.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.0/Mixn-1.22.0.apk)
 
 > 本项目是非官方客户端，不隶属于轻之国度或轻书架。请遵守两个站点的服务条款和内容版权要求，不要批量抓取、分发或商业使用站点内容。
 
@@ -36,6 +36,8 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 - 轻之国度评论支持最热/最新、分页、星级展示和发表评论；轻书架没有对应评论接口，因此不显示评论入口。
 - 轻书架：个人资料、收藏同步和官方签到。
 - 站点接口或账号权限不可用时，页面会保留来源、认证、超时、权限或内容不存在等具体错误。
+- “我的”和来源账号页显示等级、称号、累计经验与进度。轻书架区分成长等级与访问等级，经验条使用服务器下发的本级/下级经验门槛；签到后重新读取资料、余额与经验，不在本地猜测奖励。
+- LK 官网当前只有九档等级进度，应用明确标为“非经验进度”；接口确实返回 `exp` 时才显示累计经验。LK 未公布经验门槛，不能据等级推算经验百分比或承诺签到升级。
 
 ### 下载与导出
 
@@ -97,7 +99,7 @@ Android Release APK 使用 Android Keystore 签名。首次配置可运行：
 
 签名密钥、密码、`signing.properties` 和本地账号信息均不应提交到 Git。丢失同一签名密钥后，无法覆盖安装后续版本。
 
-推送 `v*` 标签会触发 [Android Release 工作流](.github/workflows/release.yml)，执行测试、Lint、签名构建、`apksigner` 校验并上传 APK 与 SHA-256 文件。当前版本标签为 `v1.21.4`；`versionCode` 使用源码中的单调递增值，不依赖工作流运行次数。普通文档修改不会触发该工作流，也不需要单独创建 Release。
+推送 `v*` 标签会触发 [Android Release 工作流](.github/workflows/release.yml)，执行测试、Lint、签名构建、`apksigner` 校验并上传 APK 与 SHA-256 文件。当前版本标签为 `v1.22.0`；`versionCode` 使用源码中的单调递增值，不依赖工作流运行次数。普通文档修改不会触发该工作流，也不需要单独创建 Release。
 
 ## 测试
 
@@ -116,9 +118,11 @@ $env:RUN_LNS_SMOKE = "true"
 
 最近的 Android 真机/AVD 验证覆盖发现、双源搜索、登录态恢复、书架、详情/目录、分页与滚动阅读、正文图片、字体设置、缓存恢复、下载和 EPUB/TXT 导出。真实账号相关功能仍应由使用者自行确认，因为站点接口、登录态和付费权限会变化。
 
-`1.21.4` 修复详情被目录/书架请求阻塞：详情、目录与书架状态分别更新，刷新保留已有内容。LK 网络层按域名在当前进程记住成功线路，避免持续重复等待同一坏线路；JSON 单线路 4 秒截止允许在页面 10 秒总截止内尝试备用线路，图片/上传保留 12 秒。页面取消不会误触发线路回退。LNS SignalR 也保留外部取消，不把已取消的请求重放到备用端点。本地网络回归只访问回环服务器，Debug 构建仅对 `127.0.0.1` 放行 HTTP，Release 仍只允许 HTTPS。
+`1.21.4` 修复详情被目录/书架请求阻塞：详情、目录与书架状态分别更新，刷新保留已有内容。LK 网络层按域名在当前进程记住成功线路，避免持续重复等待同一坏线路；采用顺序失败回退，不会并发多路竞速，也不保证选择绝对最快的线路。JSON 单线路 4 秒截止允许在页面 10 秒总截止内尝试备用线路，图片/上传保留 12 秒。页面取消不会误触发线路回退。LNS SignalR 也保留外部取消，不把已取消的请求重放到备用端点。本地网络回归只访问回环服务器，Debug 构建仅对 `127.0.0.1` 放行 HTTP，Release 仍只允许 HTTPS。
 
 排查发现原 AVD 的系统 DNS 线路多次等待 12 秒后才能通过备用线路成功，而独立 AVD 和官网正常请求可在数秒内完成；这不构成服务端高负荷的证据。HTTP 418、认证失败和站点真实错误不会被线路偏好逻辑掩盖。LNS 登录后正文/专用字体本轮未重新验收，需有效账号登录态。
+
+等级与经验协议依据：[轻书架官方 Growth 字段](https://github.com/LightNovelShelf/Web/blob/master/src/services/points/type.ts)、[官方经验条计算](https://github.com/LightNovelShelf/Web/blob/master/src/components/app/Header.vue)；LK 依据当前[官网个人页](https://www.lightnovel.fun/me)的九档等级展示。缺少经验或门槛时显示未提供，不显示虚构的零值或经验条。签到成功后资料刷新失败会保留旧数据并提示重试；从账号管理返回“我的”会重新读取资料。
 
 ## 隐私、数据和已知限制
 

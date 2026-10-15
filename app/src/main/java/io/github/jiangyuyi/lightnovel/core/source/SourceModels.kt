@@ -232,7 +232,39 @@ data class SourceProfile(
     val balance: Long? = null,
     val levelLabel: String? = null,
     val extra: Map<String, String> = emptyMap(),
+    val level: Int? = null,
+    val experience: SourceExperience? = null,
+    val maximumLevel: Int? = null,
 )
+
+/** Cumulative experience and official level boundaries, never locally invented rewards. */
+@Serializable
+data class SourceExperience(
+    val total: Long,
+    val levelStart: Long? = null,
+    val nextLevelAt: Long? = null,
+    val maxLevel: Boolean = false,
+) {
+    val earnedInLevel: Long?
+        get() = levelStart?.takeIf { it >= 0 && total >= it }?.let { total - it }
+
+    val requiredInLevel: Long?
+        get() {
+            val start = levelStart ?: return null
+            return nextLevelAt?.takeIf { start >= 0 && it > start }?.let { it - start }
+        }
+
+    val remaining: Long?
+        get() = nextLevelAt?.takeIf { it >= 0 && total >= 0 }?.let { (it - total).coerceAtLeast(0) }
+
+    val fraction: Float?
+        get() {
+            if (maxLevel) return 1f
+            val earned = earnedInLevel ?: return null
+            val required = requiredInLevel ?: return null
+            return (earned.toDouble() / required).toFloat().coerceIn(0f, 1f)
+        }
+}
 
 @Serializable
 data class ReadingHistoryEntry(
@@ -263,6 +295,7 @@ data class RewardResult(
     val rewardAmount: Long? = null,
     val balance: Long? = null,
     val streakDays: Int? = null,
+    val experienceAmount: Long? = null,
 )
 
 @Serializable

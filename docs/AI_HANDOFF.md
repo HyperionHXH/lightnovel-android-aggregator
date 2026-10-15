@@ -56,7 +56,17 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.21.4`、`versionCode 35`；Release 使用源码版本码，tag 仅注入版本名称。桌面端仍不在本轮支持与发布范围。
+Android 默认版本：`versionName 1.22.0`、`versionCode 36`；Release 使用源码版本码，tag 仅注入版本名称。桌面端仍不在本轮支持与发布范围。
+
+## 2026-10-15 双源等级经验接入
+
+- 轻书架 `GetMyInfo.Growth` 接入 `Exp / GrowthLevel / Level / CurrentLevelExp / NextLevelExp`；`NextLevelExp: null` 才标记满级，字段缺失不能当成满级。成长等级和访问等级分别展示，不写死经验阈值表。
+- 官方依据：[Growth 协议](https://github.com/LightNovelShelf/Web/blob/master/src/services/points/type.ts)、[Header.vue 经验计算](https://github.com/LightNovelShelf/Web/blob/master/src/components/app/Header.vue)，线上 `https://www.lightnovel.life/assets/index-C3w8JnIX.js` 也包含这些字段。
+- 轻书架 `SignIn.Reward` 未被官方 Web 界面作为金币使用；删除本地 `before.coin + reward`，成功后读取 `GetMyInfo`，以实际前后余额/经验差值显示奖励。读取失败不把成功签到误报成失败，后续资料读取有可见错误和重试。
+- LK 当前官网个人页的九档等级为平民/骑士/勋爵/子爵/伯爵/侯爵/公爵/王爵/皇帝，进度是 `(level - 1) / 8`，不是经验。证据为官网 Nuxt build `mv7vsr4h`：`DxoZno7O.js`（个人页）、`JlVi9Ybn.js`（等级映射）、`DyhAAvsD.js`（`my-home-v1` 资料解析）。只接入真实 `exp`；没有可核实的经验门槛或签到加经验规则，不解释 `next_exp` 为绝对阈值，不默认经验为 0。
+- “我的”和来源账号页复用经验组件。两站签到后刷新 profile+签到状态，取消先前资料任务以免旧值覆盖；退出清理资料任务和数据，从账号管理回到“我的”用 `LifecycleResumeEffect` 重新读取。未新增自动签到或模拟阅读赚经验。
+- API 35 独立 AVD 已用固定来源响应操作真实账号页，验证签到后等级 2→3、累计经验 195→201；1.3 倍系统字体下经验条、访问等级和签到说明没有文字重叠；LK 等级条与经验缺失状态独立展示。原 AVD 只读检查两站均 `signedIn=false`，未取得真实账号经验，也没有调用线上签到。
+- 最终本地单元测试 194 项（0 失败、1 项既有跳过），Lint、Debug/Release 与 instrumentation APK 构建通过；3 项临时真实 Compose 页面烟测覆盖签到升级、LK 缺失经验、“我的”双源及满级（固定响应，不宣称真实账号签到验收）。签名 Release 为 `1.22.0 / 36`，v2 签名校验通过。
 
 ## 2026-10-15 LK/LNS 加载延迟排查
 

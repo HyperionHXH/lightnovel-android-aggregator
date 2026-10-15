@@ -54,6 +54,7 @@ import android.content.Intent
 import android.net.Uri
 import coil.compose.AsyncImage
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
+import io.github.jiangyuyi.lightnovel.core.ui.AccountExperience
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -186,14 +187,27 @@ private fun SourceAccountCard(
             }
 
             if (account.session.loggedIn) {
-                account.profile?.let { profile ->
-                    val identity = listOfNotNull(
-                        profile.levelLabel,
-                        profile.balance?.let { "轻币 $it" },
-                    ).joinToString(" · ")
-                    if (identity.isNotBlank()) {
-                        Text(identity, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                account.profileError?.let { message ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            message,
+                            modifier = Modifier.weight(1f),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        IconButton(onClick = onRetry) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "重试等级经验")
+                        }
                     }
+                }
+                account.profile?.let { profile ->
+                    profile.balance?.let { balance ->
+                        Text("轻币 $balance", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    }
+                    AccountExperience(profile)
                 }
                 if (account.rewardLoading && account.rewardStatus == null) {
                     Row(

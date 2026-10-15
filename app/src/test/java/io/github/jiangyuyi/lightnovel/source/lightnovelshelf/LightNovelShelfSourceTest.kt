@@ -8,6 +8,7 @@ import io.github.jiangyuyi.lightnovel.core.source.VolumeKey
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -111,7 +112,7 @@ class LightNovelShelfSourceTest {
             override suspend fun getProfile() = ShelfProfile(1, "user", 88, 3, true)
             override suspend fun checkIn(): ShelfCheckInResult {
                 checkInCalls += 1
-                return ShelfCheckInResult(5, 4)
+                return ShelfCheckInResult(4)
             }
         })
 
@@ -120,6 +121,54 @@ class LightNovelShelfSourceTest {
         assertEquals(0L, result.rewardAmount)
         assertEquals(88L, result.balance)
         assertEquals(0, checkInCalls)
+    }
+
+    @Test
+    fun `sign in reward uses reread balances and experience rather than ambiguous payload`() = runTest {
+        var claimed = false
+        val source = LightNovelShelfSource(object : StubGateway() {
+            override suspend fun getProfile() = ShelfProfile(
+                1, "user", if (claimed) 93 else 88, if (claimed) 4 else 3, claimed,
+                level = 5, growthLevel = 2, experience = if (claimed) 160 else 140,
+                currentLevelExp = 100, nextLevelExp = 200,
+            )
+            override suspend fun checkIn(): ShelfCheckInResult {
+                claimed = true
+                return ShelfCheckInResult(4)
+            }
+        })
+
+        val result = source.claimDailyReward()
+        val profile = source.getProfile()
+
+        assertEquals(5L, result.rewardAmount)
+        assertEquals(20L, result.experienceAmount)
+        assertEquals(93L, result.balance)
+        assertEquals(2, profile.level)
+        assertEquals("Lv.5", profile.extra["访问等级"])
+        assertEquals(0.6f, checkNotNull(profile.experience?.fraction), 0.001f)
+    }
+
+    @Test
+    fun `successful claim with failed reread does not fabricate reward or report failure`() = runTest {
+        var claimed = false
+        val source = LightNovelShelfSource(object : StubGateway() {
+            override suspend fun getProfile(): ShelfProfile {
+                if (claimed) error("profile unavailable")
+                return ShelfProfile(1, "user", 88, 3, false)
+            }
+            override suspend fun checkIn(): ShelfCheckInResult {
+                claimed = true
+                return ShelfCheckInResult(4)
+            }
+        })
+
+        val result = source.claimDailyReward()
+
+        assertNull(result.rewardAmount)
+        assertNull(result.balance)
+        assertNull(result.experienceAmount)
+        assertEquals(4, result.streakDays)
     }
 
     @Test

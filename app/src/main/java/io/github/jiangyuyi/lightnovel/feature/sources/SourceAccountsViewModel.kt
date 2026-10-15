@@ -9,6 +9,7 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfile
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
 import io.github.jiangyuyi.lightnovel.core.source.SourceSession
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +27,7 @@ data class SourceAccountItemState(
     val rewardActionKey: String? = null,
     val profile: SourceProfile? = null,
     val profileLoading: Boolean = false,
+    val profileError: String? = null,
     val error: String? = null,
     val notice: String? = null,
 ) {
@@ -45,6 +47,7 @@ class SourceAccountsViewModel(
         ),
     )
     val state: StateFlow<SourceAccountsState> = _state.asStateFlow()
+    private val extraJobs = mutableMapOf<String, Job>()
 
     init {
         refresh()
@@ -54,11 +57,21 @@ class SourceAccountsViewModel(
         val ids = sourceId?.let(::listOf) ?: _state.value.accounts.map { it.descriptor.id }
         ids.forEach { id ->
             val provider = registry.accountProvider(id) ?: return@forEach
+            cancelAccountExtras(id)
             update(id) { it.copy(checking = true, error = null, notice = null) }
             viewModelScope.launch {
                 runSourceCatching { provider.restoreSession() }
                     .onSuccess { session ->
-                        update(id) { it.copy(session = session, checking = false, error = null) }
+                        update(id) {
+                            it.copy(
+                                session = session,
+                                checking = false,
+                                error = null,
+                                profile = it.profile.takeIf { session.loggedIn },
+                                rewardStatus = it.rewardStatus.takeIf { session.loggedIn },
+                                rewardCenter = it.rewardCenter.takeIf { session.loggedIn },
+                            )
+                        }
                         if (session.loggedIn) loadAccountExtras(id)
                     }
                     .onFailure { error ->
@@ -100,6 +113,7 @@ class SourceAccountsViewModel(
 
     fun logout(sourceId: String) {
         val provider = registry.accountProvider(sourceId) ?: return
+        cancelAccountExtras(sourceId)
         update(sourceId) { it.copy(signingOut = true, error = null, notice = null) }
         viewModelScope.launch {
             runSourceCatching { provider.logout() }
@@ -111,6 +125,7 @@ class SourceAccountsViewModel(
                             rewardStatus = null,
                             rewardCenter = null,
                             profile = null,
+                            profileError = null,
                         )
                     }
                 }
@@ -124,6 +139,8 @@ class SourceAccountsViewModel(
 
     fun claimDailyReward(sourceId: String) {
         val provider = registry.rewardProvider(sourceId) ?: return
+        if (_state.value.accounts.firstOrNull { it.descriptor.id == sourceId }?.rewardActionKey != null) return
+        cancelAccountExtras(sourceId)
         update(sourceId) { it.copy(rewardLoading = true, rewardActionKey = "sign", error = null, notice = null) }
         viewModelScope.launch {
             runSourceCatching { provider.claimDailyReward() }
@@ -137,13 +154,13 @@ class SourceAccountsViewModel(
                                 balance = result.balance ?: current.rewardStatus?.balance,
                                 streakDays = result.streakDays ?: current.rewardStatus?.streakDays,
                             ),
-                            notice = result.rewardAmount?.takeIf { it > 0 }?.let { "已领取 $it 轻币" }
-                                ?: "今日已签到",
+                            notice = listOfNotNull(
+                                result.rewardAmount?.takeIf { it > 0 }?.let { "已领取 $it 轻币" },
+                                result.experienceAmount?.takeIf { it > 0 }?.let { "经验 +$it" },
+                            ).joinToString(" · ").ifEmpty { "今日已签到" },
                         )
                     }
-                    if (registry.rewardCenterProvider(sourceId) != null) {
-                        loadAccountExtras(sourceId, preserveNotice = true)
-                    }
+                    loadAccountExtras(sourceId, preserveNotice = true)
                 }
                 .onFailure { error ->
                     update(sourceId) {
@@ -153,72 +170,83 @@ class SourceAccountsViewModel(
         }
     }
 
-    private fun loadAccountExtras(sourceId: String, preserveNotice: Boolean = false) {
-        loadProfile(sourceId, preserveNotice)
-        if (registry.rewardCenterProvider(sourceId) != null) loadRewardCenter(sourceId, preserveNotice)
-        else loadRewardStatus(sourceId)
+    private fun cancelAccountExtras(sourceId: String) {
+        extraJobs.remove(sourceId)?.cancel()
+        update(sourceId) { it.copy(profileLoading = false, rewardLoading = false) }
     }
 
-    private fun loadProfile(sourceId: String, preserveNotice: Boolean) {
-        val provider = registry.profileProvider(sourceId) ?: return
-        update(sourceId) { it.copy(profileLoading = true, notice = it.notice.takeIf { preserveNotice }) }
-        viewModelScope.launch {
-            runSourceCatching { provider.getProfile() }
-                .onSuccess { profile ->
-                    update(sourceId) {
-                        it.copy(
-                            profile = profile,
-                            profileLoading = false,
-                            rewardStatus = it.rewardStatus?.copy(balance = profile.balance),
-                        )
-                    }
-                }
-                .onFailure { update(sourceId) { it.copy(profileLoading = false) } }
+    private fun loadAccountExtras(sourceId: String, preserveNotice: Boolean = false) {
+        cancelAccountExtras(sourceId)
+        extraJobs[sourceId] = viewModelScope.launch {
+            launch { loadProfile(sourceId, preserveNotice) }
+            if (registry.rewardCenterProvider(sourceId) != null) {
+                launch { loadRewardCenter(sourceId, preserveNotice) }
+            } else {
+                launch { loadRewardStatus(sourceId) }
+            }
         }
     }
 
-    private fun loadRewardCenter(sourceId: String, preserveNotice: Boolean) {
+    private suspend fun loadProfile(sourceId: String, preserveNotice: Boolean) {
+        val provider = registry.profileProvider(sourceId) ?: return
+        update(sourceId) {
+            it.copy(profileLoading = true, profileError = null, notice = it.notice.takeIf { preserveNotice })
+        }
+        runSourceCatching { provider.getProfile() }
+            .onSuccess { profile ->
+                update(sourceId) {
+                    it.copy(
+                        profile = profile,
+                        profileLoading = false,
+                        rewardStatus = it.rewardStatus?.copy(balance = profile.balance),
+                    )
+                }
+            }
+            .onFailure { error ->
+                update(sourceId) {
+                    it.copy(profileLoading = false, profileError = error.toSourceUiMessage("等级经验加载失败"))
+                }
+            }
+    }
+
+    private suspend fun loadRewardCenter(sourceId: String, preserveNotice: Boolean) {
         val provider = registry.rewardCenterProvider(sourceId) ?: return
         update(sourceId) {
             it.copy(rewardLoading = true, notice = it.notice.takeIf { preserveNotice })
         }
-        viewModelScope.launch {
-            runSourceCatching { provider.getRewardCenter() }
-                .onSuccess { center ->
-                    update(sourceId) { current ->
-                        current.copy(
-                            rewardLoading = false,
-                            rewardCenter = center,
-                            rewardStatus = RewardStatus(
-                                claimedToday = center.claimed,
-                                balance = current.profile?.balance,
-                                streakDays = center.progress,
-                            ),
-                        )
-                    }
+        runSourceCatching { provider.getRewardCenter() }
+            .onSuccess { center ->
+                update(sourceId) { current ->
+                    current.copy(
+                        rewardLoading = false,
+                        rewardCenter = center,
+                        rewardStatus = RewardStatus(
+                            claimedToday = center.claimed,
+                            balance = current.profile?.balance,
+                            streakDays = center.progress,
+                        ),
+                    )
                 }
-                .onFailure { error ->
-                    update(sourceId) {
-                        it.copy(rewardLoading = false, error = error.toSourceUiMessage("轻币福利加载失败"))
-                    }
+            }
+            .onFailure { error ->
+                update(sourceId) {
+                    it.copy(rewardLoading = false, error = error.toSourceUiMessage("轻币福利加载失败"))
                 }
-        }
+            }
     }
 
-    private fun loadRewardStatus(sourceId: String) {
+    private suspend fun loadRewardStatus(sourceId: String) {
         val provider = registry.rewardProvider(sourceId) ?: return
         update(sourceId) { it.copy(rewardLoading = true) }
-        viewModelScope.launch {
-            runSourceCatching { provider.getRewardStatus() }
-                .onSuccess { reward ->
-                    update(sourceId) { it.copy(rewardLoading = false, rewardStatus = reward) }
+        runSourceCatching { provider.getRewardStatus() }
+            .onSuccess { reward ->
+                update(sourceId) { it.copy(rewardLoading = false, rewardStatus = reward) }
+            }
+            .onFailure { error ->
+                update(sourceId) {
+                    it.copy(rewardLoading = false, error = error.toSourceUiMessage("签到状态加载失败"))
                 }
-                .onFailure { error ->
-                    update(sourceId) {
-                        it.copy(rewardLoading = false, error = error.toSourceUiMessage("签到状态加载失败"))
-                    }
-                }
-        }
+            }
     }
 
     private fun update(sourceId: String, transform: (SourceAccountItemState) -> SourceAccountItemState) {

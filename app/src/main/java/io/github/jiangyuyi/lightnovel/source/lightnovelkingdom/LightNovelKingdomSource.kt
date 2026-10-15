@@ -47,6 +47,7 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourcePage
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfile
 import io.github.jiangyuyi.lightnovel.core.source.SourceProfileProvider
+import io.github.jiangyuyi.lightnovel.core.source.SourceExperience
 import io.github.jiangyuyi.lightnovel.core.source.SourceComment
 import io.github.jiangyuyi.lightnovel.core.source.SourceCommentEmoji
 import io.github.jiangyuyi.lightnovel.core.source.SourceCommentInteraction
@@ -383,13 +384,20 @@ private fun AccountProfile.toSourceProfile() = SourceProfile(
     displayName = user.nickname,
     avatarUrl = user.avatarUrl,
     balance = coin.toLong(),
-    levelLabel = levelName.takeIf { it.isNotBlank() },
+    level = level,
+    levelLabel = levelName.trim().takeIf { it.isNotBlank() }
+        ?: level?.let { KINGDOM_LEVEL_NAMES.getOrNull(it - 1) },
+    maximumLevel = KINGDOM_LEVEL_NAMES.size,
+    experience = experience?.let { SourceExperience(total = it) },
     extra = mapOf(
         "关注" to followingCount.toString(),
         "粉丝" to fansCount.toString(),
         "发布" to postCount.toString(),
+        "经验获取" to "LK 官网显示九档等级进度，未公布经验升级门槛；签到后以来源资料为准。",
     ),
 )
+
+private val KINGDOM_LEVEL_NAMES = listOf("平民", "骑士", "勋爵", "子爵", "伯爵", "侯爵", "公爵", "王爵", "皇帝")
 
 private fun DiscoverFeed.toKingdomChannel(): DiscoverChannel = when (this) {
     DiscoverFeed.POPULAR -> DiscoverChannel.HOT

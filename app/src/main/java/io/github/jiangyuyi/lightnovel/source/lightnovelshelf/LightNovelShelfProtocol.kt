@@ -66,10 +66,15 @@ internal data class ShelfProfile(
     val coin: Long,
     val signInStreak: Int,
     val signedToday: Boolean,
+    val level: Int? = null,
+    val growthLevel: Int? = null,
+    val experience: Long? = null,
+    val currentLevelExp: Long? = null,
+    val nextLevelExp: Long? = null,
+    val maxLevel: Boolean = false,
 )
 
 internal data class ShelfCheckInResult(
-    val reward: Long,
     val streak: Int,
 )
 
@@ -338,13 +343,18 @@ internal class DefaultLightNovelShelfGateway(
             coin = growth.long("Coin", fallback = 0),
             signInStreak = growth.int("SignStreak", fallback = 0),
             signedToday = growth.boolean("TodaySigned", fallback = false),
+            level = growth.optionalString("Level")?.toIntOrNull()?.takeIf { it >= 0 },
+            growthLevel = growth.optionalString("GrowthLevel")?.toIntOrNull()?.takeIf { it >= 0 },
+            experience = growth.optionalString("Exp")?.toLongOrNull()?.takeIf { it >= 0 },
+            currentLevelExp = growth.optionalString("CurrentLevelExp")?.toLongOrNull()?.takeIf { it >= 0 },
+            nextLevelExp = growth.optionalString("NextLevelExp")?.toLongOrNull()?.takeIf { it >= 0 },
+            maxLevel = growth["NextLevelExp"] == JsonNull,
         )
     }
 
     override suspend fun checkIn(): ShelfCheckInResult {
         val response = invoke("SignIn", buildJsonObject {}).requiredObject("签到结果")
         return ShelfCheckInResult(
-            reward = response.long("Reward", fallback = 0),
             streak = response.int("Streak", fallback = 0),
         )
     }

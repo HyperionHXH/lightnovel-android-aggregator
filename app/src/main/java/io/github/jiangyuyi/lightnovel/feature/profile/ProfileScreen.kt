@@ -24,7 +24,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import coil.compose.AsyncImage
 import io.github.jiangyuyi.lightnovel.core.model.Session
 import io.github.jiangyuyi.lightnovel.core.source.BuiltInSourceIds
@@ -43,6 +43,7 @@ import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
 import io.github.jiangyuyi.lightnovel.core.ui.LocalAppIconScale
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshStatus
 import io.github.jiangyuyi.lightnovel.core.ui.RefreshableLazyColumn
+import io.github.jiangyuyi.lightnovel.core.ui.AccountExperience
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +61,10 @@ fun ProfileScreen(
     onSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    LaunchedEffect(session.loggedIn) { viewModel.refresh(session.loggedIn) }
+    LifecycleResumeEffect(session.loggedIn) {
+        viewModel.refresh(session.loggedIn)
+        onPauseOrDispose { }
+    }
     val kingdomSession = state.sourceSessions[BuiltInSourceIds.LIGHT_NOVEL_KINGDOM]
     val shelfSession = state.sourceSessions[BuiltInSourceIds.LIGHT_NOVEL_SHELF]
 
@@ -165,11 +169,11 @@ private fun SourceAccountCard(
             if (session?.loggedIn == true && profile != null) {
                 val details = buildList {
                     profile.balance?.let { add("轻币 $it") }
-                    profile.levelLabel?.let { add(it) }
                     profile.extra["连续签到"]?.let { add("连续签到 $it") }
                     profile.extra["今日签到"]?.let { add("今日签到 $it") }
                 }
                 if (details.isNotEmpty()) Text(details.joinToString(" · "))
+                AccountExperience(profile)
                 content()
                 if (profile.extra["今日签到"] == "未完成") {
                     TextButton(onClick = onManage, modifier = Modifier.fillMaxWidth()) { Text("去签到") }
