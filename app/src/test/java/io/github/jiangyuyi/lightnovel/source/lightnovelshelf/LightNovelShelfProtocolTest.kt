@@ -33,26 +33,31 @@ class LightNovelShelfProtocolTest {
     }
 
     @Test
-    fun `search sends documented method and maps response`() = runTest {
+    fun `search matches authors using the official combined title author mode`() = runTest {
         val legacyCover =
             "https://img.example/7.webp?placeholder=LEHV6nWB2yk8pyo0adR*#.7kCMdnj&t=signed-token"
         val hub = RecordingHub(
             responses = ArrayDeque(
                 listOf(
                     envelope(
-                        """{"Page":2,"TotalPages":3,"Data":[{"Id":7,"Title":"书名","Cover":"$legacyCover","UserName":"作者","Introduction":"<p>第一段</p><br>第二段"}]}""",
+                        """{"Page":2,"TotalPages":3,"Data":[{"Id":7,"Title":"书名","Cover":"$legacyCover","UserName":"小孤独","Author":"镰池和马","Introduction":"<p>第一段</p><br>第二段"}]}""",
                     ),
                 ),
             ),
         )
         val gateway = gateway(hub)
 
-        val result = gateway.search("关键字", page = 2, pageSize = 20)
+        val result = gateway.search("  镰池和马  ", page = 2, pageSize = 20)
 
         assertEquals("GetBookList", hub.calls.single().first)
-        assertEquals("关键字", (hub.calls.single().second as JsonObject)["KeyWords"]?.jsonPrimitive?.content)
+        val request = hub.calls.single().second as JsonObject
+        assertEquals("\"镰池和马\"", request["KeyWords"]?.jsonPrimitive?.content)
+        assertEquals("2", request["Page"]?.jsonPrimitive?.content)
+        assertEquals("20", request["Size"]?.jsonPrimitive?.content)
+        assertEquals(2, result.page)
+        assertEquals(3, result.totalPages)
         assertEquals(7, result.items.single().id)
-        assertEquals("作者", result.items.single().authorName)
+        assertEquals("镰池和马", result.items.single().authorName)
         assertEquals("第一段\n\n第二段", result.items.single().introduction)
         assertEquals(
             "https://img.example/7.webp?placeholder=LEHV6nWB2yk8pyo0adR*%23.7kCMdnj&t=signed-token",
@@ -71,6 +76,39 @@ class LightNovelShelfProtocolTest {
         val result = gateway(hub).listBooks(ShelfBookOrder.LATEST, page = 1, pageSize = 20)
 
         assertEquals("列表简介", result.items.single().introduction)
+    }
+
+    @Test
+    fun `list authors never fall back to uploader names`() = runTest {
+        val hub = RecordingHub(
+            responses = ArrayDeque(listOf(envelope(
+                """{"Page":1,"TotalPages":1,"Data":[
+                    {"Id":1,"Title":"只有上传者","UserName":"小孤独"},
+                    {"Id":2,"Title":"真实作者优先","UserName":"小孤独","Author":"作者甲","Extra":{"classification":{"author":"作者乙"}}},
+                    {"Id":3,"Title":"分类作者","userName":"小孤独","author":" ","extra":{"classification":{"author":"作者丙"}}}
+                ]}""",
+            ))),
+        )
+
+        val books = gateway(hub).listBooks(ShelfBookOrder.LATEST, page = 1, pageSize = 20).items
+
+        assertNull(books[0].authorName)
+        assertEquals("作者甲", books[1].authorName)
+        assertEquals("作者丙", books[2].authorName)
+    }
+
+    @Test
+    fun `already quoted title searches are not double wrapped`() = runTest {
+        val hub = RecordingHub(responses = ArrayDeque(listOf(envelope(
+            """{"Page":1,"TotalPages":1,"Data":[]}""",
+        ))))
+
+        gateway(hub).search(" \"魔法禁书目录\" ", page = 1, pageSize = 20)
+
+        assertEquals(
+            "\"魔法禁书目录\"",
+            (hub.calls.single().second as JsonObject)["KeyWords"]?.jsonPrimitive?.content,
+        )
     }
 
     @Test

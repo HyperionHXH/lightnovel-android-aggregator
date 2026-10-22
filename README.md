@@ -6,10 +6,10 @@
 
 Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK）与轻书架（LNS）两个来源。它把发现、搜索、书架、阅读进度和离线导出放在一个应用中，同时保持两站的登录态、接口协议和错误相互隔离。
 
-当前稳定发布版本：**1.22.0**
+当前稳定发布版本：**1.22.1**
 
-- Android Release：[v1.22.0](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.22.0)
-- Android APK：[Mixn-1.22.0.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.0/Mixn-1.22.0.apk)
+- Android Release：[v1.22.1](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.22.1)
+- Android APK：[Mixn-1.22.1.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.1/Mixn-1.22.1.apk)
 
 > 本项目是非官方客户端，不隶属于轻之国度或轻书架。请遵守两个站点的服务条款和内容版权要求，不要批量抓取、分发或商业使用站点内容。
 
@@ -20,6 +20,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 - 轻之国度和轻书架分别展示各自的热门、排行、新书和更新频道，不把两个站点强行混成一个榜单。
 - 聚合搜索会并行查询两个来源，逐来源显示结果或错误；搜索不要求登录。
 - 发现和搜索支持触底分页。官网固定榜单在站点没有更多数据时会明确提示，不会重复追加相同书籍。
+- 轻书架关键词使用官网的书名/作者包含匹配，支持直接输入作者姓名；不把上传者 `UserName` 当作作品作者。列表未提供作者时不显示，详情使用真实作者或分类作者字段。
 
 ### 书籍与阅读
 
@@ -52,6 +53,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 - 提供系统字体和可下载字体的独立预览页，下载前后均可对比中文、标点和英文示例。
 - 阅读设置与界面外观设置分开保存；各分组可单独恢复默认值。
 - 主题、界面字号和图标大小可调整。轻书架章节若要求服务端专用字体，会优先使用该字体以避免正文乱码。
+- 左右翻页支持相邻两页连续跟手移动、松手吸附和取消回弹；点击与音量键翻页共用动画，阅读进度及跨章导航只在翻页停稳后更新。卡片翻页和上下滚动仍是独立模式。
 
 ## 平台状态
 
@@ -99,7 +101,7 @@ Android Release APK 使用 Android Keystore 签名。首次配置可运行：
 
 签名密钥、密码、`signing.properties` 和本地账号信息均不应提交到 Git。丢失同一签名密钥后，无法覆盖安装后续版本。
 
-推送 `v*` 标签会触发 [Android Release 工作流](.github/workflows/release.yml)，执行测试、Lint、签名构建、`apksigner` 校验并上传 APK 与 SHA-256 文件。当前版本标签为 `v1.22.0`；`versionCode` 使用源码中的单调递增值，不依赖工作流运行次数。普通文档修改不会触发该工作流，也不需要单独创建 Release。
+推送 `v*` 标签会触发 [Android Release 工作流](.github/workflows/release.yml)，执行测试、Lint、签名构建、`apksigner` 校验并上传 APK 与 SHA-256 文件。当前版本标签为 `v1.22.1`；`versionCode` 使用源码中的单调递增值，不依赖工作流运行次数。普通文档修改不会触发该工作流，也不需要单独创建 Release。
 
 ## 测试
 

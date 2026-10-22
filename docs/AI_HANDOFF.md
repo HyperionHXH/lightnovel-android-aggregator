@@ -1,9 +1,10 @@
 # Mixn 项目交接记录
 
-更新时间：2026-10-15
+更新时间：2026-10-22
 仓库：`https://github.com/HyperionHXH/lightnovel-android-aggregator.git`
 当前分支：`feature/multi-source-foundation`
 当前分支最新提交以 `git log -1` 为准；本文件记录的最近认证与阅读交互增强均已随分支提交推送。
+`1.22.1 / 37` 已通过用户的 Android 模拟器人工验收；用户已授权提交、推送当前分支并创建 `v1.22.1` 发布标签。签名 APK 与 SHA-256 由 Android Release 工作流生成，构建和发布状态以对应 Actions 运行结果为准。
 
 ## 项目定位
 
@@ -56,7 +57,19 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 默认版本：`versionName 1.22.0`、`versionCode 36`；Release 使用源码版本码，tag 仅注入版本名称。桌面端仍不在本轮支持与发布范围。
+Android 当前版本：`versionName 1.22.1`、`versionCode 37`。Release 使用源码版本码，tag 仅注入版本名称。桌面端仍不在本轮支持与发布范围。
+
+## 2026-10-22 左右翻页与轻书架作者搜索
+
+- 两个分页阅读入口共用 `HorizontalPageTurn`：原生 `HorizontalPager` 开启手指拖动，预组合相邻页，点击/音量键动画互斥；图片点击和长按仍由子节点处理。
+- 分页进度与跨章回调只观察停稳页。左右跨章使用边界过渡页；页码、恢复锚点和进度条排除前置过渡页，卡片模式保留自己的图层和手势。
+- 轻书架官网 [`Search.vue`](https://github.com/LightNovelShelf/Web/blob/06b0f7ec745142f702101bb225b1440850dd0a93/src/pages/Search.vue) 的 `exact` 模式通过给 `GetBookList.KeyWords` 加双引号同时匹配书名/作者；普通关键词只做标题 bigm 模糊。当前聚合搜索采用单请求的组合包含匹配，不拼接两条分页流。
+- 官网 [`BookInList` / `GetBookInfoRes`](https://github.com/LightNovelShelf/Web/blob/06b0f7ec745142f702101bb225b1440850dd0a93/src/services/book/types.ts) 区分上传者 `UserName` 与作品 `Author`、`Extra.classification.author`。列表不再回退到上传者；缺失作者时留空，不增加逐卡详情请求。
+- 交互参考 [Readest 手势文档](https://readest.com/docs/advanced)：边缘点击翻页、中心切换工具栏、移动端左右滑动。此次采用连续平移，不引入仿真卷页或替换卡片模式。
+- 原 AVD 安装的 `1.22.0 / 36` 已复现：指针 DOWN/MOVE 期间正文像素不变，松手才触发翻页。`1.22.1 / 37` 同场景已观察到拖动中两页并排移动。当前两站均未登录；轻书架线上搜索仍需用户登录后验收。
+- API 35 `noval_api35`（`emulator-5554`、host GPU）30 项定向设备检查全部通过：双阅读入口的停稳进度/跨章/恢复/进度条、原生拖动/回弹/快速点击/音量键、卡片与图片点击/长按，以及临时真实适配器→搜索 UI 的固定响应烟测。临时来源 UI 烟测与诊断日志在验证后移除，永久保留有行为约束的回归。
+- 模拟器匿名访问轻书架一度显示网络连接失败；宿主侧匿名真实 SignalR 烟测已通过，实际返回认证错误，不能据此宣称登录后作者结果通过。用户需自行登录轻书架，核对作者搜索的实际作品集合。没有读取或更改本地账号凭据。
+- 清理临时源码后的最终本地验证：196 项单元测试（195 通过、1 项既有线上跳过）、Lint（0 Error；15 Warning/8 Information）、Debug APK 与 instrumentation APK 构建通过；32 项永久定向设备回归全部通过，另外一次临时来源搜索 UI 烟测通过。用户随后确认模拟器验收通过，授权推送编译；Release 由标签工作流执行。
 
 ## 2026-10-15 双源等级经验接入
 

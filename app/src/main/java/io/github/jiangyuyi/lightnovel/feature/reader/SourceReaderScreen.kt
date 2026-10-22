@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -366,7 +365,7 @@ fun SourceReaderScreen(
 }
 
 @Composable
-private fun SourcePagedReader(
+internal fun SourcePagedReader(
     blocks: List<ReaderBlock>,
     chapterTitle: String,
     preferences: ReaderPreferences,
@@ -419,78 +418,69 @@ private fun SourcePagedReader(
                 spacingPx = with(density) { 14.dp.roundToPx() },
             )
         }
-        val pageCount = pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0
-        val pagerState = rememberPagerState { pageCount }
+        val cardMode = preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.CARD
+        val pageOffset = if (!cardMode && hasPreviousChapter) 1 else 0
+        val pageCount = pages.size.coerceAtLeast(1) + pageOffset + if (hasNextChapter) 1 else 0
+        val pagerState = rememberPagerState(initialPage = pageOffset) { pageCount }
         val pagerScope = rememberCoroutineScope()
         var currentAnchor by remember(blocks) { mutableIntStateOf(anchorBlock) }
         var scrubValue by remember { mutableFloatStateOf(0f) }
         var scrubbing by remember { mutableStateOf(false) }
-        if (preferences.mode != io.github.jiangyuyi.lightnovel.core.model.ReaderMode.CARD) {
-            ReaderVolumeKeyEffect(
-                enabled = volumePagingEnabled,
-                onPrevious = {
-                    pagerScope.launch {
-                        if (pagerState.currentPage > 0) pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                        else if (hasPreviousChapter) onPreviousChapter()
-                    }
-                },
-                onNext = {
-                    pagerScope.launch {
-                        if (pagerState.currentPage < pages.lastIndex) pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                        else if (hasNextChapter) onNextChapter()
-                    }
-                },
-            )
+        var pagesRestored by remember(pages, pageOffset, cardMode) { mutableStateOf(false) }
+
+        fun savePage(index: Int) {
+            if (!scrubbing) {
+                scrubValue = if (pages.size <= 1) 0f else index.coerceIn(0, pages.lastIndex).toFloat() / pages.lastIndex.toFloat()
+            }
+            pages.getOrNull(index)?.let {
+                currentAnchor = it.firstBlockIndex
+                onProgress(it.firstBlockIndex)
+            }
         }
-        LaunchedEffect(pages) {
+
+        LaunchedEffect(pages, pageOffset, cardMode) {
             val target = pages.indexOfFirst { currentAnchor in it.firstBlockIndex..it.lastBlockIndex }
                 .takeIf { it >= 0 }
                 ?: pages.indexOfLast { it.firstBlockIndex <= currentAnchor }.coerceAtLeast(0)
-            pagerState.scrollToPage(target.coerceIn(0, pages.lastIndex.coerceAtLeast(0)))
+            val pagerTarget = target.coerceIn(0, pages.lastIndex.coerceAtLeast(0)) + pageOffset
+            if (cardMode) pagerState.requestScrollToPage(pagerTarget)
+            else pagerState.scrollToPage(pagerTarget)
+            pagesRestored = true
         }
-        LaunchedEffect(pagerState, pages) {
-            snapshotFlow { pagerState.currentPage }.distinctUntilChanged().collect { index ->
-                if (!scrubbing) {
-                    scrubValue = if (pages.size <= 1) 0f else index.coerceIn(0, pages.lastIndex).toFloat() / pages.lastIndex.toFloat()
-                }
-                pages.getOrNull(index)?.let {
-                    currentAnchor = it.firstBlockIndex
-                    onProgress(it.firstBlockIndex)
+        if (cardMode) {
+            LaunchedEffect(pagerState, pages) {
+                snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect { savePage(it) }
+            }
+            LaunchedEffect(pagerState.currentPage, pages.size, hasNextChapter) {
+                if (hasNextChapter && pagerState.currentPage == pages.size) onNextChapter()
+            }
+        } else if (pagesRestored) {
+            ReaderPagerSettledEffect(pagerState, pages) { index ->
+                when {
+                    index < pageOffset && hasPreviousChapter -> onPreviousChapter()
+                    index >= pageOffset + pages.size && hasNextChapter -> onNextChapter()
+                    else -> savePage(index - pageOffset)
                 }
             }
         }
-        LaunchedEffect(pagerState.currentPage, pages.size, hasNextChapter) {
-            if (hasNextChapter && pagerState.currentPage == pages.size) onNextChapter()
-        }
 
-        fun handleTap(x: Float, y: Float, width: Int, height: Int) {
-            when (readerTapAction(
+        fun handleCardTap(x: Float, y: Float, width: Int, height: Int): ReaderTapAction {
+            val action = readerTapAction(
                 preferences.tapZone,
                 x / width.toFloat().coerceAtLeast(1f),
                 y / height.toFloat().coerceAtLeast(1f),
                 preferences.tapInversion,
-            )) {
-                ReaderTapAction.PREVIOUS -> {
-                    if (pagerState.currentPage > 0) {
-                        pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-                    } else if (hasPreviousChapter) {
-                        onPreviousChapter()
-                    }
-                }
-                ReaderTapAction.NEXT -> {
-                    if (pagerState.currentPage < pages.lastIndex) {
-                        pagerScope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
-                    } else if (hasNextChapter) {
-                        onNextChapter()
-                    }
-                }
-                ReaderTapAction.CONTROLS -> onToggleControls()
-                ReaderTapAction.NONE -> Unit
-            }
+            )
+            if (action == ReaderTapAction.CONTROLS) onToggleControls()
+            return action
         }
 
         val pageContent: @Composable (Int) -> Unit = { pageIndex ->
-            if (pageIndex < pages.size) {
+            if (pageIndex < 0) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("正在进入上一章…", color = colors.text.copy(alpha = 0.72f))
+                }
+            } else if (pageIndex < pages.size) {
                 Column(
                     Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
                     verticalArrangement = if (pages[pageIndex].elements.size == 1 &&
@@ -522,7 +512,7 @@ private fun SourcePagedReader(
             }
         }
 
-        if (preferences.mode == io.github.jiangyuyi.lightnovel.core.model.ReaderMode.CARD) {
+        if (cardMode) {
             CardPageTurn(
                 pagerState = pagerState,
                 pageCount = pageCount,
@@ -531,7 +521,7 @@ private fun SourcePagedReader(
                 volumePagingEnabled = volumePagingEnabled,
                 onPreviousChapter = onPreviousChapter,
                 onNextChapter = onNextChapter,
-                onTap = ::handleTap,
+                onTap = ::handleCardTap,
                 pageContent = pageContent,
                 pageBackground = colors.background,
                 modifier = Modifier
@@ -539,33 +529,21 @@ private fun SourcePagedReader(
                     .padding(top = safeTopPadding + 8.dp, bottom = 12.dp),
             )
         } else {
-            HorizontalPager(
-                state = pagerState,
+            HorizontalPageTurn(
+                pagerState = pagerState,
+                tapZone = preferences.tapZone,
+                tapInversion = preferences.tapInversion,
+                volumePagingEnabled = volumePagingEnabled,
+                onToggleControls = onToggleControls,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = safeTopPadding + 8.dp, bottom = 12.dp)
-                    .pointerInput(
-                        pages.size,
-                        hasPreviousChapter,
-                        hasNextChapter,
-                        preferences.tapZone,
-                        preferences.tapInversion,
-                    ) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = true)
-                            val up = waitForUpOrCancellation()
-                            if (up != null) {
-                                handleTap(down.position.x, down.position.y, size.width, size.height)
-                            }
-                        }
-                    },
-                beyondViewportPageCount = 1,
-                userScrollEnabled = false,
-                pageContent = { pageIndex -> pageContent(pageIndex) },
+                    .padding(top = safeTopPadding + 8.dp, bottom = 12.dp),
+                pageContent = { pageIndex -> pageContent(pageIndex - pageOffset) },
             )
         }
         if (controlsVisible && showProgressBar) {
-            val visiblePage = pagerState.currentPage.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
+            val visiblePage = (if (cardMode) pagerState.currentPage else pagerState.settledPage - pageOffset)
+                .coerceIn(0, pages.lastIndex.coerceAtLeast(0))
             ReaderProgressBar(
                 label = "$chapterTitle · 第 ${visiblePage + 1} / ${pages.size.coerceAtLeast(1)} 页",
                 value = scrubValue,
@@ -578,7 +556,9 @@ private fun SourcePagedReader(
                 onValueChangeFinished = {
                     val target = if (pages.size <= 1) 0 else (scrubValue * pages.lastIndex).roundToInt()
                     scrubbing = false
-                    pagerScope.launch { pagerState.scrollToPage(target.coerceIn(0, pages.lastIndex.coerceAtLeast(0))) }
+                    val pagerTarget = target.coerceIn(0, pages.lastIndex.coerceAtLeast(0)) + pageOffset
+                    if (cardMode) pagerState.requestScrollToPage(pagerTarget)
+                    else pagerScope.launch { pagerState.scrollToPage(pagerTarget) }
                 },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
@@ -643,7 +623,7 @@ private fun ReaderRemoteImage(
     ReaderImagePreview(url, modifier, imageScale, "插图", "图片加载失败")
 }
 
-private data class SourceReaderColors(val background: Color, val text: Color)
+internal data class SourceReaderColors(val background: Color, val text: Color)
 
 private fun ReaderPreferences.sourceReaderColors(): SourceReaderColors = when (theme) {
     ReaderTheme.WHITE -> SourceReaderColors(Color(0xFFFFFBFF), Color(0xFF211A1C))

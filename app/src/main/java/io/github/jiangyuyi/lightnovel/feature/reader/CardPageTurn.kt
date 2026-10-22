@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
@@ -47,7 +48,7 @@ internal fun CardPageTurn(
     volumePagingEnabled: Boolean,
     onPreviousChapter: () -> Unit,
     onNextChapter: () -> Unit,
-    onTap: (x: Float, y: Float, width: Int, height: Int) -> Unit,
+    onTap: (x: Float, y: Float, width: Int, height: Int) -> ReaderTapAction,
     pageContent: @Composable (pageIndex: Int) -> Unit,
     pageBackground: Color = Color.Transparent,
     modifier: Modifier = Modifier,
@@ -55,6 +56,7 @@ internal fun CardPageTurn(
     val safePageCount = pageCount.coerceAtLeast(1)
     val offset = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    val tapAction by rememberUpdatedState(onTap)
     var containerWidth by remember { mutableIntStateOf(1) }
     var containerHeight by remember { mutableIntStateOf(1) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
@@ -203,14 +205,19 @@ internal fun CardPageTurn(
                                     settleTurn(direction, targetOverride = target)
                                 }
                             } else if (!canceled && abs(totalX) <= viewConfiguration.touchSlop &&
-                                abs(totalY) <= viewConfiguration.touchSlop
+                                abs(totalY) <= viewConfiguration.touchSlop &&
+                                !down.isConsumed && !change.isConsumed
                             ) {
-                                onTap(
+                                when (tapAction(
                                     down.position.x,
                                     down.position.y,
                                     containerWidth,
                                     containerHeight,
-                                )
+                                )) {
+                                    ReaderTapAction.PREVIOUS -> requestTurn(CardTurnDirection.PREVIOUS)
+                                    ReaderTapAction.NEXT -> requestTurn(CardTurnDirection.NEXT)
+                                    ReaderTapAction.CONTROLS, ReaderTapAction.NONE -> Unit
+                                }
                             }
                             break
                         }

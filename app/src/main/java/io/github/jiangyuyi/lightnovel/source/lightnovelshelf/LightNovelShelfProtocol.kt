@@ -161,10 +161,13 @@ internal class DefaultLightNovelShelfGateway(
     }
 
     override suspend fun search(query: String, page: Int, pageSize: Int): ShelfBookPage {
+        val keyword = query.trim()
         val response = invoke(
             "GetBookList",
             buildJsonObject {
-                put("KeyWords", query.trim())
+                // Official exact mode matches title OR author; unquoted text
+                // uses title-only fuzzy search.
+                put("KeyWords", if (keyword.startsWith('"') && keyword.endsWith('"')) keyword else "\"$keyword\"")
                 put("Page", page.coerceAtLeast(1))
                 put("Size", pageSize.coerceIn(1, 50))
                 put("IgnoreJapanese", false)
@@ -183,7 +186,7 @@ internal class DefaultLightNovelShelfGateway(
             ?: response.objectValue("Data", "data")?.objectValue("Book", "book", "BookInfo", "bookInfo")
             ?: response
         val extra = book.objectValue("Extra", "extra")
-        val classification = extra?.get("classification") as? JsonObject
+        val classification = extra?.objectValue("classification", "Classification")
         // Production responses use Chapters; older responses use Chapter. A null
         // or malformed plural field must not hide a valid legacy catalog.
         val chapterArray = listOf(book, response, response.objectValue("Data", "data"))
@@ -231,7 +234,7 @@ internal class DefaultLightNovelShelfGateway(
             title = book.stringAny("Title", "title"),
             coverUrl = normalizeShelfCoverUrl(book.optionalString("Cover", "cover", "CoverUrl", "coverUrl")),
             authorName = book.optionalString("Author", "author")
-                ?: classification?.optionalString("author"),
+                ?: classification?.optionalString("author", "Author"),
             introduction = cleanShelfHtml(
                 book.optionalText(
                     "Introduction", "introduction", "Synopsis", "synopsis",
@@ -439,7 +442,10 @@ private fun JsonObject.toBookItem(): ShelfBookItem = ShelfBookItem(
     id = longAny("Id", "id", "BookId", "bookId"),
     title = stringAny("Title", "title", "Name", "name"),
     coverUrl = normalizeShelfCoverUrl(optionalString("Cover", "cover", "CoverUrl", "coverUrl")),
-    authorName = optionalString("UserName", "userName", "Author", "author"),
+    // UserName is the uploader, not the novel's author.
+    authorName = optionalString("Author", "author")
+        ?: objectValue("Extra", "extra")?.objectValue("classification", "Classification")
+            ?.optionalString("author", "Author"),
     introduction = cleanShelfHtml(
         optionalText(
             "Introduction", "introduction",

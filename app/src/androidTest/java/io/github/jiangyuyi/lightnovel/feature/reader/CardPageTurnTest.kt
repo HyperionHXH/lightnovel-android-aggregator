@@ -13,10 +13,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
+import io.github.jiangyuyi.lightnovel.core.model.ReaderImageScale
+import io.github.jiangyuyi.lightnovel.core.ui.ReaderImagePreview
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -41,7 +44,7 @@ class CardPageTurnTest {
                         volumePagingEnabled = false,
                         onPreviousChapter = {},
                         onNextChapter = {},
-                        onTap = { _, _, _, _ -> },
+                        onTap = { _, _, _, _ -> ReaderTapAction.NONE },
                         pageContent = { index ->
                             Box(Modifier.fillMaxSize().testTag("page-$index")) {
                                 Text("第 ${index + 1} 页", color = Color.Black)
@@ -83,7 +86,7 @@ class CardPageTurnTest {
                         volumePagingEnabled = false,
                         onPreviousChapter = {},
                         onNextChapter = {},
-                        onTap = { _, _, _, _ -> },
+                        onTap = { _, _, _, _ -> ReaderTapAction.NONE },
                         pageContent = { index ->
                             Box(Modifier.fillMaxSize().testTag("page-$index")) {
                                 Text("第 ${index + 1} 页", color = Color.Black)
@@ -107,6 +110,74 @@ class CardPageTurnTest {
         }
 
         assertEquals(0, pagerStateRef?.currentPage)
+    }
+
+    @Test
+    fun edgeTapCommitsThroughCardAnimationWithoutPagerLayout() {
+        var pager: PagerState? = null
+        compose.setContent {
+            MaterialTheme {
+                val state = rememberPagerState { 3 }
+                pager = state
+                Box(Modifier.size(300.dp)) {
+                    CardPageTurn(
+                        pagerState = state,
+                        pageCount = 3,
+                        hasPreviousChapter = false,
+                        hasNextChapter = false,
+                        volumePagingEnabled = false,
+                        onPreviousChapter = {},
+                        onNextChapter = {},
+                        onTap = { _, _, _, _ -> ReaderTapAction.NEXT },
+                        pageContent = { Text("Page $it") },
+                        modifier = Modifier.testTag("card-turn"),
+                    )
+                }
+            }
+        }
+        compose.onNodeWithTag("card-turn").performTouchInput {
+            click(Offset(width * 0.9f, centerY))
+        }
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals(1, pager?.currentPage) }
+    }
+
+    @Test
+    fun imageTapIsNotConvertedToCardTurn() {
+        var pager: PagerState? = null
+        compose.setContent {
+            MaterialTheme {
+                val state = rememberPagerState { 3 }
+                pager = state
+                Box(Modifier.size(300.dp)) {
+                    CardPageTurn(
+                        pagerState = state,
+                        pageCount = 3,
+                        hasPreviousChapter = false,
+                        hasNextChapter = false,
+                        volumePagingEnabled = false,
+                        onPreviousChapter = {},
+                        onNextChapter = {},
+                        onTap = { _, _, _, _ -> ReaderTapAction.NEXT },
+                        pageContent = {
+                            ReaderImagePreview(
+                                url = "file:///missing-reader-illustration.png",
+                                modifier = Modifier.fillMaxSize(),
+                                imageScale = ReaderImageScale.FIT,
+                                contentDescription = "插图",
+                                errorText = "插图加载失败",
+                            )
+                        },
+                        modifier = Modifier.testTag("card-turn"),
+                    )
+                }
+            }
+        }
+        compose.onNodeWithTag("card-turn").performTouchInput {
+            click(Offset(width * 0.9f, centerY))
+        }
+        compose.onNodeWithTag("reader-image-dialog").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(0, pager?.currentPage) }
     }
 
     @Test

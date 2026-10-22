@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -282,7 +281,7 @@ fun ReaderScreen(
 }
 
 @Composable
-private fun PagedReader(
+internal fun PagedReader(
     blocks: List<ReaderBlock>,
     chapterTitle: String,
     preferences: ReaderPreferences,
@@ -329,73 +328,70 @@ private fun PagedReader(
                 spacingPx = spacingPx,
             )
         }
-        val pageCount = pages.size.coerceAtLeast(1) + if (hasNextChapter) 1 else 0
-        val pagerState = rememberPagerState { pageCount }
+        val cardMode = preferences.mode == ReaderMode.CARD
+        val pageOffset = if (!cardMode && hasPreviousChapter) 1 else 0
+        val pageCount = pages.size.coerceAtLeast(1) + pageOffset + if (hasNextChapter) 1 else 0
+        val pagerState = rememberPagerState(initialPage = pageOffset) { pageCount }
         val pagerScope = rememberCoroutineScope()
         var scrubValue by remember { mutableFloatStateOf(0f) }
         var scrubbing by remember { mutableStateOf(false) }
-        var turnRequest by remember { mutableStateOf<ReaderTurnRequest?>(null) }
-        var turnRequestToken by remember { mutableIntStateOf(0) }
+        var pagesRestored by remember(pages, pageOffset, cardMode) { mutableStateOf(false) }
 
-        if (preferences.mode != ReaderMode.CARD) {
-            ReaderVolumeKeyEffect(
-                enabled = volumePagingEnabled,
-                onPrevious = {
-                    turnRequestToken += 1
-                    turnRequest = ReaderTurnRequest(ReaderTurnDirection.PREVIOUS, turnRequestToken)
-                },
-                onNext = {
-                    turnRequestToken += 1
-                    turnRequest = ReaderTurnRequest(ReaderTurnDirection.NEXT, turnRequestToken)
-                },
-            )
+        fun savePage(pageIndex: Int) {
+            if (!scrubbing) {
+                scrubValue = if (pages.size <= 1) 0f else {
+                    pageIndex.coerceIn(0, pages.lastIndex).toFloat() / pages.lastIndex.toFloat()
+                }
+            }
+            pages.getOrNull(pageIndex)?.firstBlockIndex?.let {
+                onAnchorChanged(it)
+                onProgress(it)
+            }
         }
 
-        LaunchedEffect(pages) {
+        LaunchedEffect(pages, pageOffset, cardMode) {
             val containingPage = pages.indexOfFirst { anchorBlock in it.firstBlockIndex..it.lastBlockIndex }
             val target = (containingPage.takeIf { it >= 0 } ?: pages.indexOfLast { it.firstBlockIndex <= anchorBlock })
                 .coerceAtLeast(0)
-                .coerceAtMost(pages.lastIndex.coerceAtLeast(0))
-            if (pagerState.currentPage != target) pagerState.scrollToPage(target)
+                .coerceAtMost(pages.lastIndex.coerceAtLeast(0)) + pageOffset
+            if (cardMode) pagerState.requestScrollToPage(target)
+            else pagerState.scrollToPage(target)
+            pagesRestored = true
         }
-        LaunchedEffect(pagerState, pages) {
-            snapshotFlow { pagerState.currentPage }
-                .distinctUntilChanged()
-                .collect { pageIndex ->
-                    if (!scrubbing) {
-                        scrubValue = if (pages.size <= 1) 0f else {
-                            pageIndex.coerceIn(0, pages.lastIndex).toFloat() / pages.lastIndex.toFloat()
-                        }
-                    }
-                    pages.getOrNull(pageIndex)?.firstBlockIndex?.let {
-                        onAnchorChanged(it)
-                        onProgress(it)
-                    }
-                }
-        }
-        LaunchedEffect(pagerState.currentPage, pages.size, hasNextChapter) {
-            if (hasNextChapter && pagerState.currentPage == pages.size) onNextChapter()
-        }
-        fun handleTap(x: Float, y: Float, width: Int, height: Int) {
-            fun requestTurn(direction: ReaderTurnDirection) {
-                turnRequestToken += 1
-                turnRequest = ReaderTurnRequest(direction, turnRequestToken)
+        if (cardMode) {
+            LaunchedEffect(pagerState, pages) {
+                snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect { savePage(it) }
             }
-            when (readerTapAction(
+            LaunchedEffect(pagerState.currentPage, pages.size, hasNextChapter) {
+                if (hasNextChapter && pagerState.currentPage == pages.size) onNextChapter()
+            }
+        } else if (pagesRestored) {
+            ReaderPagerSettledEffect(pagerState, pages) { index ->
+                when {
+                    index < pageOffset && hasPreviousChapter -> onPreviousChapter()
+                    index >= pageOffset + pages.size && hasNextChapter -> onNextChapter()
+                    else -> savePage(index - pageOffset)
+                }
+            }
+        }
+
+        fun handleCardTap(x: Float, y: Float, width: Int, height: Int): ReaderTapAction {
+            val action = readerTapAction(
                 preferences.tapZone,
                 x / width.toFloat().coerceAtLeast(1f),
                 y / height.toFloat().coerceAtLeast(1f),
                 preferences.tapInversion,
-            )) {
-                ReaderTapAction.PREVIOUS -> requestTurn(ReaderTurnDirection.PREVIOUS)
-                ReaderTapAction.NEXT -> requestTurn(ReaderTurnDirection.NEXT)
-                ReaderTapAction.CONTROLS -> onToggleControls()
-                ReaderTapAction.NONE -> Unit
-            }
+            )
+            if (action == ReaderTapAction.CONTROLS) onToggleControls()
+            return action
         }
 
         val pageContent: @Composable (Int) -> Unit = { pageIndex ->
-            if (pageIndex < pages.size) {
+            if (pageIndex < 0) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("正在进入上一章…", color = colors.text.copy(alpha = 0.72f))
+                }
+            } else if (pageIndex < pages.size) {
                 Column(
                     modifier = Modifier.fillMaxSize().padding(horizontal = horizontalPadding),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -419,7 +415,7 @@ private fun PagedReader(
             }
         }
 
-        if (preferences.mode == ReaderMode.CARD) {
+        if (cardMode) {
             CardPageTurn(
                 pagerState = pagerState,
                 pageCount = pageCount,
@@ -428,7 +424,7 @@ private fun PagedReader(
                 volumePagingEnabled = volumePagingEnabled,
                 onPreviousChapter = onPreviousChapter,
                 onNextChapter = onNextChapter,
-                onTap = ::handleTap,
+                onTap = ::handleCardTap,
                 pageContent = pageContent,
                 pageBackground = colors.background,
                 modifier = Modifier
@@ -436,60 +432,30 @@ private fun PagedReader(
                     .padding(top = pageTopPadding, bottom = pageBottomPadding),
             )
         } else {
-            HorizontalPager(
-                state = pagerState,
-                beyondViewportPageCount = 1,
-                pageSpacing = 0.dp,
-                userScrollEnabled = false,
+            HorizontalPageTurn(
+                pagerState = pagerState,
+                tapZone = preferences.tapZone,
+                tapInversion = preferences.tapInversion,
+                volumePagingEnabled = volumePagingEnabled,
+                onToggleControls = onToggleControls,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = pageTopPadding, bottom = pageBottomPadding)
-                    .pointerInput(
-                        pages.size,
-                        hasPreviousChapter,
-                        hasNextChapter,
-                        preferences.tapZone,
-                        preferences.tapInversion,
-                    ) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = true)
-                            val up = waitForUpOrCancellation()
-                            if (up != null) {
-                                handleTap(down.position.x, down.position.y, size.width, size.height)
-                            }
-                        }
-                    },
-                pageContent = { pageIndex -> pageContent(pageIndex) },
+                    .padding(top = pageTopPadding, bottom = pageBottomPadding),
+                pageContent = { pageIndex -> pageContent(pageIndex - pageOffset) },
             )
         }
 
-        if (preferences.mode != ReaderMode.CARD) {
-            LaunchedEffect(turnRequest?.token) {
-                val request = turnRequest ?: return@LaunchedEffect
-                when (request.direction) {
-                    ReaderTurnDirection.PREVIOUS -> when {
-                        pagerState.currentPage > 0 -> pagerState.animateScrollToPage(pagerState.currentPage - 1)
-                        hasPreviousChapter -> onPreviousChapter()
-                    }
-                    ReaderTurnDirection.NEXT -> when {
-                        pagerState.currentPage < pages.lastIndex -> pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                        hasNextChapter -> onNextChapter()
-                    }
-                }
-                if (turnRequest == request) turnRequest = null
-            }
-        }
-
-        if (pagerState.currentPage < pages.size) {
+        val displayPage = if (cardMode) pagerState.currentPage else pagerState.settledPage - pageOffset
+        if (displayPage in pages.indices) {
             Text(
-                text = "${pagerState.currentPage + 1} / ${pages.size.coerceAtLeast(1)}",
+                text = "${displayPage + 1} / ${pages.size.coerceAtLeast(1)}",
                 color = colors.text.copy(alpha = 0.55f),
                 style = MaterialTheme.typography.labelSmall,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 4.dp),
             )
         }
         if (controlsVisible && showProgressBar) {
-            val visiblePage = pagerState.currentPage.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
+            val visiblePage = displayPage.coerceIn(0, pages.lastIndex.coerceAtLeast(0))
             ReaderProgressBar(
                 label = "$chapterTitle · 第 ${visiblePage + 1} / ${pages.size.coerceAtLeast(1)} 页",
                 value = scrubValue,
@@ -502,7 +468,9 @@ private fun PagedReader(
                 onValueChangeFinished = {
                     val target = if (pages.size <= 1) 0 else (scrubValue * pages.lastIndex).roundToInt()
                     scrubbing = false
-                    pagerScope.launch { pagerState.scrollToPage(target.coerceIn(0, pages.lastIndex.coerceAtLeast(0))) }
+                    val pagerTarget = target.coerceIn(0, pages.lastIndex.coerceAtLeast(0)) + pageOffset
+                    if (cardMode) pagerState.requestScrollToPage(pagerTarget)
+                    else pagerScope.launch { pagerState.scrollToPage(pagerTarget) }
                 },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
@@ -1004,11 +972,7 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-private enum class ReaderTurnDirection { PREVIOUS, NEXT }
-
-private data class ReaderTurnRequest(val direction: ReaderTurnDirection, val token: Int)
-
-private data class ReaderColors(val background: Color, val text: Color)
+internal data class ReaderColors(val background: Color, val text: Color)
 
 @Composable
 private fun ReaderPreferences.readerColors(): ReaderColors = when (theme) {
