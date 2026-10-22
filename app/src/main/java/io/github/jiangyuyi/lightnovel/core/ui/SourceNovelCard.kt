@@ -1,6 +1,9 @@
 package io.github.jiangyuyi.lightnovel.core.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +19,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -29,14 +35,32 @@ fun SourceNovelCard(
     updateLabel: String? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    metadataLoading: Boolean = false,
 ) {
     Card(
-        modifier = modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth().heightIn(min = 156.dp)
+            .then(if (metadataLoading) Modifier.semantics { contentDescription = "正在加载书籍信息" }
+                else Modifier.clickable(onClick = onClick)),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
+        if (metadataLoading) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                MetadataPlaceholder(Modifier.size(width = 76.dp, height = 108.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MetadataPlaceholder(Modifier.fillMaxWidth(0.85f).height(22.dp))
+                    MetadataPlaceholder(Modifier.fillMaxWidth(0.55f).height(14.dp))
+                    MetadataPlaceholder(Modifier.fillMaxWidth().height(14.dp))
+                    MetadataPlaceholder(Modifier.fillMaxWidth(0.85f).height(14.dp))
+                }
+            }
+            return@Card
+        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -91,4 +115,10 @@ fun SourceNovelCard(
             }
         }
     }
+}
+
+@Composable
+private fun MetadataPlaceholder(modifier: Modifier) {
+    Box(modifier.clip(RoundedCornerShape(4.dp))
+        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)))
 }

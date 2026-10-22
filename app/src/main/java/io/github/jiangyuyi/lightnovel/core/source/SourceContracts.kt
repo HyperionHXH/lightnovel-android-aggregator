@@ -19,6 +19,9 @@ interface DetailProvider : SourceProvider {
     suspend fun getNovelDetail(key: NovelKey): NovelDetail
 }
 
+/** Opt-in for sources whose list responses omit author/synopsis available in details. */
+interface ListMetadataProvider : DetailProvider
+
 interface ReaderProvider : SourceProvider {
     suspend fun getVolumes(key: NovelKey, page: Int = 1, pageSize: Int = 50): SourcePage<VolumeSummary>
 

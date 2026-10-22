@@ -1,6 +1,8 @@
 package io.github.jiangyuyi.lightnovel.core.cache
 
 import io.github.jiangyuyi.lightnovel.core.model.BookSummary
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -102,6 +104,26 @@ class CachedDataSourceTest {
         assertEquals(null, store.book("user:42", "shelf"))
     }
 
+    @Test
+    fun clearingWhileFetchIsRunningDoesNotResurrectTextCache() = runTest {
+        val store = FakeCacheStore()
+        val source = CachedDataSource(store, json) { 1_000 }
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val request = async {
+            source.updates("public", "chapter", CachePolicy(200), serializer) {
+                started.complete(Unit)
+                finish.await()
+                newBook
+            }.toList()
+        }
+        started.await()
+        source.clearAll()
+        finish.complete(Unit)
+        assertEquals(newBook, request.await().single().data)
+        assertTrue(store.entries.isEmpty())
+    }
+
     private fun FakeCacheStore.putBook(scope: String, key: String, book: BookSummary, savedAt: Long) {
         entries["$scope\u0000$key"] = SerializedCacheEntry(json.encodeToString(serializer, book), savedAt)
     }
@@ -140,5 +162,9 @@ private class FakeCacheStore : CacheStore {
 
     override suspend fun clearPrivate() {
         entries.keys.removeIf { it.substringBefore('\u0000').startsWith("user:") }
+    }
+
+    override suspend fun clearAll() {
+        entries.clear()
     }
 }

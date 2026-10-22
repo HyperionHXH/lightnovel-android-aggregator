@@ -4,13 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverFeed
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverProvider
-import io.github.jiangyuyi.lightnovel.core.source.NovelKey
+import io.github.jiangyuyi.lightnovel.core.source.ListMetadataHydrator
+import io.github.jiangyuyi.lightnovel.core.source.ListMetadataProvider
+import io.github.jiangyuyi.lightnovel.core.source.withMissingMetadata
 import io.github.jiangyuyi.lightnovel.core.source.NovelSummary
+import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -20,8 +22,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeout
 
 data class DiscoverSourceOption(
@@ -32,6 +32,7 @@ data class DiscoverSourceOption(
 data class DiscoverSourceUiState(
     val descriptor: SourceDescriptor,
     val items: List<NovelSummary> = emptyList(),
+    val pendingMetadata: Set<NovelKey> = emptySet(),
     val page: Int = 0,
     val total: Int = 0,
     val hasMore: Boolean = false,
@@ -71,7 +72,7 @@ class AggregateDiscoverViewModel(
     val state: StateFlow<AggregateDiscoverState> = _state.asStateFlow()
     private var loadJob: Job? = null
     private var requestId = 0L
-    private val synopsisCache = ConcurrentHashMap<NovelKey, String>()
+    private val metadataHydrator = ListMetadataHydrator()
 
     init {
         require(perSourceTimeoutMillis > 0) { "discover timeout must be positive" }
@@ -117,7 +118,7 @@ class AggregateDiscoverViewModel(
         }
         if (targets.isEmpty()) return
         loadJob?.cancel()
-        val currentRequestId = if (append) requestId else ++requestId
+        val currentRequestId = ++requestId
         val targetIds = targets.mapTo(mutableSetOf()) { it.descriptor.id }
         _state.value = state.copy(
             sources = if (append) {
@@ -162,8 +163,11 @@ class AggregateDiscoverViewModel(
             updateSource(provider.descriptor.id, currentRequestId) { current ->
                 current.copy(
                     items = if (append) {
-                        (current.items + page.items.map(::withCachedSynopsis)).distinctBy { it.key }
-                    } else page.items.map(::withCachedSynopsis).distinctBy { it.key },
+                        (current.items + page.items.map(metadataHydrator::withCachedMetadata)).distinctBy { it.key }
+                    } else page.items.map(metadataHydrator::withCachedMetadata).distinctBy { it.key },
+                    pendingMetadata = if (provider is ListMetadataProvider) {
+                        metadataHydrator.pendingAuthors(if (append) current.items + page.items else page.items)
+                    } else emptySet(),
                     page = page.page,
                     total = page.total,
                     hasMore = page.hasMore,
@@ -175,9 +179,9 @@ class AggregateDiscoverViewModel(
                     errorMessage = null,
                 )
             }
-            // Some sources (notably 轻书架) omit synopsis from list responses.
-            // Enrich cards in the background so the first page remains fast.
-            hydrateMissingSynopsis(provider, page.items, currentRequestId)
+            // Author and synopsis share the same background detail request.
+            // Include existing items too when pagination interrupts earlier hydration.
+            hydrateMissingMetadata(provider, currentRequestId)
         } catch (error: TimeoutCancellationException) {
             updateSourceFailure(provider, currentRequestId, SourceErrorKind.TIMEOUT, "请求超时，请稍后重试")
         } catch (error: CancellationException) {
@@ -188,48 +192,37 @@ class AggregateDiscoverViewModel(
         }
     }
 
-    private suspend fun hydrateMissingSynopsis(
+    private suspend fun hydrateMissingMetadata(
         provider: DiscoverProvider,
-        items: List<NovelSummary>,
         currentRequestId: Long,
     ) {
         val detailProvider = registry.detailProvider(provider.descriptor.id) ?: return
-        val candidates = items
-            .map(::withCachedSynopsis)
-            .filter { it.synopsis.isBlank() && !synopsisCache.containsKey(it.key) }
-        if (candidates.isEmpty()) return
-
-        val permits = Semaphore(SYNOPSIS_HYDRATION_CONCURRENCY)
-        supervisorScope {
-            candidates.forEach { novel ->
-                launch {
-                    val synopsis = permits.withPermit {
-                        runCatching {
-                            withTimeout(SYNOPSIS_REQUEST_TIMEOUT_MILLIS) {
-                                detailProvider.getNovelDetail(novel.key).novel.synopsis
-                            }
-                        }.getOrNull()
-                    }?.trim().orEmpty()
-                    if (synopsis.isBlank()) return@launch
-                    synopsisCache[novel.key] = synopsis
-                    updateSource(provider.descriptor.id, currentRequestId) { current ->
-                        current.copy(
-                            items = current.items.map { item ->
-                                if (item.key == novel.key && item.synopsis.isBlank()) {
-                                    item.copy(synopsis = synopsis)
-                                } else item
-                            },
-                        )
-                    }
+        val items = _state.value.sources.firstOrNull { it.descriptor.id == provider.descriptor.id }?.items.orEmpty()
+        metadataHydrator.hydrate(
+            provider = detailProvider,
+            items = items,
+            includeAuthors = detailProvider is ListMetadataProvider,
+            onMetadata = { key, metadata ->
+                updateSource(provider.descriptor.id, currentRequestId) { current ->
+                    current.copy(
+                        items = current.items.map { item ->
+                            if (item.key == key) item.withMissingMetadata(metadata.authors, metadata.synopsis) else item
+                        },
+                        pendingMetadata = current.pendingMetadata - key,
+                    )
                 }
-            }
-        }
+            },
+            onFailure = { error ->
+                val kind = (error as? SourceException)?.kind ?: SourceErrorKind.UNKNOWN
+                updateSourceFailure(provider, currentRequestId, kind, error.toDiscoverUiMessage(kind))
+            },
+            onSettled = { key ->
+                updateSource(provider.descriptor.id, currentRequestId) { current ->
+                    current.copy(pendingMetadata = current.pendingMetadata - key)
+                }
+            },
+        )
     }
-
-    private fun withCachedSynopsis(novel: NovelSummary): NovelSummary =
-        if (novel.synopsis.isNotBlank()) novel else {
-            synopsisCache[novel.key]?.let { novel.copy(synopsis = it) } ?: novel
-        }
 
     private fun updateSourceFailure(
         provider: DiscoverProvider,
@@ -267,8 +260,6 @@ class AggregateDiscoverViewModel(
 
     private companion object {
         const val PAGE_SIZE = 20
-        const val SYNOPSIS_HYDRATION_CONCURRENCY = 4
-        const val SYNOPSIS_REQUEST_TIMEOUT_MILLIS = 8_000L
     }
 }
 

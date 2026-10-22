@@ -126,6 +126,7 @@ fun AggregateDiscoverScreen(
                     sourceName = activeSource?.descriptor?.displayName.orEmpty(),
                     onClick = { onBook(novel.key) },
                     modifier = Modifier.padding(horizontal = 14.dp),
+                    metadataLoading = novel.key in activeSource?.pendingMetadata.orEmpty(),
                 )
             }
         }

@@ -140,6 +140,19 @@ class OfflineLibrary(
     override suspend fun readChapter(novelKey: NovelKey, chapterKey: ChapterKey): ChapterContent? =
         store.readChapter(novelKey, chapterKey)
 
+    /** Includes the old internal library when a SAF download folder is selected. */
+    suspend fun downloadedChapterFontUrls(): Set<String> = buildSet {
+        listOf(store, defaultStore).distinct().forEach { bookStore ->
+            bookStore.listBooks().forEach { record ->
+                record.chapters.filter { it.key.remoteId in record.downloadedChapterIds }
+                    .forEach { chapter ->
+                        bookStore.readChapter(record.novel.key, chapter.key)?.fontUrl
+                            ?.takeIf(String::isNotBlank)?.let(::add)
+                    }
+            }
+        }
+    }
+
     override suspend fun exportEpub(
         key: NovelKey,
         output: OutputStream,

@@ -61,7 +61,7 @@ internal class OfflineDownloader(
             }
             try {
                 val content = readerProvider.getChapter(novelKey, chapter.key)
-                chapterFonts.load(content.fontUrl)
+                chapterFonts.retainForOffline(content.fontUrl)
                 store.writeChapter(novelKey, content)
                 record = persist(
                     record.copy(

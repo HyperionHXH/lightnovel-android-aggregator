@@ -371,6 +371,7 @@ private fun LightNovelApp() {
             composable(Routes.DATA_STATS) {
                 DataStatsScreen(
                     offlineLibrary = container.offlineLibrary,
+                    readingCache = container.temporaryReadingCache,
                     onBack = { navController.popBackStack() },
                 )
             }

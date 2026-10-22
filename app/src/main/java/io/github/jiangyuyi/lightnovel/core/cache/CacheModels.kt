@@ -32,6 +32,7 @@ interface CacheStore {
     suspend fun remove(scope: String, key: String)
     suspend fun removePrefix(scope: String, keyPrefix: String)
     suspend fun clearPrivate()
+    suspend fun clearAll()
 }
 
 object CacheScopes {

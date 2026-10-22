@@ -6,6 +6,7 @@ import androidx.compose.ui.text.font.FontFamily
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.lang.ref.WeakReference
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -29,28 +30,73 @@ class ChapterFontRepository(
     private val apiOrigin: HttpUrl = DEFAULT_API_ORIGIN.toHttpUrl(),
     private val decodeWoff2: (ByteArray) -> ByteArray? = ChapterFontDecoder::decode,
 ) : ChapterFontAccess {
-    private val directory = File(context.applicationContext.filesDir, FONT_DIRECTORY)
+    private val files = ChapterFontFiles(
+        temporary = File(context.applicationContext.cacheDir, "chapter_fonts"),
+        offline = File(context.applicationContext.filesDir, "offline_chapter_fonts"),
+        legacy = File(context.applicationContext.filesDir, "reader_fonts"),
+        maxBytes = MAX_TEMPORARY_BYTES,
+    )
     private val mutex = Mutex()
-    private val loaded = mutableMapOf<String, FontFamily>()
+    private val loaded = mutableMapOf<String, WeakReference<FontFamily>>()
 
-    override suspend fun load(fontUrl: String?): FontFamily? {
+    override suspend fun load(fontUrl: String?): FontFamily? = loadFont(fontUrl, offline = false)
+
+    override suspend fun retainForOffline(fontUrl: String?) {
+        loadFont(fontUrl, offline = true)
+    }
+
+    private suspend fun loadFont(fontUrl: String?, offline: Boolean): FontFamily? {
         val resolvedUrl = resolveUrl(fontUrl) ?: return null
         return withContext(Dispatchers.IO) {
             mutex.withLock {
-                loaded[resolvedUrl]?.let { return@withLock it }
-                val target = File(directory, "${stableHash(resolvedUrl)}.ttf")
-                val fontFile = target.takeIf(::isSupportedFontFile) ?: downloadFont(resolvedUrl, target)
+                val name = fontName(resolvedUrl)
+                val existing = files.find(name)?.takeIf(::isSupportedFontFile)
+                val fontFile = existing ?: downloadFont(
+                    resolvedUrl,
+                    if (offline) files.offlineTarget(name) else files.temporaryTarget(name),
+                    temporary = !offline,
+                )
+                if (offline) files.pin(name)
+                loaded[resolvedUrl]?.get()?.let { return@withLock it }
                 val family = try {
                     FontFamily(Typeface.createFromFile(fontFile))
                 } catch (error: RuntimeException) {
-                    fontFile.delete()
+                    // Never remove a font owned by an existing offline download.
                     throw ChapterFontException("章节字体无法加载，请重试", error)
                 }
-                loaded[resolvedUrl] = family
+                loaded[resolvedUrl] = WeakReference(family)
+                activeNames()
                 family
             }
         }
     }
+
+    suspend fun migrateLegacyFonts(downloadedFontUrls: Set<String>) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val names = downloadedFontUrls.mapNotNull(::resolveUrl).map(::fontName).toSet()
+            files.migrateLegacy(names, activeNames())
+        }
+    }
+
+    suspend fun clearTemporary() = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            files.clearTemporary(activeNames())
+        }
+    }
+
+    suspend fun usage(): ChapterFontUsage = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            files.trimTemporary(activeNames())
+            ChapterFontUsage(files.temporaryBytes(), files.offlineBytes())
+        }
+    }
+
+    private fun activeNames(): Set<String> {
+        loaded.entries.removeAll { it.value.get() == null }
+        return loaded.keys.map(::fontName).toSet()
+    }
+
+    private fun fontName(url: String): String = "${stableHash(url)}.ttf"
 
     private fun resolveUrl(fontUrl: String?): String? {
         val value = fontUrl?.trim().orEmpty()
@@ -63,7 +109,7 @@ class ChapterFontRepository(
         return resolved.toString()
     }
 
-    private fun downloadFont(url: String, target: File): File {
+    private fun downloadFont(url: String, target: File, temporary: Boolean): File {
         if (target.exists()) target.delete()
         val request = Request.Builder().url(url).get().build()
         val response = try {
@@ -94,6 +140,8 @@ class ChapterFontRepository(
             TTF_MAGIC, TRUE_TYPE_MAGIC, OTF_MAGIC -> downloaded
             else -> throw ChapterFontException("章节字体格式无法识别")
         }
+        if (prepared.size > MAX_FONT_BYTES) throw ChapterFontException("章节字体转换结果过大")
+        if (temporary) files.reserve(prepared.size.toLong(), activeNames())
         if (!isSupportedEngineFont(prepared)) {
             throw ChapterFontException("章节字体转换结果无效")
         }
@@ -167,9 +215,9 @@ class ChapterFontRepository(
         .digest(value.toByteArray(Charsets.UTF_8))
         .joinToString("") { byte -> "%02x".format(byte) }
 
-    private companion object {
-        const val DEFAULT_API_ORIGIN = "https://api.lightnovel.life/"
-        const val FONT_DIRECTORY = "reader_fonts"
+    companion object {
+        const val MAX_TEMPORARY_BYTES = 64L * 1024L * 1024L
+        private const val DEFAULT_API_ORIGIN = "https://api.lightnovel.life/"
         const val MAX_FONT_BYTES = 32L * 1024L * 1024L
         const val WOFF2_MAGIC = 0x774F4632
         const val OTF_MAGIC = 0x4F54544F
@@ -182,3 +230,5 @@ class ChapterFontException(
     message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause)
+
+data class ChapterFontUsage(val temporaryBytes: Long, val offlineBytes: Long)

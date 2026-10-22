@@ -1,6 +1,5 @@
 package io.github.jiangyuyi.lightnovel.feature.profile
 
-import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -31,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,19 +42,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.jiangyuyi.lightnovel.core.cache.ReadingCacheUsage
+import io.github.jiangyuyi.lightnovel.core.cache.SqliteCacheStore
+import io.github.jiangyuyi.lightnovel.core.cache.TemporaryReadingCache
+import io.github.jiangyuyi.lightnovel.core.reader.ChapterFontRepository
+import kotlinx.coroutines.CancellationException
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineBookRecord
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineDownloadStatus
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineLibraryAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 import java.util.Locale
 
 @androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
 fun DataStatsScreen(
     offlineLibrary: OfflineLibraryAccess,
+    readingCache: TemporaryReadingCache,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -62,10 +67,23 @@ fun DataStatsScreen(
     val books by offlineLibrary.books.collectAsStateWithLifecycle()
     val downloadDirectory by offlineLibrary.downloadDirectory.collectAsStateWithLifecycle()
     val downloader = remember(context) { AppUpdateDownloader(context) }
-    var updateBytes by remember { mutableStateOf(downloader.storedBytes()) }
-    var cacheBytes by remember { mutableStateOf(context.cacheDir.directorySize()) }
+    var updateBytes by remember { mutableStateOf<Long?>(null) }
+    var cacheUsage by remember { mutableStateOf<ReadingCacheUsage?>(null) }
+    var busy by remember { mutableStateOf(true) }
     var pendingClear by remember { mutableStateOf<ClearTarget?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(readingCache) {
+        try {
+            cacheUsage = readingCache.usage()
+            updateBytes = withContext(Dispatchers.IO) { downloader.storedBytes() }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            message = "存储统计失败：" + (error.message ?: "请稍后重试")
+        } finally {
+            busy = false
+        }
+    }
 
     val stats = remember(books) { books.toOfflineStats() }
     LazyColumn(
@@ -109,8 +127,9 @@ fun DataStatsScreen(
         item {
             StorageCard(
                 downloadDirectory = downloadDirectory,
-                cacheBytes = cacheBytes,
+                cacheUsage = cacheUsage,
                 updateBytes = updateBytes,
+                busy = busy,
                 onClearCache = { pendingClear = ClearTarget.CACHE },
                 onClearUpdates = { pendingClear = ClearTarget.UPDATES },
             )
@@ -125,7 +144,7 @@ fun DataStatsScreen(
     pendingClear?.let { target ->
         val title = if (target == ClearTarget.CACHE) "清理临时缓存？" else "清理更新包？"
         val detail = if (target == ClearTarget.CACHE) {
-            "只会删除图片和网络临时文件，不会删除书架、阅读进度或离线书籍。"
+            "清理在线正文数据库、图片内存和临时章节字体；正在阅读的字体会保留到退出阅读后再清理。不会删除下载书籍及其专用字体、导出文件、手动安装字体、登录、书架或阅读进度。"
         } else {
             "只会删除已下载的 APK 和断点文件，不会影响已安装的应用。"
         }
@@ -138,19 +157,35 @@ fun DataStatsScreen(
                     val selected = target
                     pendingClear = null
                     scope.launch {
-                        val removed = withContext(Dispatchers.IO) {
+                        busy = true
+                        message = null
+                        try {
                             if (selected == ClearTarget.CACHE) {
-                                val before = context.cacheDir.directorySize()
-                                context.cacheDir.deleteRecursively()
-                                context.cacheDir.mkdirs()
-                                before
+                                val result = readingCache.clear()
+                                cacheUsage = result.remaining
+                                message = "已清理在线阅读缓存 " + formatBytes(result.removedDiskBytes) +
+                                    "，内存缓存已释放。" +
+                                    if (result.remaining.temporaryFontBytes > 0) {
+                                        "正在使用的章节字体保留 " +
+                                            formatBytes(result.remaining.temporaryFontBytes) + "，退出阅读后可再次清理。"
+                                    } else ""
                             } else {
-                                downloader.clearStoredPackages()
+                                val removed = withContext(Dispatchers.IO) { downloader.clearStoredPackages() }
+                                message = "已清理更新包 " + formatBytes(removed)
                             }
+                        } catch (error: Exception) {
+                            if (error is CancellationException) throw error
+                            message = "清理未完成：" + (error.message ?: "请稍后重试") + "。下载和阅读记录未删除。"
+                        } finally {
+                            try {
+                                cacheUsage = readingCache.usage()
+                                updateBytes = withContext(Dispatchers.IO) { downloader.storedBytes() }
+                            } catch (error: Exception) {
+                                if (error is CancellationException) throw error
+                                message = (message ?: "") + " 无法刷新存储统计。"
+                            }
+                            busy = false
                         }
-                        cacheBytes = context.cacheDir.directorySize()
-                        updateBytes = downloader.storedBytes()
-                        message = "已清理 " + formatBytes(removed)
                     }
                 }) { Text("清理") }
             },
@@ -208,8 +243,9 @@ private fun StatsCard(
 @Composable
 private fun StorageCard(
     downloadDirectory: String?,
-    cacheBytes: Long,
-    updateBytes: Long,
+    cacheUsage: ReadingCacheUsage?,
+    updateBytes: Long?,
+    busy: Boolean,
     onClearCache: () -> Unit,
     onClearUpdates: () -> Unit,
 ) {
@@ -225,8 +261,42 @@ private fun StorageCard(
             Text("下载目录", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(downloadDirectoryLabel(downloadDirectory), style = MaterialTheme.typography.bodyMedium)
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            StorageActionRow("临时缓存", formatBytes(cacheBytes), Icons.Filled.Cached, "清理", onClearCache)
-            StorageActionRow("更新包", formatBytes(updateBytes), Icons.Filled.Download, "清理", onClearUpdates)
+            Text(
+                "在线正文：${cacheUsage?.textDiskBytes?.let(::formatBytes) ?: "统计中"} / " +
+                    formatBytes(SqliteCacheStore.MAX_DISK_BYTES) + "（含数据库实际占用）",
+            )
+            Text(
+                "正文内存估算：${cacheUsage?.textMemoryBytes?.let(::formatBytes) ?: "统计中"} / " +
+                    formatBytes(SqliteCacheStore.MAX_MEMORY_BYTES),
+            )
+            Text(
+                "图片内存：${cacheUsage?.imageMemoryBytes?.let(::formatBytes) ?: "统计中"} / " +
+                    formatBytes(TemporaryReadingCache.MAX_IMAGE_MEMORY_BYTES.toLong()) + "；图片不写入磁盘缓存",
+            )
+            Text(
+                "临时章节字体：${cacheUsage?.temporaryFontBytes?.let(::formatBytes) ?: "统计中"} / " +
+                    formatBytes(ChapterFontRepository.MAX_TEMPORARY_BYTES),
+            )
+            Text(
+                "离线章节字体（不清理）：${cacheUsage?.offlineFontBytes?.let(::formatBytes) ?: "统计中"}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "以上临时缓存上限自动执行；下载书籍、导出文件、手动安装字体和个人数据不计入临时缓存，也不会被此处清理。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                "来源详情使用有界短时内存缓存，清理在线阅读缓存时也会失效。",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            StorageActionRow(
+                "在线阅读临时缓存", cacheUsage?.diskBytes?.let(::formatBytes) ?: "统计中",
+                Icons.Filled.Cached, if (busy) "处理中" else "清理", onClearCache, !busy,
+            )
+            StorageActionRow(
+                "更新包", updateBytes?.let(::formatBytes) ?: "统计中",
+                Icons.Filled.Download, "清理", onClearUpdates, !busy,
+            )
         }
     }
 }
@@ -238,6 +308,7 @@ private fun StorageActionRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     action: String,
     onAction: () -> Unit,
+    enabled: Boolean,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -245,7 +316,7 @@ private fun StorageActionRow(
             Text(label)
             Text(size, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        OutlinedButton(onClick = onAction) { Text(action) }
+        OutlinedButton(onClick = onAction, enabled = enabled) { Text(action) }
     }
 }
 
@@ -253,7 +324,6 @@ private fun downloadDirectoryLabel(value: String?): String = value?.let {
     Uri.parse(it).lastPathSegment?.substringAfterLast(':')?.ifBlank { null } ?: "自定义文件夹"
 } ?: "应用专用目录（应用数据/offline_library）"
 
-private fun File.directorySize(): Long = walkTopDown().filter(File::isFile).sumOf(File::length)
 
 private fun formatBytes(bytes: Long): String {
     if (bytes < 1024L) return "$bytes B"

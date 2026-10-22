@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.jiangyuyi.lightnovel.core.source.NovelSummary
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
+import io.github.jiangyuyi.lightnovel.core.source.ListMetadataHydrator
+import io.github.jiangyuyi.lightnovel.core.source.ListMetadataProvider
+import io.github.jiangyuyi.lightnovel.core.source.withMissingMetadata
 import io.github.jiangyuyi.lightnovel.core.offline.EmptyOfflineLibraryAccess
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineBookRecord
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineLibraryAccess
@@ -34,6 +37,7 @@ import kotlinx.coroutines.withTimeout
 data class BookshelfSourceUiState(
     val descriptor: SourceDescriptor,
     val items: List<NovelSummary> = emptyList(),
+    val pendingMetadata: Set<NovelKey> = emptySet(),
     val loading: Boolean = false,
     val refreshing: Boolean = false,
     val loaded: Boolean = false,
@@ -82,6 +86,7 @@ class AggregateBookshelfViewModel(
     private var loadJob: Job? = null
     private var requestId = 0L
     private var screenShown = false
+    private val metadataHydrator = ListMetadataHydrator()
 
     init {
         require(perSourceTimeoutMillis > 0) { "bookshelf timeout must be positive" }
@@ -209,7 +214,8 @@ class AggregateBookshelfViewModel(
                 .mapTo(linkedSetOf()) { it.key }
             updateSource(provider.descriptor.id, currentRequestId) { current ->
                 current.copy(
-                    items = books,
+                    items = books.map(metadataHydrator::withCachedMetadata),
+                    pendingMetadata = if (provider is ListMetadataProvider) metadataHydrator.pendingAuthors(books) else emptySet(),
                     loading = false,
                     refreshing = false,
                     loaded = true,
@@ -235,6 +241,31 @@ class AggregateBookshelfViewModel(
                 throw error
             } catch (_: Throwable) {
                 // A local snapshot failure must not hide a successfully loaded remote shelf.
+            }
+            val detailProvider = registry.get(provider.descriptor.id) as? ListMetadataProvider
+            if (detailProvider != null) {
+                metadataHydrator.hydrate(
+                    detailProvider, books, includeAuthors = true,
+                    onMetadata = { key, metadata ->
+                        updateSource(provider.descriptor.id, currentRequestId) { current ->
+                            current.copy(
+                                items = current.items.map { item ->
+                                    if (item.key == key) item.withMissingMetadata(metadata.authors, metadata.synopsis) else item
+                                },
+                                pendingMetadata = current.pendingMetadata - key,
+                            )
+                        }
+                    },
+                    onFailure = { error ->
+                        val kind = (error as? SourceException)?.kind ?: SourceErrorKind.UNKNOWN
+                        updateFailure(provider, currentRequestId, kind, error.toBookshelfUiMessage(kind))
+                    },
+                    onSettled = { key ->
+                        updateSource(provider.descriptor.id, currentRequestId) { current ->
+                            current.copy(pendingMetadata = current.pendingMetadata - key)
+                        }
+                    },
+                )
             }
         } catch (error: TimeoutCancellationException) {
             updateFailure(provider, currentRequestId, SourceErrorKind.TIMEOUT, "请求超时，请稍后重试")

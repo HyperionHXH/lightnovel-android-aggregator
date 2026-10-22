@@ -3,6 +3,14 @@ package io.github.jiangyuyi.lightnovel
 import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.imageLoader
+import coil.memory.MemoryCache
+import io.github.jiangyuyi.lightnovel.core.cache.ImageMemoryCacheOwner
+import io.github.jiangyuyi.lightnovel.core.cache.TemporaryReadingCache
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import io.github.jiangyuyi.lightnovel.core.cache.CachedDataSource
 import io.github.jiangyuyi.lightnovel.core.cache.SqliteCacheStore
 import io.github.jiangyuyi.lightnovel.core.data.LightNovelRepository
@@ -25,9 +33,27 @@ import io.github.jiangyuyi.lightnovel.source.lightnovelshelf.LightNovelShelfSour
 class LightNovelApplication : Application(), ImageLoaderFactory {
     val container: AppContainer by lazy { AppContainer(this) }
 
+    override fun onCreate() {
+        super.onCreate()
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            // Cache migration is optional startup maintenance, never a reason to crash the app.
+            runCatching { container.temporaryReadingCache.prepare() }
+        }
+    }
+
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .crossfade(true)
-        .components { add(CronetImageFetcher.Factory(container.api)) }
+        .memoryCache {
+            MemoryCache.Builder(this)
+                .maxSizeBytes(TemporaryReadingCache.MAX_IMAGE_MEMORY_BYTES)
+                .build()
+        }
+        // CronetImageFetcher supplies an in-memory source, not Coil's HTTP disk-cache fetcher.
+        .diskCache(null)
+        .components {
+            add(container.imageMemoryCache)
+            add(CronetImageFetcher.Factory(container.api))
+        }
         .build()
 }
 
@@ -45,6 +71,16 @@ class AppContainer(application: Application) {
     val api: LightNovelApi by lazy { LightNovelApi(application) }
     private val cacheStore: SqliteCacheStore by lazy { SqliteCacheStore(application) }
     private val cachedDataSource: CachedDataSource by lazy { CachedDataSource(cacheStore) }
+    val imageMemoryCache = ImageMemoryCacheOwner { application.imageLoader }
+    private val lightNovelShelfSource by lazy { LightNovelShelfSource.create(application) }
+    val temporaryReadingCache: TemporaryReadingCache by lazy {
+        TemporaryReadingCache(
+            cacheStore, cachedDataSource, chapterFonts, offlineLibrary,
+            imageLoader = { application.imageLoader },
+            clearSourceMetadata = { lightNovelShelfSource.clearMetadataCache() },
+            imageMemory = imageMemoryCache,
+        )
+    }
     val repository: LightNovelRepository by lazy {
         LightNovelRepository(api, sessionStore, cachedDataSource)
     }
@@ -52,7 +88,7 @@ class AppContainer(application: Application) {
         SourceRegistry(
             listOf(
                 LightNovelKingdomSource.from(repository),
-                LightNovelShelfSource.create(application),
+                lightNovelShelfSource,
             ),
         )
     }

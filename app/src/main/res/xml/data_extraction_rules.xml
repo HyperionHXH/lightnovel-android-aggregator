@@ -3,12 +3,16 @@
     <cloud-backup>
         <exclude domain="database" path="." />
         <exclude domain="file" path="offline_library" />
+        <exclude domain="file" path="offline_chapter_fonts" />
+        <exclude domain="file" path="reader_fonts" />
         <exclude domain="sharedpref" path="secure_session.xml" />
         <exclude domain="sharedpref" path="credentials_lightnovelshelf.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="database" path="." />
         <exclude domain="file" path="offline_library" />
+        <exclude domain="file" path="offline_chapter_fonts" />
+        <exclude domain="file" path="reader_fonts" />
         <exclude domain="sharedpref" path="secure_session.xml" />
         <exclude domain="sharedpref" path="credentials_lightnovelshelf.xml" />
     </device-transfer>

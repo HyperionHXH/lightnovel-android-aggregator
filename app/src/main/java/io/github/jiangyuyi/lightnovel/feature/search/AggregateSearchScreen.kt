@@ -153,6 +153,7 @@ fun AggregateSearchScreen(
                     sourceName = result.source.displayName,
                     onClick = { onBook(result.novel.key) },
                     modifier = Modifier.padding(horizontal = 14.dp),
+                    metadataLoading = state.sources.any { result.novel.key in it.pendingMetadata },
                 )
             }
 

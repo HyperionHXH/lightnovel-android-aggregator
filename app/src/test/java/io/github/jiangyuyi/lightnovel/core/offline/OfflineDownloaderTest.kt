@@ -53,6 +53,7 @@ class OfflineDownloaderTest {
         assertEquals(2, result.completedChapters)
         assertEquals(listOf("1", "2"), source.chapterRequests)
         assertEquals(listOf("/fonts/chapter.woff2", "/fonts/chapter.woff2"), fonts.requests)
+        assertEquals(fonts.requests, fonts.retained)
         assertNotNull(store.readChapter(source.novelKey, source.chapterKey("1")))
         assertFalse(store.hasChapter(source.novelKey, source.chapterKey("3")))
         assertTrue(updates.any { it.status == OfflineDownloadStatus.DOWNLOADING })
@@ -164,10 +165,16 @@ class OfflineDownloaderTest {
 
     private class RecordingChapterFonts : ChapterFontAccess {
         val requests = mutableListOf<String?>()
+        val retained = mutableListOf<String?>()
 
         override suspend fun load(fontUrl: String?): FontFamily? {
             requests += fontUrl
             return FontFamily.Serif
+        }
+
+        override suspend fun retainForOffline(fontUrl: String?) {
+            load(fontUrl)
+            retained += fontUrl
         }
     }
 }

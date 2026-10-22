@@ -6,7 +6,7 @@ import io.github.jiangyuyi.lightnovel.core.source.BuiltInSourceIds
 import io.github.jiangyuyi.lightnovel.core.source.ChapterContent
 import io.github.jiangyuyi.lightnovel.core.source.ChapterKey
 import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
-import io.github.jiangyuyi.lightnovel.core.source.DetailProvider
+import io.github.jiangyuyi.lightnovel.core.source.ListMetadataProvider
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverFeed
 import io.github.jiangyuyi.lightnovel.core.source.DiscoverProvider
 import io.github.jiangyuyi.lightnovel.core.source.HistoryProvider
@@ -49,7 +49,7 @@ class LightNovelShelfSource internal constructor(
 ) : NovelSource,
     DiscoverProvider,
     SearchProvider,
-    DetailProvider,
+    ListMetadataProvider,
     ReaderProvider,
     AccountProvider,
     RewardProvider,
@@ -60,6 +60,13 @@ class LightNovelShelfSource internal constructor(
 
     private val rewardMutex = Mutex()
     private val shelfMutex = Mutex()
+    private val detailCache = ShelfDetailCache()
+
+    /** Clears temporary public metadata without touching downloaded books or account state. */
+    fun clearMetadataCache() = detailCache.clear()
+
+    private suspend fun bookDetail(bookId: Long): ShelfBookDetail =
+        detailCache.get(bookId) { gateway.getBookDetail(bookId) }
 
     override val descriptor = SourceDescriptor(
         id = SOURCE_ID,
@@ -127,7 +134,7 @@ class LightNovelShelfSource internal constructor(
     }
 
     override suspend fun getNovelDetail(key: NovelKey): NovelDetail {
-        val detail = gateway.getBookDetail(key.requireShelfBookId())
+        val detail = bookDetail(key.requireShelfBookId())
         return NovelDetail(
             novel = detail.toSummary(),
             favoriteCount = detail.favoriteCount,
@@ -135,7 +142,7 @@ class LightNovelShelfSource internal constructor(
     }
 
     override suspend fun getVolumes(key: NovelKey, page: Int, pageSize: Int): SourcePage<VolumeSummary> {
-        val detail = gateway.getBookDetail(key.requireShelfBookId())
+        val detail = bookDetail(key.requireShelfBookId())
         val volumes = if (page == 1) {
             listOf(
                 VolumeSummary(
@@ -159,7 +166,7 @@ class LightNovelShelfSource internal constructor(
     ): SourcePage<ChapterSummary> {
         val bookId = novelKey.requireShelfBookId()
         volumeKey.requireDefaultVolume()
-        val detail = gateway.getBookDetail(bookId)
+        val detail = bookDetail(bookId)
         val effectivePage = page.coerceAtLeast(1)
         val effectiveSize = pageSize.coerceIn(1, 50)
         val fromIndex = ((effectivePage - 1) * effectiveSize).coerceAtMost(detail.chapters.size)
@@ -188,7 +195,7 @@ class LightNovelShelfSource internal constructor(
         val sortNumber = chapterKey.requireSortNumber()
         val content = gateway.getNovelContent(bookId, sortNumber)
         val catalog = try {
-            gateway.getBookDetail(bookId).chapters
+            bookDetail(bookId).chapters
                 .mapNotNull { it.sortNumber?.takeIf { number -> number > 0 } }
                 .distinct()
                 .sorted()
@@ -228,7 +235,7 @@ class LightNovelShelfSource internal constructor(
     override suspend fun saveReadingProgress(progress: ReadingProgress) {
         val bookId = progress.novelKey.requireShelfBookId()
         val sortNumber = progress.chapterKey.requireSortNumber()
-        val chapterId = gateway.getBookDetail(bookId).chapters
+        val chapterId = bookDetail(bookId).chapters
             .firstOrNull { it.sortNumber == sortNumber }
             ?.id
             ?: return
@@ -243,7 +250,10 @@ class LightNovelShelfSource internal constructor(
         loggedIn = gateway.login(credentials.identifier, credentials.password),
     )
 
-    override suspend fun logout() = gateway.logout()
+    override suspend fun logout() {
+        clearMetadataCache()
+        gateway.logout()
+    }
 
     override suspend fun getProfile(): SourceProfile = gateway.getProfile().toSourceProfile()
 

@@ -3,7 +3,12 @@ package io.github.jiangyuyi.lightnovel.feature.search
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.jiangyuyi.lightnovel.core.source.AggregateSearchCoordinator
+import io.github.jiangyuyi.lightnovel.core.source.ListMetadataHydrator
+import io.github.jiangyuyi.lightnovel.core.source.ListMetadataProvider
+import io.github.jiangyuyi.lightnovel.core.source.SourceException
+import io.github.jiangyuyi.lightnovel.core.source.withMissingMetadata
 import io.github.jiangyuyi.lightnovel.core.source.NovelSummary
+import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.SourceDescriptor
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
@@ -11,6 +16,7 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceSearchEvent
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +25,7 @@ import kotlinx.coroutines.launch
 data class SourceSearchUiState(
     val descriptor: SourceDescriptor,
     val items: List<NovelSummary> = emptyList(),
+    val pendingMetadata: Set<NovelKey> = emptySet(),
     val page: Int = 0,
     val total: Int = 0,
     val hasMore: Boolean = false,
@@ -38,7 +45,7 @@ data class AggregateSearchState(
 
 class AggregateSearchViewModel(
     private val coordinator: AggregateSearchCoordinator,
-    registry: SourceRegistry,
+    private val registry: SourceRegistry,
     private val debounceMillis: Long = 400,
 ) : ViewModel() {
     private val initialSources = registry.searchProviders().map { SourceSearchUiState(it.descriptor) }
@@ -46,6 +53,8 @@ class AggregateSearchViewModel(
     val state: StateFlow<AggregateSearchState> = _state.asStateFlow()
     private var debounceJob: Job? = null
     private var searchJob: Job? = null
+    private var requestId = 0L
+    private val metadataHydrator = ListMetadataHydrator()
 
     init {
         require(debounceMillis >= 0) { "debounce must not be negative" }
@@ -55,6 +64,7 @@ class AggregateSearchViewModel(
         if (value == _state.value.query) return
         debounceJob?.cancel()
         searchJob?.cancel()
+        requestId++
         _state.value = _state.value.copy(
             query = value,
             searchedQuery = "",
@@ -73,6 +83,7 @@ class AggregateSearchViewModel(
         val normalized = _state.value.query.trim()
         if (normalized.isEmpty()) {
             searchJob?.cancel()
+            requestId++
             _state.value = _state.value.copy(searchedQuery = "", sources = initialSources)
             return
         }
@@ -91,6 +102,7 @@ class AggregateSearchViewModel(
         if (targets.isEmpty()) return
         val pageBySourceId = targets.associate { it.descriptor.id to (it.page + 1).coerceAtLeast(1) }
         searchJob?.cancel()
+        val currentRequestId = ++requestId
         val targetIds = targets.mapTo(mutableSetOf()) { it.descriptor.id }
         _state.value = _state.value.copy(
             sources = _state.value.sources.map { source ->
@@ -106,18 +118,21 @@ class AggregateSearchViewModel(
                 sourceIds = targetIds,
                 pageBySourceId = pageBySourceId,
                 append = true,
+                currentRequestId = currentRequestId,
             )
         }
     }
 
     private fun startSearch(query: String) {
         searchJob?.cancel()
+        val currentRequestId = ++requestId
         _state.value = _state.value.copy(
             searchedQuery = query,
             sources = initialSources.map { it.copy(loading = true, refreshing = true) },
         )
         searchJob = viewModelScope.launch {
-            collectSearch(query, page = 1, sourceIds = null, pageBySourceId = emptyMap(), append = false)
+            collectSearch(query, page = 1, sourceIds = null, pageBySourceId = emptyMap(), append = false,
+                currentRequestId = currentRequestId)
         }
     }
 
@@ -127,7 +142,12 @@ class AggregateSearchViewModel(
         sourceIds: Set<String>?,
         pageBySourceId: Map<String, Int>,
         append: Boolean,
-    ) {
+        currentRequestId: Long,
+    ) = coroutineScope {
+        if (append) {
+            _state.value.sources.filter { sourceIds != null && it.descriptor.id !in sourceIds }
+                .forEach { source -> launch { hydrateMetadata(source.descriptor.id, currentRequestId) } }
+        }
         try {
             coordinator.search(
                 query,
@@ -136,7 +156,7 @@ class AggregateSearchViewModel(
                 sourceIds = sourceIds,
                 pageBySourceId = pageBySourceId,
             ).collect { event ->
-                if (_state.value.query.trim() != query) return@collect
+                if (requestId != currentRequestId || _state.value.query.trim() != query) return@collect
                 updateSource(event.source.id) { current ->
                     when (event) {
                         is SourceSearchEvent.Loading -> current.copy(
@@ -150,8 +170,11 @@ class AggregateSearchViewModel(
 
                         is SourceSearchEvent.Success -> current.copy(
                             items = if (append) {
-                                (current.items + event.page.items).distinctBy { it.key }
-                            } else event.page.items.distinctBy { it.key },
+                                (current.items + event.page.items.map(metadataHydrator::withCachedMetadata)).distinctBy { it.key }
+                            } else event.page.items.map(metadataHydrator::withCachedMetadata).distinctBy { it.key },
+                            pendingMetadata = if (registry.get(event.source.id) is ListMetadataProvider) {
+                                metadataHydrator.pendingAuthors(if (append) current.items + event.page.items else event.page.items)
+                            } else emptySet(),
                             page = event.page.page,
                             total = event.page.total,
                             hasMore = event.page.hasMore,
@@ -164,6 +187,7 @@ class AggregateSearchViewModel(
                         )
 
                         is SourceSearchEvent.Failure -> current.copy(
+                            pendingMetadata = emptySet(),
                             loading = false,
                             refreshing = false,
                             loadingMore = false,
@@ -173,11 +197,14 @@ class AggregateSearchViewModel(
                         )
                     }
                 }
+                if (event is SourceSearchEvent.Success) {
+                    launch { hydrateMetadata(event.source.id, currentRequestId) }
+                }
             }
         } catch (error: CancellationException) {
             throw error
         } finally {
-            if (_state.value.query.trim() == query) {
+            if (requestId == currentRequestId && _state.value.query.trim() == query) {
                 _state.value = _state.value.copy(
                     sources = _state.value.sources.map { source ->
                         if (sourceIds == null || source.descriptor.id in sourceIds) {
@@ -187,6 +214,36 @@ class AggregateSearchViewModel(
                 )
             }
         }
+    }
+
+    private suspend fun hydrateMetadata(sourceId: String, currentRequestId: Long) {
+        val provider = registry.get(sourceId) as? ListMetadataProvider ?: return
+        val items = _state.value.sources.firstOrNull { it.descriptor.id == sourceId }?.items.orEmpty()
+        metadataHydrator.hydrate(
+            provider, items, includeAuthors = true,
+            onMetadata = { key, metadata ->
+                if (requestId == currentRequestId) updateSource(sourceId) { current ->
+                    current.copy(
+                        items = current.items.map { item ->
+                            if (item.key == key) item.withMissingMetadata(metadata.authors, metadata.synopsis) else item
+                        },
+                        pendingMetadata = current.pendingMetadata - key,
+                    )
+                }
+            },
+            onFailure = { error ->
+                if (requestId == currentRequestId) updateSource(sourceId) { current ->
+                    val kind = (error as? SourceException)?.kind ?: SourceErrorKind.UNKNOWN
+                    val failure = SourceSearchEvent.Failure(provider.descriptor, kind, error.message.orEmpty())
+                    current.copy(errorKind = kind, errorMessage = failure.toUiMessage())
+                }
+            },
+            onSettled = { key ->
+                if (requestId == currentRequestId) updateSource(sourceId) { current ->
+                    current.copy(pendingMetadata = current.pendingMetadata - key)
+                }
+            },
+        )
     }
 
     private fun updateSource(

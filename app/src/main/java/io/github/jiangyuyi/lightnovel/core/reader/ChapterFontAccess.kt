@@ -4,6 +4,7 @@ import androidx.compose.ui.text.font.FontFamily
 
 interface ChapterFontAccess {
     suspend fun load(fontUrl: String?): FontFamily?
+    suspend fun retainForOffline(fontUrl: String?) { load(fontUrl) }
 }
 
 object EmptyChapterFontAccess : ChapterFontAccess {

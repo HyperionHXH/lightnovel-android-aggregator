@@ -5,6 +5,7 @@
 当前分支：`feature/multi-source-foundation`
 当前分支最新提交以 `git log -1` 为准；本文件记录的最近认证与阅读交互增强均已随分支提交推送。
 `1.22.1 / 37` 已通过用户的 Android 模拟器人工验收；用户已授权提交、推送当前分支并创建 `v1.22.1` 发布标签。签名 APK 与 SHA-256 由 Android Release 工作流生成，构建和发布状态以对应 Actions 运行结果为准。
+用户现已确认模拟器可联网、轻书架作者能显示，授权优化作者与书名同时呈现后推送编译。本轮保持现有候选 `1.22.2 / 38`，不再次增加版本；发布时必须显式指定仓库 `HyperionHXH/lightnovel-android-aggregator`（本机 gh 默认仓库可能指向另一个项目）。
 
 ## 项目定位
 
@@ -57,7 +58,23 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 ./scripts/package-windows.ps1
 ```
 
-Android 当前版本：`versionName 1.22.1`、`versionCode 37`。Release 使用源码版本码，tag 仅注入版本名称。桌面端仍不在本轮支持与发布范围。
+Android 当前版本：`versionName 1.22.2`、`versionCode 38`，沿用同一轮候选编号。Release 使用源码版本码，tag 仅注入版本名称。桌面端仍不在本轮支持与发布范围；签名产物与发布状态以当前标签的 Actions 运行结果为准。
+
+## 2026-10-22 模拟器联网与后续修正
+
+- 原 `noval_api35` 的全局私人 DNS 被设为严格 `hostname / one.one.one.one`，轻书架、百度等均报 `unknown host`。只在该模拟器将 `private_dns_mode` 改为 `opportunistic`，删除 `private_dns_specifier`，不更改宿主机 DNS、不修改 App TLS 校验。
+- 首轮 DNS 修正只得到阶段性 TCP 探测和“请先登录”提示，不足以证明完整登录链路稳定。用户再次报告断网后，已在同一主模拟器复现：Chrome `DNS_PROBE_FINISHED_BAD_CONFIG`、三站 TCP 443 超时，Android 仅 `PARTIAL_CONNECTIVITY`。不得继续引用首轮结果声称联网已修好。
+- 存储审计基线（原模拟器）：`files` 48 KiB、`cache` 52 KiB、`databases` 8 KiB；没有测得空间暴涨，发现的是代码中的无上限内存/章节字体和清理遗漏。旧清理仅删 `cacheDir`，漏掉正文数据库、章节字体，还绕过存储所有者。
+- 参考 Android 官方[应用专用文件与缓存](https://developer.android.google.cn/training/data-storage/app-specific)、[LRU 图片缓存](https://developer.android.google.cn/topic/performance/graphics/cache-bitmap)及[模拟器 DNS](https://developer.android.google.cn/studio/run/emulator-networking-dns)：临时缓存需由应用主动限制和清理，不能寄望系统自动回收；用户下载和阅读进度属于保留数据。
+- 作者补全通过 `ListMetadataProvider` 明确 opt-in。三个 ViewModel 发布带 `pendingMetadata` 的列表，缺作者的卡片用稳定、不可点击的骨架占位，作者完成与清除占位在同一次状态更新，书名/作者/简介一起出现；缓存和已知作者不占位，失败/缺作者结束占位且不伪造，原顺序与逐来源错误保留。`ShelfDetailCache` 合并同书详情请求，五分钟 TTL、64 项/512 Ki 字符上限。
+- `TemporaryReadingCache` 统一协调清理。正文内存 8 MiB、实际 SQLite 文件 96 MiB；图片仅 32 MiB 内存；临时字体 64 MiB。字体迁移扫描当前下载目录和旧内部书库，已下载章节必需字体保留至独立目录，不因临时淘汰丢失；旧 SAF 副本/进行中下载可能仍引用的离线字体不自动推断为孤儿删除。
+- 最终清理临时测试源码后的本地验证：206 项单元测试（205 通过、1 项既有跳过），Lint 0 Error（15 Warning/6 Information），Debug 和 instrumentation APK 构建通过。独立 API 35 模拟器上 39 项永久设备回归全通过，覆盖三处作者卡片、真实 SQLite 文件限额/LRU/高水位回收、字体迁移及阅读器。
+- 另一个临时真实 UI 烟测已点击“数据与统计”的清理按钮，确认正文数据库减小、缓存项消失，同时已下载正文可读取、离线字体可加载、导出和手动字体文件保留、阅读进度 63% 不变；临时源码随后删除。烟测仅用独立测试模拟器，未清理主模拟器的用户数据。
+- 主模拟器已覆盖安装 `1.22.2 / 38`，不清除用户数据。后续联网修复、用户登录后，真实轻书架发现页返回「年度最垃圾伪圣女 · わからないマン」「愿你手拥幸福 · ショーン田中」「圣剑学院的魔剑使 4 · 志瑞祐」，新书页返回十利ハレ、丸戸史明等真实作者。冷频道切换的实际截图确认书卡显示时书名、作者已同时出现，不将固定响应回归冒充线上验收。
+- 二次诊断发现宿主机浏览器启用 `127.0.0.1:7890` 代理，原模拟器启动命令未包含代理，默认 DNS 也不稳定。参照 Android 官方[两种代理的区别](https://developer.android.google.cn/studio/run/emulator-networking-proxy)，保留用户数据重启主模拟器，显式使用模拟器层代理与 DNS：`C:/Android/Sdk/emulator/emulator.exe -avd noval_api35 -port 5554 -gpu host -no-boot-anim -no-snapshot-load -http-proxy http://127.0.0.1:7890 -dns-server 223.5.5.5,119.29.29.29`。仅调整本机模拟器环境，不安装证书、不关闭 TLS 校验、不改变 App 正式联网逻辑。
+- 冷启动后实测：Android 网络成为 `VALIDATED`，原有 HTTP/HTTPS 连通性检测均返回 204（未替换检测地址）；模拟器 Chrome 加载百度与轻书架首页，App 实际拉取轻之国度榜单。通过模拟器 Chrome 的临时调试连接，从官方轻书架页面分别向主/备用 `/api/user/login` 发送空 JSON 验证请求（没有账号密码、`credentials: omit`），两者均收到 HTTP 200 JSON 响应；这仅证明登录 API 可达，不代表登录成功或真实作者验收完成。临时调试端口已移除。当前联网依赖宿主机 7890 代理持续运行，重启模拟器须保留上述启动参数。
+- 同步呈现回归先在旧版真实 Compose 屏幕失败（详情未返回时仍出现书名），修正后 41 项定向设备回归全通过，涵盖三处卡片、作者缺失/网络失败退出占位、SQLite 实际限额与回收、离线字体保护、翻页/进度/菜单/图片。207 项单元测试（206 通过、1 项既有跳过），Lint 0 Error（15 Warning/6 Information），Debug 与 instrumentation APK 构建通过；单本慢详情不会阻挡另一卡片，超时后占位能结束。
+- 用户登录后的真实作者搜索已通过：临时 opt-in Compose 烟测使用正式 `MainActivity` 与保存的轻书架会话，从 UI 输入「志瑞祐」，实际服务器返回「轻书架 · 志瑞祐」及「圣剑学院」作品，未出现上传者「小孤独」。没有读出或注入账号凭据；临时测试验证后删除，不进入提交。
 
 ## 2026-10-22 左右翻页与轻书架作者搜索
 

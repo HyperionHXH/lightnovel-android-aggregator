@@ -328,6 +328,7 @@ fun AggregateBookshelfScreen(
                     },
                     onClick = { onBook(result.novel.key) },
                     modifier = Modifier.padding(horizontal = 14.dp),
+                    metadataLoading = visibleSources.any { result.novel.key in it.pendingMetadata },
                 )
             }
         }

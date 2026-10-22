@@ -98,6 +98,20 @@ class LightNovelShelfProtocolTest {
     }
 
     @Test
+    fun `detail author uses real author then classification and never the uploading user`() = runTest {
+        val hub = RecordingHub(responses = ArrayDeque(listOf(
+            envelope("""{"Book":{"Id":1,"Title":"书","Chapters":[],"Author":"作者甲","Extra":{"classification":{"author":"作者乙"}},"User":{"UserName":"上传者"}}}"""),
+            envelope("""{"Book":{"Id":2,"Title":"书","Chapters":[],"Author":null,"Extra":{"classification":{"author":"作者乙"}},"User":{"UserName":"上传者"}}}"""),
+            envelope("""{"Book":{"Id":3,"Title":"书","Chapters":[],"Author":" ","UserName":"上传者","User":{"UserName":"上传者"}}}"""),
+        )))
+        val service = gateway(hub)
+
+        assertEquals("作者甲", service.getBookDetail(1).authorName)
+        assertEquals("作者乙", service.getBookDetail(2).authorName)
+        assertNull(service.getBookDetail(3).authorName)
+    }
+
+    @Test
     fun `already quoted title searches are not double wrapped`() = runTest {
         val hub = RecordingHub(responses = ArrayDeque(listOf(envelope(
             """{"Page":1,"TotalPages":1,"Data":[]}""",
