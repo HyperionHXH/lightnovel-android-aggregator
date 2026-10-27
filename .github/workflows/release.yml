@@ -1,4 +1,4 @@
-name: Android Release
+name: Android and iOS Release
 
 on:
   push:
@@ -19,7 +19,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ios:
+    uses: ./.github/workflows/ios.yml
+    permissions:
+      contents: read
+
   release:
+    needs: ios
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -32,14 +38,21 @@ jobs:
       - name: Resolve version
         id: version
         shell: bash
+        env:
+          RELEASE_INPUT_TAG: ${{ inputs.tag }}
+          GATED_IOS_VERSION: ${{ needs.ios.outputs.version }}
         run: |
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            tag="${{ inputs.tag }}"
+            tag="$RELEASE_INPUT_TAG"
           else
             tag="${GITHUB_REF_NAME}"
           fi
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid release tag: $tag" >&2
+            exit 1
+          fi
+          if [[ "${tag#v}" != "$GATED_IOS_VERSION" ]]; then
+            echo "Release tag differs from the tested Android/iOS source version" >&2
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -110,6 +123,12 @@ jobs:
             ${{ steps.package.outputs.apk }}.sha256
           if-no-files-found: error
 
+      - name: Download gated iOS unsigned deliverable
+        uses: actions/download-artifact@v4
+        with:
+          name: mixn-ios-unsigned
+          path: release-ios
+
       - name: Publish GitHub Release
         shell: bash
         env:
@@ -118,7 +137,7 @@ jobs:
           APK_FILE: ${{ steps.package.outputs.apk }}
         run: |
           if gh release view "$VERSION_TAG" >/dev/null 2>&1; then
-            gh release upload "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256" --clobber
+            gh release upload "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256"
           else
             version="${VERSION_TAG#v}"
             awk -v heading="## [$version]" '
@@ -145,5 +164,6 @@ jobs:
                 gh release view "$VERSION_TAG"
               fi
             fi
-            gh release upload "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256" --clobber
+            gh release upload "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256"
           fi
+          gh release upload "$VERSION_TAG" release-ios/*.ipa release-ios/*.ipa.sha256

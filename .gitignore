@@ -18,3 +18,14 @@ signing.properties
 签名密码.txt
 魔法禁书目录/
 青春猪头少年系列/
+
+# Native Apple build products and local cloud acceptance artifacts
+ios/Mixn.xcodeproj/
+ios/Mixn.xcworkspace/
+ios/.build/
+ios/build/
+**/xcuserdata/
+*.xcresult/
+*.ipa
+*.dSYM/
+release_ios/

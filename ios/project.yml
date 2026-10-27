@@ -1,0 +1,69 @@
+name: Mixn
+options:
+  minimumXcodeGenVersion: 2.42.0
+  deploymentTarget:
+    iOS: '15.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    MARKETING_VERSION: '1.22.2'
+    CURRENT_PROJECT_VERSION: '38'
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ''
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    CLANG_ENABLE_MODULES: YES
+    IPHONEOS_DEPLOYMENT_TARGET: '15.0'
+    TARGETED_DEVICE_FAMILY: '1,2'
+targets:
+  Mixn:
+    type: application
+    platform: iOS
+    sources:
+      - path: Mixn
+        excludes: [Info.plist]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.hyperionhxh.mixn
+        INFOPLIST_FILE: Mixn/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_ENTITLEMENTS: Mixn/Mixn.entitlements
+    dependencies:
+      - sdk: libz.tbd
+  MixnTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: MixnTests
+      - path: ../contracts
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: Mixn
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.hyperionhxh.mixn.tests
+        GENERATE_INFOPLIST_FILE: YES
+  MixnUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [MixnUITests]
+    dependencies:
+      - target: Mixn
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.hyperionhxh.mixn.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Mixn:
+    build:
+      targets:
+        Mixn: all
+        MixnTests: [test]
+        MixnUITests: [test]
+    test:
+      gatherCoverageData: true
+      targets: [MixnTests, MixnUITests]
+      commandLineArguments: {}
+    archive:
+      config: Release

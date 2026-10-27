@@ -440,6 +440,20 @@ class LightNovelShelfProtocolTest {
         assertEquals(4, result.streakDays)
     }
 
+    @Test
+    fun `shared iOS Android fixtures preserve author precedence without uploader fallback`() = runTest {
+        val stream = requireNotNull(javaClass.classLoader?.getResourceAsStream("lns-author-cases.json"))
+        val cases = stream.bufferedReader().use { Json.parseToJsonElement(it.readText()) } as kotlinx.serialization.json.JsonArray
+        for (fixture in cases) {
+            val item = fixture as JsonObject
+            val response = """{"Page":1,"TotalPages":1,"Data":[${item["input"]}]}"""
+            val actual = gateway(RecordingHub(ArrayDeque(listOf(envelope(response)))))
+                .listBooks(ShelfBookOrder.LATEST, 1, 20).items.single()
+            val expected = item["author"]?.jsonPrimitive?.content?.takeUnless { it == "null" }
+            assertEquals(item["name"].toString(), expected, actual.authorName)
+        }
+    }
+
     private fun gateway(hub: RecordingHub): DefaultLightNovelShelfGateway {
         val auth = LightNovelShelfAuthManager(
             api = LightNovelShelfAuthApi(

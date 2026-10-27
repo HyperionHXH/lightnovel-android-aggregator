@@ -1,0 +1,5 @@
+[
+  {"name":"uploader-is-not-author","input":{"Id":1,"Title":"测试作品","UserName":"上传者"},"author":null},
+  {"name":"real-author-wins","input":{"Id":2,"Title":"测试作品","UserName":"上传者","Author":"真实作者甲","Extra":{"classification":{"author":"分类作者乙"}}},"author":"真实作者甲"},
+  {"name":"blank-author-uses-classification","input":{"Id":3,"Title":"测试作品","author":" ","userName":"上传者","extra":{"classification":{"author":"分类作者乙"}}},"author":"分类作者乙"}
+]

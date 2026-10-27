@@ -1,6 +1,6 @@
 # 贡献指南
 
-感谢你为 Mixn 提交问题、文档或代码。Mixn 是面向个人账号的轻小说聚合阅读器，当前稳定版本为 `1.22.0`。
+Mixn 是面向个人账号的 Android / iOS 轻小说聚合阅读器，当前版本基线为 `1.22.2 / 38`。iOS 初次移植只增补同版本产物，不重发 Android APK。
 
 ## 提交前
 
@@ -12,6 +12,7 @@
 
 - JDK 17
 - Android SDK 35
+- iOS：macOS、固定 Xcode 16.4 和 XcodeGen；详见 [`docs/IOS.md`](docs/IOS.md)。Windows 本地不能代替原生 iOS 构建验收。
 
 仓库自带 Gradle Wrapper，不需要安装全局 Gradle。开始开发前请先阅读 [CONTEXT.md](CONTEXT.md) 和适用的 [架构决策](docs/adr/)。
 
@@ -23,11 +24,11 @@
 ./gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon "-Pkotlin.incremental=false"
 ```
 
-真实账号冒烟测试需要显式设置环境变量，默认测试不会访问外网。桌面端开发目前无限期搁置，不在当前贡献和验证范围内。
+还须按 [`双端维护约束`](docs/PLATFORM_PARITY.md)逐项检查另一端。协议 bug 使用 `contracts/` 脱敏样例同时覆盖 Kotlin / Swift 真实解析路径；iOS 跑单元测试和原生 UI tour，记录精确提交、run、截图及录屏摘要，下载后目视每张图。禁止删除仍有用户意义的验收来使构建通过，也不能拿 DEBUG 夹具当真实账号验收。真实账号冒烟显式开启，不把个人账号放入 CI；桌面端继续不在验证范围。
 
 ## 提交 Issue 和 Pull Request
 
-Issue 请使用模板，并提供 Android 系统版本、Mixn 版本、来源、复现步骤和脱敏日志。Pull Request 请说明用户可见变化、验证命令和是否涉及来源协议、数据迁移或 Release 行为。
+Issue 请使用模板，并提供系统/机型、Mixn 版本、来源、复现步骤和脱敏日志；iOS 补充安装工具与签名状态。PR 说明两端实现与测试；系统特有能力写出另一端替代、限制，注明来源协议/数据迁移/Release 影响。
 
-保持提交小而清晰，提交消息使用简短的动词开头，例如 `fix: ...`、`docs: ...`。不要为普通文档改动创建 GitHub Release；Release 只由 `v*` 标签工作流生成。
+保持提交小而清晰，使用简短动词消息，如 `fix: ...`、`docs: ...`。不为普通文档修改建 Release；未来新标签通过双端门槛后共同发布 APK 与 unsigned IPA。初次 iOS 在验收后仅追加既有 `v1.22.2` 的新文件，不移动标签、不覆盖旧 APK。
 

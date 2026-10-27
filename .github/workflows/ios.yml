@@ -1,0 +1,111 @@
+name: iOS Acceptance
+
+on:
+  push:
+    branches: [feat/ios-parity, main, feature/multi-source-foundation]
+    paths: ['ios/**', 'contracts/**', 'scripts/ios/**', '.github/workflows/ios.yml']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      version:
+        description: Version verified against Android and packaged for iOS
+        value: ${{ jobs.verify.outputs.version }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: macos-15
+    timeout-minutes: 55
+    outputs:
+      version: ${{ steps.project.outputs.version }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned project generator and validators
+        id: project
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun swift --version
+          python -m pip install Pillow==11.3.0 PyYAML==6.0.3
+          python scripts/ios/check_contract.py --github-output "$GITHUB_OUTPUT"
+          curl --fail --location --retry 2 https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo '4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  '"$RUNNER_TEMP/xcodegen.zip" | shasum -a 256 --check
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          generator="$(find "$RUNNER_TEMP/xcodegen" -type f -name xcodegen -print -quit)"
+          chmod +x "$generator"
+          "$generator" --version
+          "$generator" generate --spec ios/project.yml
+      - name: Build unsigned iPhoneOS release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios
+          xcodebuild -project ios/Mixn.xcodeproj -scheme Mixn -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/ios/device \
+            CODE_SIGNING_ALLOWED=NO build >build/ios/device-build.log 2>&1 || { cat build/ios/device-build.log; exit 1; }
+          python scripts/ios/package_ipa.py --app build/ios/device/Build/Products/Release-iphoneos/Mixn.app --output 'build/ios/ipa/Mixn-iOS-${{ steps.project.outputs.version }}-Unsigned.ipa'
+          python scripts/ios/verify_artifacts.py --ipa 'build/ios/ipa/Mixn-iOS-${{ steps.project.outputs.version }}-Unsigned.ipa'
+      - name: Select exact available simulator and boot
+        id: sim
+        shell: bash
+        run: |
+          set -euo pipefail
+          device="$(xcrun simctl list devices available --json | python -c 'import json,sys; groups=json.load(sys.stdin)["devices"]; candidates=[d for runtime,devices in groups.items() if "iOS-18-5" in runtime for d in devices if d["name"]=="iPhone 16" and d.get("isAvailable")]; assert candidates, "Pinned iOS18.5 iPhone16 simulator missing"; print(candidates[0]["udid"])')"
+          echo "udid=$device" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl status_bar "$device" override --time '9:41' --batteryState charged --batteryLevel 100
+      - name: Build production simulator and XCTest targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing -project ios/Mixn.xcodeproj -scheme Mixn -configuration Debug \
+            -destination 'platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}' -derivedDataPath build/ios/simulator \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES >build/ios/simulator-build.log 2>&1 || { cat build/ios/simulator-build.log; exit 1; }
+      - name: Execute source storage reader and lifecycle regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild test-without-building -project ios/Mixn.xcodeproj -scheme Mixn \
+            -destination 'platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}' -derivedDataPath build/ios/simulator \
+            -parallel-testing-enabled NO -only-testing:MixnTests -resultBundlePath build/ios/UnitTests.xcresult \
+            >build/ios/unit-tests.log 2>&1 || { cat build/ios/unit-tests.log; exit 1; }
+          cat build/ios/unit-tests.log
+      - name: Install video decoder if missing
+        shell: bash
+        run: command -v ffprobe >/dev/null || brew install ffmpeg
+      - name: Exercise production routes and capture native screenshots/video
+        timeout-minutes: 15
+        run: python scripts/ios/run_tour.py --device '${{ steps.sim.outputs.udid }}'
+      - name: Upload exact validated unsigned IPA
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixn-ios-unsigned
+          path: build/ios/ipa/
+          if-no-files-found: error
+      - name: Upload evidence and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixn-ios-acceptance
+          path: |
+            build/ios/visual-tour/
+            build/ios/*.log
+            build/ios/*.xcresult/
+          if-no-files-found: warn

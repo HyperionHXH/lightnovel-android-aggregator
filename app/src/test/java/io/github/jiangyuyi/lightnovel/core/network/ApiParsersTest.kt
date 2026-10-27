@@ -538,5 +538,17 @@ class ApiParsersTest {
         assertFalse(message.mine)
     }
 
+    @Test
+    fun `shared iOS Android book fixture maps source counts and authors`() {
+        val input = requireNotNull(javaClass.classLoader?.getResourceAsStream("lk-book.json"))
+            .bufferedReader().use { obj(it.readText()) }
+        val book = ApiParsers.book(input)
+        assertEquals(7506L, book.id)
+        assertEquals("测试作者", book.author)
+        assertEquals(9, book.chapterCount)
+        assertEquals(3, book.unreadChapterCount)
+        assertEquals(listOf("测试", "排版"), book.tags)
+    }
+
     private fun obj(raw: String): JsonObject = json.parseToJsonElement(raw) as JsonObject
 }
