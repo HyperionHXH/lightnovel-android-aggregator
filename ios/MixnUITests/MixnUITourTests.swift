@@ -67,6 +67,7 @@ final class MixnUITourTests: XCTestCase {
         let ready = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: element("reader.loading"))
         wait(for: [ready], timeout: 30)
         XCTAssertTrue(app.webViews.firstMatch.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "这是原创测试插图")).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.tabBars.firstMatch.isHittable, "Reader must not leave the root tabs over its content")
     }
     private func setReaderMode(_ label: String) {
         open("reader.settings")
@@ -94,6 +95,12 @@ final class MixnUITourTests: XCTestCase {
         open("book.light_novel_shelf:1")
         wait("detail.title")
         XCTAssertFalse(element("detail.comments").exists, "Shelf must not advertise an unsupported comment API")
+        open("detail.read")
+        waitForReader()
+        try capture("03a_mandatory_woff2")
+        open("reader.menu")
+        app.buttons["返回"].firstMatch.tap()
+        wait("detail.title")
         back()
         open("discover.search")
         wait("search.field")

@@ -15,7 +15,8 @@ from urllib.parse import parse_qs, urlsplit
 
 TOUR = [
     ('01_onboarding', '首次使用与下载目录'), ('02_discover', '发现与作品作者'),
-    ('03_source', '轻书架独立来源'), ('04_search', '聚合搜索结果'),
+    ('03_source', '轻书架独立来源'), ('03a_mandatory_woff2', '真实 WOFF2 专用字体原生渲染'),
+    ('04_search', '聚合搜索结果'),
     ('05_detail', '作品详情与标签'), ('06_catalog', '分卷与章节目录'),
     ('07_comments', '评论与回复'), ('08_reader_paged', '左右分页正文'),
     ('08a_reader_image', '原生插图缩放预览'), ('08b_reader_image_actions', '长按并保存到系统相册'),

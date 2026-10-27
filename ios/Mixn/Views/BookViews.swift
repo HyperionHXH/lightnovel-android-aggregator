@@ -299,7 +299,9 @@ private struct BookDetailContentView: View {
             }
             if selectedTab == 1 || novel == nil { catalog }
         }.listStyle(.insetGrouped).navigationTitle(novel?.title ?? "书籍详情").navigationBarTitleDisplayMode(.inline)
-            .background(readerNavigation)
+            .fullScreenCover(isPresented: $reading) {
+                if let novel = novel, let chapter = readerChapter { ReaderView(novel: novel, chapterKey: chapter) }
+            }
             .refreshable { await model.load(app: app) }
             .buttonStyle(.borderless)
             .onChange(of: app.sessions[model.key.source]) { _ in readerChapter = nil; reading = false; unlockTarget = nil }
@@ -312,9 +314,6 @@ private struct BookDetailContentView: View {
             } message: {
                 if let chapter = unlockTarget { Text("\(chapter.title)\n\(chapter.coinPrice.map { "需要 \($0) 金币。" } ?? "此章节需要购买，费用以来源账户为准。")确认后将从\(model.key.source.title)当前账户扣费。") }
             }
-    }
-    @ViewBuilder private var readerNavigation: some View {
-        if let novel = novel, let key = readerChapter { NavigationLink(destination: ReaderView(novel: novel, chapterKey: key), isActive: $reading) { EmptyView() }.hidden() }
     }
     @ViewBuilder private func synopsis(_ novel: Novel) -> some View {
         if !novel.tags.isEmpty {

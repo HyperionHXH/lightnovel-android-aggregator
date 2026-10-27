@@ -10,7 +10,8 @@ import Foundation
         let defaults = UserDefaults(suiteName: "io.github.hyperionhxh.mixn.uitests." + identifier)!
         let preferences = PreferencesStore(defaults: defaults)
         preferences.onboardingComplete = ProcessInfo.processInfo.environment["MIXN_UI_ONBOARDING"] != "1"
-        let sources: [SourceID: any NovelSource] = [.kingdom: UITestSource(.kingdom), .shelf: UITestSource(.shelf)]
+        let font = try! UITestFont.make(in: root)
+        let sources: [SourceID: any NovelSource] = [.kingdom: UITestSource(.kingdom), .shelf: UITestSource(.shelf, mandatoryFont: font)]
         return AppStore(sources: sources, preferences: preferences, library: LibraryStore(rootURL: root),
                         fonts: FontStore(rootURL: root), cache: ContentCache(rootURL: root.appendingPathComponent("cache")))
     }
@@ -24,7 +25,8 @@ import Foundation
     private var commentLiked = false
     private var signed = false
     private var userComments: [Comment] = []
-    init(_ id: SourceID) { sourceID = id }
+    private let mandatoryFont: URL?
+    init(_ id: SourceID, mandatoryFont: URL? = nil) { sourceID = id; self.mandatoryFont = mandatoryFont }
     private func book(_ index: Int) -> Novel {
         Novel(key: ResourceKey(sourceID, String(index)), title: index == 1 ? "跨端阅读验收" : "长标题与段落排版检验 第\(index)卷",
               authors: [sourceID == .kingdom ? "测试作者甲" : "测试作者乙"], synopsis: "此内容是隔离 UI 验收夹具，不属于任何真实作品。用于检查作者、正文、列表和离线状态。",
@@ -72,7 +74,7 @@ import Foundation
         let image = "iVBORw0KGgoAAAANSUhEUgAAAKAAAABaBAMAAADN6EBhAAAAGFBMVEX59ODf6+Ty142AoY91hXlZf2ZBaGctRD7g4T37AAAB6klEQVR42u2Yu23DMBCGT2cRaa0NCE1gwEifIgOwUZ15so0HcJFJgmxgt0EMOIUfOdL8j2ebCIKAqmRL+vT91PEhdQPV3ZgasAH/IbAX+wMRbSoadkRE84rA+ZlaB9gJbBXgPOLeD+wScCvsZJtCXaAjVxcYiEJN4EQEFRWgx4GPlipwf9rZno6wEpiIXCgYbhOwR4pTJIqB+0SQiD0ODEOLXFspyB40sEjqCsC9FDzIjagBsaIcsTeX9/EfMDBQZL1kGAcGinngmNnLEZwRyKi8ndaiCtCDEy5r2ZmADOLnmiwYgGk9+7SLqIpcHhRY7WqhCGT0zAORQZEto5ZHgTP3YVyC8UlOHx0hEBZ6IDIp9rZh2j9qM5ZixLZciiLb5pGFPqlaekW0LYuzah6IAs+K8z5ggMCzhWHizwH5lgZMFRkPCtbAcTfiCoGj0FwhcBSai4L2BVkMHO8JLBS5SmChyHrg5TWr2sPbxABL5hlfnH0j/Fr9DF/5EnwV+w+f8scLVmR9sXrtyvsIrPSy4s6sOoIHRa75NuW0la+5iySKDAMvblPsUeClKMXdGxFR/yR/AcVVT1rgtfxrt7Yo8njfmHCh2I+wcw1Xdr327asBG7ABfxPYTfDQiK96J9NnZ/tV7aE04B8HfgMoAjLF7DzmJAAAAABJRU5ErkJggg=="
         let html = "<p>这是原创测试插图，点击可放大、长按可保存。随后长文用于检查真实翻页与进度。</p><img src=\"data:image/png;base64,\(image)\" alt=\"原创测试插图\">" + body.components(separatedBy: "\n\n").map { "<p>\($0.htmlEscaped)</p>" }.joined()
         return ChapterContent(chapter: Chapter(key: chapter, novelKey: novel, volumeKey: volume, title: "第\(index)章 · 稳定阅读", order: index),
-                              novelTitle: book(Int(novel.remoteID) ?? 1).title, volumeTitle: "第一卷", bodyText: body, bodyHTML: html,
+                              novelTitle: book(Int(novel.remoteID) ?? 1).title, volumeTitle: "第一卷", bodyText: body, bodyHTML: html, fontURL: mandatoryFont,
                               previous: index > 1 ? ResourceKey(sourceID, String(index - 1)) : nil,
                               next: index < 4 ? ResourceKey(sourceID, String(index + 1)) : nil)
     }

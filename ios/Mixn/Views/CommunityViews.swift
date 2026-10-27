@@ -496,15 +496,22 @@ private struct CommunityTargetView: View {
     let bookID: String
     let chapterID: String?
     @EnvironmentObject private var app: AppStore
+    @Environment(\.dismiss) private var dismiss
     @State private var novel: Novel?
     @State private var error: String?
+    @State private var reading = false
     var body: some View {
         Group {
-            if let chapter = chapterID {
-                if let novel = novel { ReaderView(novel: novel, chapterKey: ResourceKey(.kingdom, chapter)) }
-                else { VStack(spacing: 18) { if let error = error { Text(error).foregroundColor(.red); Button("重试") { Task { await load() } } } else { ProgressView("读取目标书籍…") } }.padding() }
+            if chapterID != nil {
+                VStack(spacing: 18) {
+                    if let error = error { Text(error).foregroundColor(.red); Button("重试") { Task { await load() } } }
+                    else { ProgressView("读取目标书籍…") }
+                }.padding()
             } else { BookDetailView(key: ResourceKey(.kingdom, bookID)) }
         }.task(id: "\(app.accountRevision(.kingdom)):\(app.sessions[.kingdom]?.loggedIn == true)") { if chapterID != nil { novel = nil; await load() } }
+            .fullScreenCover(isPresented: $reading, onDismiss: { dismiss() }) {
+                if let novel = novel, let chapter = chapterID { ReaderView(novel: novel, chapterKey: ResourceKey(.kingdom, chapter)) }
+            }
     }
     @MainActor private func load() async {
         let session = app.sessions[.kingdom], revision = app.accountRevision(.kingdom)
@@ -514,6 +521,7 @@ private struct CommunityTargetView: View {
             try Task.checkCancellation()
             guard app.sessions[.kingdom] == session, app.accountRevision(.kingdom) == revision else { return }
             novel = detail.novel
+            reading = true
         } catch is CancellationError {} catch { if app.sessions[.kingdom] == session, app.accountRevision(.kingdom) == revision { self.error = error.localizedDescription } }
     }
 }

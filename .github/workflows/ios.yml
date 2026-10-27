@@ -71,6 +71,7 @@ jobs:
           xcrun simctl bootstatus "$device" -b
           xcrun simctl status_bar "$device" override --time '9:41' --batteryState charged --batteryLevel 100
       - name: Build production simulator and XCTest targets
+        id: native
         shell: bash
         run: |
           set -euo pipefail
@@ -89,9 +90,11 @@ jobs:
             >build/ios/unit-tests.log 2>&1 || { cat build/ios/unit-tests.log; exit 1; }
           cat build/ios/unit-tests.log
       - name: Install video decoder if missing
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         shell: bash
         run: command -v ffprobe >/dev/null || brew install ffmpeg
       - name: Exercise production routes and capture native screenshots/video
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         timeout-minutes: 25
         run: python scripts/ios/run_tour.py --device '${{ steps.sim.outputs.udid }}'
       - name: Upload exact validated unsigned IPA
