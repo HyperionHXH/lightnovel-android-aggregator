@@ -17,6 +17,7 @@ jobs:
           run-id: 40525137810
           name: mixn-ios-acceptance
           path: diagnostics
+      - run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
       - shell: bash
         run: |
           python3 - <<'PY'
