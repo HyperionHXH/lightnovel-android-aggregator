@@ -83,8 +83,11 @@ def run(args):
     result = None
     started = time.monotonic()
     try:
-        command = ['xcodebuild', 'test-without-building', '-project', 'ios/Mixn.xcodeproj', '-scheme', 'Mixn',
-                   '-destination', 'platform=iOS Simulator,id=' + args.device, '-derivedDataPath', str(args.derived),
+        test_runs = list((args.derived / 'Build/Products').glob('*.xctestrun'))
+        if len(test_runs) != 1:
+            raise RuntimeError('Expected exactly one configured native xctestrun')
+        command = ['xcodebuild', 'test-without-building', '-xctestrun', str(test_runs[0]),
+                   '-destination', 'platform=iOS Simulator,id=' + args.device,
                    '-parallel-testing-enabled', 'NO', '-only-testing:MixnUITests',
                    '-resultBundlePath', str(output / 'UITour.xcresult')]
         with (output / 'xcode-ui.log').open('wb') as log:

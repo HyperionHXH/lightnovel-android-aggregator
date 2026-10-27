@@ -356,13 +356,14 @@ struct SearchView: View {
     @State private var query: String
     @State private var submitted: String
     @State private var selectedSource: SourceID?
+    @FocusState private var searchFocused: Bool
     init(initialQuery: String = "") { _query = State(initialValue: initialQuery); _submitted = State(initialValue: initialQuery.trimmingCharacters(in: .whitespacesAndNewlines)) }
     var body: some View {
         List {
             Section {
                 HStack {
                     Image(systemName: "magnifyingglass").foregroundColor(.secondary)
-                    TextField("书名、作者或标签", text: $query).submitLabel(.search).onSubmit(submit)
+                    TextField("书名、作者或标签", text: $query).focused($searchFocused).submitLabel(.search).onSubmit(submit)
                         .accessibilityIdentifier("search.field")
                     if !query.isEmpty { Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }.accessibilityLabel("清除搜索") }
                     Button("搜索", action: submit).accessibilityIdentifier("search.submit")
@@ -405,6 +406,7 @@ struct SearchView: View {
         }
     }
     private func submit() {
+        searchFocused = false
         let next = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if next == submitted { Task { await search() } }
         else { model.resetResults(); submitted = next }

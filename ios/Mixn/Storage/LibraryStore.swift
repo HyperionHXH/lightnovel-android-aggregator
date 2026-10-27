@@ -192,6 +192,29 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
             return content
         }
     }
+    /// Only files owned by this download become inert data URLs for the reader.
+    /// Export continues to use savedChapter's local URLs, without base64 copies.
+    func readableChapter(novel: ResourceKey, chapter: ResourceKey) async throws -> ChapterContent? {
+        guard let saved = try savedChapter(novel: novel, chapter: chapter) else { return nil }
+        let assets = bookURL(novel).appendingPathComponent("Assets", isDirectory: true).standardizedFileURL
+        return try await io.perform {
+            var content = saved
+            let regex = try NSRegularExpression(pattern: "file://[^\"'<>\\s]+")
+            let original = content.bodyHTML
+            var html = original
+            for match in regex.matches(in: original, range: NSRange(original.startIndex..., in: original)).reversed() {
+                guard let range = Range(match.range, in: html), let url = URL(string: String(html[range])),
+                      url.standardizedFileURL.deletingLastPathComponent() == assets else {
+                    throw StorageFailure.message("离线插图不在此书拥有的目录内")
+                }
+                let data = try Data(contentsOf: url)
+                let type = try BookAsset.imageType(data)
+                html.replaceSubrange(range, with: "data:\(type.media);base64,\(data.base64EncodedString())")
+            }
+            content.bodyHTML = html
+            return content
+        }
+    }
     func enqueue(novel: Novel, volumes: [Volume], source: any NovelSource, fonts: FontStore) async throws {
         try ready()
         guard source.sourceID == novel.key.source, !novel.key.remoteID.isEmpty,

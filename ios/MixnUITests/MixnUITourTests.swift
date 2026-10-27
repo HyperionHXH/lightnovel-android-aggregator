@@ -12,6 +12,9 @@ final class MixnUITourTests: XCTestCase {
         app.launchEnvironment["MIXN_UI_RUN"] = runID + (error ? "-error" : "") + (dark ? "-dark" : "") + (large ? "-large" : "")
         app.launchEnvironment["MIXN_UI_ONBOARDING"] = onboarding ? "1" : "0"
         app.launchEnvironment["MIXN_UI_ERROR"] = error ? "1" : "0"
+        if let runtimePath = ProcessInfo.processInfo.environment["DYLD_FALLBACK_LIBRARY_PATH"] {
+            app.launchEnvironment["DYLD_FALLBACK_LIBRARY_PATH"] = runtimePath
+        }
         app.launchArguments = ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         if dark { app.launchArguments += ["-AppleInterfaceStyle", "Dark"] }
         if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
@@ -78,11 +81,17 @@ final class MixnUITourTests: XCTestCase {
         wait("book.light_novel_shelf:1")
         text("测试作者乙")
         try capture("03_source")
+        open("book.light_novel_shelf:1")
+        wait("detail.title")
+        XCTAssertFalse(element("detail.comments").exists, "Shelf must not advertise an unsupported comment API")
+        back()
         open("discover.search")
         wait("search.field")
         let field = element("search.field"); field.tap(); field.typeText("跨端")
         open("search.submit")
         wait("book.light_novel_kingdom:1")
+        let keyboardDismissed = expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: app.keyboards.firstMatch)
+        wait(for: [keyboardDismissed], timeout: 5)
         try capture("04_search")
         open("book.light_novel_kingdom:1")
         wait("detail.title")

@@ -87,7 +87,7 @@ import SwiftUI
         return session.loggedIn ? "user:\(id.rawValue):\(session.accountID ?? "unknown")" : "public:\(id.rawValue)"
     }
     func loadChapter(novel: ResourceKey, chapter: ResourceKey) async throws -> ChapterContent {
-        if let downloaded = try library.savedChapter(novel: novel, chapter: chapter) { return downloaded }
+        if let downloaded = try await library.readableChapter(novel: novel, chapter: chapter) { return downloaded }
         let key = "chapter:\(novel.id):\(chapter.id)"
         let requestScope = scope(novel.source)
         let generation = cacheGeneration

@@ -77,12 +77,14 @@ jobs:
           xcodebuild build-for-testing -project ios/Mixn.xcodeproj -scheme Mixn -configuration Debug \
             -destination 'platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}' -derivedDataPath build/ios/simulator \
             CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES >build/ios/simulator-build.log 2>&1 || { cat build/ios/simulator-build.log; exit 1; }
+          python scripts/ios/configure_simulator.py --device '${{ steps.sim.outputs.udid }}'
       - name: Execute source storage reader and lifecycle regressions
         shell: bash
         run: |
           set -euo pipefail
-          xcodebuild test-without-building -project ios/Mixn.xcodeproj -scheme Mixn \
-            -destination 'platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}' -derivedDataPath build/ios/simulator \
+          test_run="$(find build/ios/simulator/Build/Products -maxdepth 1 -name '*.xctestrun' -print -quit)"
+          xcodebuild test-without-building -xctestrun "$test_run" \
+            -destination 'platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}' \
             -parallel-testing-enabled NO -only-testing:MixnTests -resultBundlePath build/ios/UnitTests.xcresult \
             >build/ios/unit-tests.log 2>&1 || { cat build/ios/unit-tests.log; exit 1; }
           cat build/ios/unit-tests.log

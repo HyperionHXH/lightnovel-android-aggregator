@@ -291,7 +291,9 @@ private struct BookDetailContentView: View {
                 if let error = model.actionError { Section { InlineSourceError(message: error) } }
                 Section {
                     Picker("书籍内容", selection: $selectedTab) { Text("简介").tag(0); Text("章节").tag(1) }.pickerStyle(.segmented).accessibilityIdentifier("detail.tabs")
-                    NavigationLink(destination: CommentsView(key: model.key)) { Label("评论与评分（\(model.detail?.commentCount ?? 0)）", systemImage: "text.bubble") }.accessibilityIdentifier("detail.comments")
+                    if app.source(model.key.source).supportsComments {
+                        NavigationLink(destination: CommentsView(key: model.key)) { Label("评论与评分（\(model.detail?.commentCount ?? 0)）", systemImage: "text.bubble") }.accessibilityIdentifier("detail.comments")
+                    }
                 }
                 if selectedTab == 0 { synopsis(novel) }
             }

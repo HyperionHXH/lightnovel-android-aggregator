@@ -663,6 +663,9 @@ import Foundation
         request.httpBody = try JSONEncoder().encode(JSONValue.object(payload))
         request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("https://www.lightnovel.fun", forHTTPHeaderField: "Origin")
+        request.setValue("https://www.lightnovel.fun/", forHTTPHeaderField: "Referer")
+        request.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let result = try await http.send(request)
         guard generation == authGeneration else { throw CancellationError() }
@@ -690,6 +693,9 @@ import Foundation
         request.httpBody = body
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("https://www.lightnovel.fun", forHTTPHeaderField: "Origin")
+        request.setValue("https://www.lightnovel.fun/", forHTTPHeaderField: "Referer")
+        request.setValue("zh-CN,zh;q=0.9", forHTTPHeaderField: "Accept-Language")
         request.cachePolicy = .reloadIgnoringLocalCacheData
         let result = try await http.send(request)
         guard generation == authGeneration else { throw CancellationError() }

@@ -91,7 +91,7 @@ final class StorageTests: XCTestCase {
         let novel = Novel(key: key, title: "离线书籍")
         let volume = Volume(key: ResourceKey(.shelf, "volume"), novelKey: key, title: "第一卷")
         let chapter = Chapter(key: ResourceKey(.shelf, "chapter"), novelKey: key, volumeKey: volume.key, title: "第一章")
-        let content = ChapterContent(chapter: chapter, novelTitle: novel.title, volumeTitle: volume.title, bodyText: "离线正文")
+        var content = ChapterContent(chapter: chapter, novelTitle: novel.title, volumeTitle: volume.title, bodyText: "离线正文")
         let record = OfflineRecord(novel: novel, volumes: [volume], chapters: [chapter], status: "downloading", catalogComplete: true, volumesComplete: true)
         struct SavedState: Encodable {
             var records: [OfflineRecord]
@@ -104,12 +104,23 @@ final class StorageTests: XCTestCase {
         let libraryRoot = location.appendingPathComponent("Library", isDirectory: true)
         let book = libraryRoot.appendingPathComponent("Books", isDirectory: true).appendingPathComponent(sha256(key.id), isDirectory: true)
         let checkpoint = book.appendingPathComponent("Chapters", isDirectory: true).appendingPathComponent(sha256(chapter.id) + ".plist")
+        let image = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a+/sAAAAASUVORK5CYII=")!
+        let imageURL = book.appendingPathComponent("Assets/illustration.png")
+        try StorageIO.atomic(image, to: imageURL)
+        content.bodyHTML = "<p>离线正文</p><img src=\"\(imageURL.absoluteString)\">"
         try StorageIO.encode(content, to: checkpoint)
         try StorageIO.encode(SavedState(records: [record]), to: libraryRoot.appendingPathComponent("library.plist"))
         let restored = LibraryStore(rootURL: location)
         XCTAssertEqual(restored.records.first?.status, "queued")
         XCTAssertEqual(restored.records.first?.completed, 1)
         XCTAssertEqual(try restored.savedChapter(novel: key, chapter: chapter.key)?.bodyText, "离线正文")
+        let loadedReadable = try await restored.readableChapter(novel: key, chapter: chapter.key)
+        let readable = try XCTUnwrap(loadedReadable)
+        let blocks = ReaderDocument.blocks(html: readable.bodyHTML, text: readable.bodyText)
+        let embedded = try XCTUnwrap(blocks.first { $0.kind == .image })
+        XCTAssertEqual(Data(base64Encoded: String(embedded.text.split(separator: ",", maxSplits: 1)[1])), image)
+        XCTAssertFalse(readable.bodyHTML.contains("file://"))
+        XCTAssertTrue(try restored.savedChapter(novel: key, chapter: chapter.key)!.bodyHTML.contains("file://"), "EPUB keeps owned files instead of duplicate inline data")
         try restored.setWifiOnly(false)
         XCTAssertFalse(LibraryStore(rootURL: location).wifiOnly)
         let cache = ContentCache(rootURL: location)
