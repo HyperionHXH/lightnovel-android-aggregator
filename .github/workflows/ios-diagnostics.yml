@@ -1,0 +1,28 @@
+name: Inspect native acceptance diagnostics
+on:
+  push:
+    branches: [feat/ios-parity]
+    paths: ['.github/workflows/ios-diagnostics.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 40525137810
+          name: mixn-ios-acceptance
+          path: diagnostics
+      - shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          for name in ['xcode-ui.log', 'unit-tests.log']:
+              for path in pathlib.Path('diagnostics').rglob(name):
+                  print('===', path, '===')
+                  print(path.read_text(encoding='utf-8', errors='replace'))
+          PY
