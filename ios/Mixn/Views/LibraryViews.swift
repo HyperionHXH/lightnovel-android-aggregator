@@ -573,6 +573,7 @@ struct OfflineControlsView: View {
                 }.disabled(busy)
                 if busy { ProgressView("正在处理…") }
             }
+            .buttonStyle(.borderless)
             .sheet(item: $share) { item in ShareSheet(items: [item.url]) }
             .confirmationDialog("删除离线文件并取消该书下载？本地阅读进度和在线书架不受影响。", isPresented: $deleteConfirmation, titleVisibility: .visible) {
                 Button("删除离线文件", role: .destructive) { do { try library.delete(key) } catch { self.error = error.localizedDescription } }

@@ -33,6 +33,26 @@ def verify_tour(root, ffprobe):
             if list(image.size) != [item['width'], item['height']] or min(image.size) < 300:
                 raise ValueError('Screenshot geometry mismatch')
             image.verify()
+    exports = data.get('exports', [])
+    if {pathlib.Path(item['file']).suffix for item in exports} != {'.epub', '.txt'} or len(exports) != 2:
+        raise ValueError('Missing real native EPUB and TXT exports')
+    for item in exports:
+        path = (root / item['file']).resolve()
+        if root.resolve() not in path.parents or path.stat().st_size != item['bytes'] or sha(path) != item['sha256']:
+            raise ValueError('Native export integrity mismatch')
+        if path.suffix == '.epub':
+            with zipfile.ZipFile(path) as archive:
+                if archive.testzip() or archive.namelist()[0] != 'mimetype' or archive.read('mimetype') != b'application/epub+zip':
+                    raise ValueError('Native EPUB container invalid')
+                import xml.etree.ElementTree as ET
+                for name in archive.namelist():
+                    if name.endswith(('.xhtml', '.xml', '.opf')):
+                        ET.fromstring(archive.read(name))
+                chapters = [n for n in archive.namelist() if n.startswith('OEBPS/chapter-') and n.endswith('.xhtml')]
+                if len(chapters) != 4:
+                    raise ValueError('Native EPUB lost downloaded chapters')
+        elif '第50段' not in path.read_text(encoding='utf-8'):
+            raise ValueError('Native TXT lost complete UTF-8 body')
     video = data['video']
     path = root / video['file']
     if path.stat().st_size != video['bytes'] or sha(path) != video['sha256']:

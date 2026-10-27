@@ -92,7 +92,7 @@ jobs:
         shell: bash
         run: command -v ffprobe >/dev/null || brew install ffmpeg
       - name: Exercise production routes and capture native screenshots/video
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: python scripts/ios/run_tour.py --device '${{ steps.sim.outputs.udid }}'
       - name: Upload exact validated unsigned IPA
         if: success()

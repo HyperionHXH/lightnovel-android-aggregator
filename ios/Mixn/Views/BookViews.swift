@@ -342,6 +342,7 @@ private struct BookDetailContentView: View {
                     HStack {
                         Button { Task { await model.toggle(volume, app: app) } } label: {
                             HStack { Image(systemName: model.expanded.contains(volume.id) ? "chevron.down" : "chevron.right"); Text(volume.title).font(.headline); Spacer(); Text("\(volume.chapterCount) 章").font(.caption).foregroundColor(.secondary) }
+                                .contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("volume.\(volume.id)")
                         Button { Task { await model.download(app: app, volume: volume) } } label: { Image(systemName: "arrow.down.circle") }.disabled(model.enqueueing || downloadActive).accessibilityLabel("下载\(volume.title)")
                     }
@@ -362,7 +363,7 @@ private struct BookDetailContentView: View {
                     Text(chapter.title).foregroundColor(progress?.chapterKey == chapter.key ? .accentColor : .primary).frame(maxWidth: .infinity, alignment: .leading)
                     if chapter.locked { Label(chapter.coinPrice.map { "\($0)" } ?? "", systemImage: "lock.fill").foregroundColor(.orange).font(.caption) }
                     if chapter.wordCount > 0 { Text("\(chapter.wordCount) 字").font(.caption).foregroundColor(.secondary) }
-                }.padding(.vertical, 4)
+                }.padding(.vertical, 4).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(model.unlocking).accessibilityIdentifier("chapter.\(chapter.id)")
         }
         if state.loading { ProgressView("加载章节…") }

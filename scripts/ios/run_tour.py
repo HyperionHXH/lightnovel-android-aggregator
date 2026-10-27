@@ -6,6 +6,7 @@ import json
 import pathlib
 import re
 import signal
+import shutil
 import subprocess
 import threading
 import time
@@ -21,8 +22,10 @@ TOUR = [
     ('09_reader_menu', '阅读菜单'), ('10_reader_settings', '阅读参数'),
     ('11_reader_scroll', '上下滚动正文'), ('12_reader_card', '卡片阅读正文'),
     ('13_shelf', '统一书架'), ('14_downloads', '离线下载管理'),
+    ('14a_epub_export', '完整离线 EPUB 原生分享'), ('14b_txt_export', 'UTF-8 TXT 原生分享'),
     ('15_history', '阅读记录'), ('16_profile', '我的与来源账号'),
-    ('17_accounts', '独立来源登录'), ('18_settings', '应用与阅读设置'),
+    ('17_accounts', '独立来源登录'), ('17a_signed_in', '独立来源登录与等级经验'),
+    ('18_settings', '应用与阅读设置'),
     ('19_fonts', '字体选择'), ('20_storage', '缓存占用与安全清理'),
     ('21_about', '关于及未签名说明'), ('22_error', '来源错误与重试'),
     ('23_dark', '深色模式'), ('24_large_text', '大字可访问性'),
@@ -41,6 +44,7 @@ def run(args):
                     'io.github.hyperionhxh.mixn'], check=True, capture_output=True, timeout=30)
     screenshots.mkdir()
     captures = []
+    exported = []
     failures = []
     expected = dict(TOUR)
     lock = threading.Lock()
@@ -67,6 +71,20 @@ def run(args):
                     captures.append({'order': len(captures) + 1, 'name': name, 'route': expected[name],
                                      'file': 'screenshots/' + path.name, 'bytes': path.stat().st_size,
                                      'width': width, 'height': height, 'sha256': digest(path)})
+                    if name in ['14a_epub_export', '14b_txt_export']:
+                        suffix = '.epub' if name == '14a_epub_export' else '.txt'
+                        container = pathlib.Path(subprocess.check_output(
+                            ['xcrun', 'simctl', 'get_app_container', args.device, 'io.github.hyperionhxh.mixn', 'data'],
+                            text=True, timeout=15).strip())
+                        candidates = list((container / 'tmp').glob('mixn-ui-*/Library/Exports/*' + suffix))
+                        if len(candidates) != 1:
+                            raise RuntimeError('Expected one actual isolated app export: ' + suffix)
+                        export_dir = output / 'exports'
+                        export_dir.mkdir(exist_ok=True)
+                        destination = export_dir / ('native-export' + suffix)
+                        shutil.copyfile(candidates[0], destination)
+                        exported.append({'file': 'exports/' + destination.name, 'bytes': destination.stat().st_size,
+                                         'sha256': digest(destination)})
                     self.send_response(200); self.send_header('Content-Length', '2'); self.end_headers(); self.wfile.write(b'OK')
                 except Exception as error:
                     failures.append(str(error)); self.send_error(500, str(error))
@@ -91,7 +109,7 @@ def run(args):
                    '-parallel-testing-enabled', 'NO', '-only-testing:MixnUITests',
                    '-resultBundlePath', str(output / 'UITour.xcresult')]
         with (output / 'xcode-ui.log').open('wb') as log:
-            result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=720).returncode
+            result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=1200).returncode
     finally:
         if video.poll() is None:
             video.send_signal(signal.SIGINT)
@@ -104,10 +122,12 @@ def run(args):
         manifest = {'schema': 1, 'device': args.device, 'captures': captures, 'errors': failures,
                     'expected': [n for n, _ in TOUR], 'xcodeExit': result,
                     'elapsedSeconds': round(time.monotonic() - started, 3)}
+        manifest['exports'] = exported
         if recording.exists():
             manifest['video'] = {'file': recording.name, 'bytes': recording.stat().st_size, 'sha256': digest(recording)}
         (output / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     if result != 0 or failures or [x['name'] for x in captures] != list(expected):
+        print((output / 'xcode-ui.log').read_text(encoding='utf-8', errors='replace'))
         raise RuntimeError('Native UI acceptance/capture incomplete: ' + repr(manifest))
     subprocess.run(['python3', 'scripts/ios/verify_artifacts.py', '--tour', str(output), '--ffprobe', 'ffprobe'], check=True)
 
