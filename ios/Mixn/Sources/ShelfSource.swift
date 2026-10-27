@@ -213,29 +213,41 @@ import Foundation
             let response = try await invoke("GetRank", .object(["Days": j(days)]))
             let all = try ShelfWire.bookArray(response).map(ShelfWire.book)
             let start = min(all.count, (page - 1) * size), end = min(all.count, start + size)
-            let novels = try await enrich(Array(all[start..<end]))
+            let novels = cachedMetadata(Array(all[start..<end]))
             return Page(items: novels, page: page, total: all.count, hasMore: end < all.count)
         }
         let order = feed == .popular ? "view" : feed == .latest ? "latest" : "new"
         let value = try await invoke("GetBookList", .object(["Page": j(page), "Size": j(size), "Order": j(order), "IgnoreJapanese": true, "IgnoreAI": true]))
-        return try await bookPage(value, requestedPage: page, size: size)
+        return try bookPage(value, requestedPage: page, size: size)
     }
 
     func search(query: String, page: Int, pageSize: Int) async throws -> Page<Novel> {
         let page = max(1, page), size = min(50, max(1, pageSize))
         let value = try await invoke("GetBookList", .object(["KeyWords": j(ShelfWire.quotedQuery(query)), "Page": j(page), "Size": j(size), "IgnoreJapanese": false, "IgnoreAI": false]))
-        return try await bookPage(value, requestedPage: page, size: size)
+        return try bookPage(value, requestedPage: page, size: size)
     }
 
-    private func bookPage(_ value: JSONValue, requestedPage: Int, size: Int) async throws -> Page<Novel> {
+    private func bookPage(_ value: JSONValue, requestedPage: Int, size: Int) throws -> Page<Novel> {
         var root = try ShelfWire.object(value, name: "书籍列表")
         for key in ["Data", "data", "Books", "books"] { if case .object(let nested) = root[key] { root = nested; break } }
         let page = max(1, root.optionalInt("Page", "page") ?? requestedPage)
         let pages = max(1, root.optionalInt("TotalPages", "totalPages", "PageCount", "pageCount") ?? 1)
         let values = try ShelfWire.array(root, keys: ["Data", "data", "Books", "books", "Items", "items"], name: "书籍列表")
         let novels = try values.map { try ShelfWire.book(ShelfWire.object($0, name: "书籍条目")) }
-        let enriched = try await enrich(novels)
-        return Page(items: enriched, page: page, total: page >= pages ? (page - 1) * size + novels.count : pages * size, hasMore: page < pages)
+        return Page(items: cachedMetadata(novels), page: page, total: page >= pages ? (page - 1) * size + novels.count : pages * size, hasMore: page < pages)
+    }
+
+    /// Do not hold a whole result page behind its slowest detail request.
+    /// NovelListModel resolves missing authors per card with bounded concurrency.
+    private func cachedMetadata(_ novels: [Novel]) -> [Novel] {
+        novels.map { novel in
+            guard let id = Int64(novel.key.remoteID), let detail = metadata.cached(id: id) else { return novel }
+            var result = novel
+            if result.authors.isEmpty { result.authors = detail.novel.authors }
+            if result.synopsis.isEmpty { result.synopsis = detail.novel.synopsis }
+            if result.coverURL == nil { result.coverURL = detail.novel.coverURL }
+            return result
+        }
     }
 
     private func enrich(_ novels: [Novel]) async throws -> [Novel] {
@@ -317,7 +329,7 @@ import Foundation
         let books = try await booksByIDs(ids)
         var result = ids.compactMap { books[$0] }
         for index in result.indices { result[index].inShelf = true }
-        let novels = try await enrich(result)
+        let novels = cachedMetadata(result)
         guard generation == accountGeneration else { throw CancellationError() }
         return novels
     }
@@ -708,15 +720,16 @@ enum ShelfWire {
     private let now: () -> TimeInterval
     init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) { self.now = now }
 
+    func cached(id: Int64) -> ShelfBookDetail? {
+        guard var entry = entries[id] else { return nil }
+        guard entry.expiry > now() else { entries.removeValue(forKey: id); characters -= entry.detail.characters; return nil }
+        counter &+= 1; entry.touched = counter; entries[id] = entry
+        return entry.detail
+    }
+
     func get(id: Int64, loader: @escaping () async throws -> ShelfBookDetail) async throws -> ShelfBookDetail {
         try Task.checkCancellation()
-        if var entry = entries[id] {
-            if entry.expiry > now() {
-                counter &+= 1; entry.touched = counter; entries[id] = entry
-                return entry.detail
-            }
-            entries.removeValue(forKey: id); characters -= entry.detail.characters
-        }
+        if let cached = cached(id: id) { return cached }
         let waiterID = UUID()
         return try await withTaskCancellationHandler(operation: {
             let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ShelfBookDetail, Error>) in

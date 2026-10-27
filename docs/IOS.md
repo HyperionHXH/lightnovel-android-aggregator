@@ -68,9 +68,13 @@ python3 scripts/ios/package_ipa.py \
 
 不要使用模拟器编译产物代替上述 device build。Windows 仅能运行 Android 和只读产物检查；原生 iOS 类型检查、构建、XCTest/XCUITest 要在 Mac 上实际执行。
 
+Xcode 16.4 的 iOS 18.5 模拟器有 [WebKit 官方缺陷 293831](https://bugs.webkit.org/show_bug.cgi?id=293831)：最低部署低于 18.4 且调用 Swift WebKit overlay 的应用可能在启动时找不到 `libswiftWebKit.dylib`。CI 使用官方第二种 workaround，从实际 simulator runtime 找到 `System/Cryptexes/OS/usr/lib/swift`，仅在生成的 `.xctestrun` / UI 启动环境中设置 `DYLD_FALLBACK_LIBRARY_PATH`；不提高部署目标，不把模拟器库或此环境写入 Release IPA。
+
 ## 云端验收与发布
 
 [`iOS Acceptance`](../.github/workflows/ios.yml)在开发分支运行：版本契约检查 → 无签名 device Release → 真实模拟器单元测试 → 生产页面巡检 → 原生截图/完整封装录屏 → SHA/尺寸/帧核验。失败保留诊断，但不上传可交付 IPA。UI 夹具在 DEBUG 编译条件内，Release 不含测试账号或测试书籍。
+
+CI 还显式开启 `RUN_MIXN_LIVE_SMOKE=1` 原生匿名联网检查：LK 的公开列表/详情/目录资源一致性，以及 LNS 真实握手后服务器要求搜索认证的边界。不能由此宣称 LNS 登录后作者、付费阅读、注册邮件、签到或私信的真实账号验收已通过；这些由脱敏协议回归覆盖，并需使用者在自己的设备/账号确认。默认本地 XCTest 不联网。
 
 下载成功 run 的 `mixn-ios-unsigned` 和 `mixn-ios-acceptance` 到独立的 `release_ios/<RUN_ID>/`，核对 SHA-256、IPA 元数据和每张图；不要用别的提交的截图作为证据。本轮 iOS 初次发布只向已有 `v1.22.2` 增补新的 IPA/校验文件，不移动标签、不替换旧 Android APK。
 

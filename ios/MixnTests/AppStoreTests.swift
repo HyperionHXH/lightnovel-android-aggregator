@@ -1,5 +1,6 @@
 import XCTest
 import Foundation
+import Combine
 @testable import Mixn
 
 final class AppStoreTests: XCTestCase {
@@ -100,6 +101,41 @@ final class AppStoreTests: XCTestCase {
         let restored = try await app.loadChapter(novel: source.novel, chapter: content.chapter.key)
         XCTAssertEqual(restored.bodyText, content.bodyText)
     }
+
+    @MainActor func testFastAuthorCardAppearsWithoutWaitingForSlowCardAndKeepsSourceOrder() async throws {
+        let source = ChapterGateSource(), app = try setupStore(source)
+        let first = Novel(key: ResourceKey(.kingdom, "slow"), title: "慢卡")
+        let known = Novel(key: ResourceKey(.kingdom, "known"), title: "已知", authors: ["已有作者"], synopsis: "已有简介")
+        let fast = Novel(key: ResourceKey(.kingdom, "fast"), title: "快卡")
+        source.list = [first, known, fast]
+        let started = expectation(description: "Missing authors load concurrently")
+        started.expectedFulfillmentCount = 2
+        source.detailStarted = { _ in started.fulfill() }
+        let model = NovelListModel(), channel = "test"
+        await model.load(channel: channel, source: source, feed: .popular,
+                         scope: "user:light_novel_kingdom:A", app: app)
+        await fulfillment(of: [started], timeout: 3)
+        XCTAssertEqual(model.state(channel).pending, [first.id, fast.id])
+        XCTAssertEqual(model.state(channel).items[1].authors, ["已有作者"])
+        let fastVisible = expectation(description: "Fast card resolves ahead of slow card")
+        let observation = model.$states.sink { states in
+            if states[channel]?.items.last?.authors == ["快作者"], states[channel]?.pending.contains(first.id) == true { fastVisible.fulfill() }
+        }
+        source.finishDetail(fast.key, authors: ["快作者"])
+        await fulfillment(of: [fastVisible], timeout: 3)
+        observation.cancel()
+        XCTAssertEqual(model.state(channel).items.map(\.key), [first.key, known.key, fast.key])
+        XCTAssertTrue(model.state(channel).pending.contains(first.id))
+        let settled = expectation(description: "Slow card eventually resolves")
+        let completion = model.$states.sink { states in
+            if states[channel]?.pending.isEmpty == true { settled.fulfill() }
+        }
+        source.finishDetail(first.key, authors: ["慢作者"])
+        await fulfillment(of: [settled], timeout: 3)
+        completion.cancel()
+        XCTAssertEqual(model.state(channel).items.map(\.authors), [["慢作者"], ["已有作者"], ["快作者"]])
+        model.stop()
+    }
 }
 
 @MainActor private final class ChapterGateSource: NovelSource {
@@ -113,6 +149,14 @@ final class AppStoreTests: XCTestCase {
                        novelTitle: "Book", volumeTitle: "Volume", bodyText: "Account A private body")
     }
     var started: (() -> Void)?
+    var list: [Novel]?
+    var detailStarted: ((ResourceKey) -> Void)?
+    private var details: [ResourceKey: CheckedContinuation<NovelDetail, Error>] = [:]
+    func finishDetail(_ key: ResourceKey, authors: [String]) {
+        var novel = list!.first { $0.key == key }!
+        novel.authors = authors
+        details.removeValue(forKey: key)?.resume(returning: NovelDetail(novel: novel))
+    }
     private var pending: CheckedContinuation<ChapterContent, Error>?
     func finish(_ value: Result<ChapterContent, Error>) { pending?.resume(with: value); pending = nil }
     func chapter(novel: ResourceKey, chapter: ResourceKey) async throws -> ChapterContent {
@@ -122,9 +166,15 @@ final class AppStoreTests: XCTestCase {
     func login(identifier: String, password: String) async throws -> AccountSession { session = AccountSession(loggedIn: true, accountID: identifier); return session }
     func logout() async throws { session = AccountSession() }
     func profile() async throws -> SourceProfile { SourceProfile(source: sourceID, accountID: session.accountID) }
-    func discover(feed: Feed, page: Int, pageSize: Int) async throws -> Page<Novel> { throw SourceFailure.unsupported("Not used") }
+    func discover(feed: Feed, page: Int, pageSize: Int) async throws -> Page<Novel> {
+        guard let list else { throw SourceFailure.unsupported("Not used") }
+        return Page(items: list, total: list.count)
+    }
     func search(query: String, page: Int, pageSize: Int) async throws -> Page<Novel> { throw SourceFailure.unsupported("Not used") }
-    func detail(key: ResourceKey) async throws -> NovelDetail { throw SourceFailure.unsupported("Not used") }
+    func detail(key: ResourceKey) async throws -> NovelDetail {
+        guard list != nil else { throw SourceFailure.unsupported("Not used") }
+        return try await withCheckedThrowingContinuation { details[key] = $0; detailStarted?(key) }
+    }
     func volumes(key: ResourceKey, page: Int) async throws -> Page<Volume> {
         try await Task.sleep(nanoseconds: 30_000_000_000)
         throw SourceFailure.network("Offline metadata timeout")

@@ -380,6 +380,7 @@ struct SearchView: View {
                 }
             }
         }.listStyle(.insetGrouped).navigationTitle("搜索")
+            .buttonStyle(.borderless)
             .task(id: submitted) {
                 guard !submitted.isEmpty else { return }
                 if SourceID.allCases.allSatisfy({ model.state($0.rawValue).loaded }) {

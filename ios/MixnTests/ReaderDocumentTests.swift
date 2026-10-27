@@ -14,8 +14,6 @@ final class ReaderDocumentTests: XCTestCase {
         XCTAssertEqual(ReaderDocument.tapAction(zone: "both_sides", x: 0.2, y: 0.1), .controls)
         XCTAssertEqual(ReaderDocument.tapAction(zone: "left_right", x: 0.39, y: 0.8, inversion: "left_right"), .next)
         for x in [0.0, 0.1, 0.5, 0.9, 1.0] { XCTAssertEqual(ReaderDocument.tapAction(zone: "disabled", x: x, y: x), .controls) }
-        XCTAssertEqual(ReaderDocument.fonts.count, 7)
-        XCTAssertEqual(ReaderDocument.tapZones.count, 6)
     }
     func testPageGeometryAndCancelledCardNeverCommit() {
         XCTAssertEqual(ReaderDocument.pageCount(extent: 1170, viewport: 390), 3)

@@ -29,6 +29,7 @@ def configure(derived, device):
     for target in targets:
         for key in ['EnvironmentVariables', 'TestingEnvironmentVariables']:
             target.setdefault(key, {})['DYLD_FALLBACK_LIBRARY_PATH'] = str(path)
+            target[key]['RUN_MIXN_LIVE_SMOKE'] = '1'
     file.write_bytes(plistlib.dumps(data))
     print('Simulator-only WebKit 293831 environment:', path, 'targets:', len(targets))
 
