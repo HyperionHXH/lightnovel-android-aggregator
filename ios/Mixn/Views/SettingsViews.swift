@@ -424,7 +424,11 @@ struct OnboardingView: View {
                     }.buttonStyle(.borderedProminent).accessibilityIdentifier(step == 3 ? "onboarding.finish" : "onboarding.next")
                 }.padding()
             }.navigationTitle("使用引导").navigationBarTitleDisplayMode(.inline)
-                .toolbar { if revisiting { ToolbarItem(placement: .cancellationAction) { Button("关闭") { presentation.wrappedValue.dismiss() } } } }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        if revisiting { Button("关闭") { presentation.wrappedValue.dismiss() } }
+                    }
+                }
         }.navigationViewStyle(.stack)
             .sheet(isPresented: $folderPicker) { DirectoryPicker { url in do { app.preferences.exportDirectoryBookmark = try DownloadDirectory.bookmark(url) } catch { self.error = error.localizedDescription } } }
     }

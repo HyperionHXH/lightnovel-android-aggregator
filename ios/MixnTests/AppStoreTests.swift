@@ -3,9 +3,9 @@ import Foundation
 @testable import Mixn
 
 final class AppStoreTests: XCTestCase {
-    @MainActor private func setupStore(_ source: ChapterGateSource) throws -> AppStore {
+    @MainActor private func setupStore(_ source: ChapterGateSource, rootURL: URL? = nil) throws -> AppStore {
         let id = UUID().uuidString
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MixnAccountTests-" + id)
+        let root = rootURL ?? FileManager.default.temporaryDirectory.appendingPathComponent("MixnAccountTests-" + id)
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "MixnAccountTests." + id))
         addTeardownBlock {
             defaults.removePersistentDomain(forName: "MixnAccountTests." + id)
@@ -62,6 +62,44 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(usage.disk, 0)
         XCTAssertEqual(usage.memory, 0)
     }
+
+    @MainActor func testDownloadedBookStartsWithoutWaitingForUnavailableNetwork() async throws {
+        let source = ChapterGateSource()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("MixnOfflineStart-" + UUID().uuidString)
+        let content = source.content
+        let novel = Novel(key: source.novel, title: content.novelTitle)
+        let volume = Volume(key: content.chapter.volumeKey, novelKey: source.novel, title: content.volumeTitle)
+        let record = OfflineRecord(novel: novel, volumes: [volume], chapters: [content.chapter], completed: 1,
+                                   status: "complete", downloadedChapterIDs: [content.chapter.id],
+                                   catalogComplete: true, volumesComplete: true)
+        struct Checkpoint: Encodable {
+            var records: [OfflineRecord]
+            var progress: [String: ReadingProgress] = [:]
+            var history: [HistoryEntry] = []
+            var updated: Set<String> = []
+            var snapshots: [String: String] = [:]
+            var wifiOnly = true
+        }
+        let libraryRoot = root.appendingPathComponent("Library")
+        let chapterURL = libraryRoot.appendingPathComponent("Books").appendingPathComponent(sha256(source.novel.id))
+            .appendingPathComponent("Chapters").appendingPathComponent(sha256(content.chapter.id) + ".plist")
+        try StorageIO.encode(content, to: chapterURL)
+        try StorageIO.encode(Checkpoint(records: [record]), to: libraryRoot.appendingPathComponent("library.plist"))
+        let app = try setupStore(source, rootURL: root)
+        source.started = { [weak source] in source?.finish(.failure(SourceFailure.network("Offline"))) }
+        let opened = expectation(description: "Downloaded book starts before network metadata timeout")
+        let task = Task { @MainActor in
+            let chapter = await BookDetailModel(key: source.novel).firstChapter(app: app)
+            opened.fulfill()
+            return chapter
+        }
+        await fulfillment(of: [opened], timeout: 2)
+        task.cancel()
+        let chapter = await task.value
+        XCTAssertEqual(chapter?.key, content.chapter.key)
+        let restored = try await app.loadChapter(novel: source.novel, chapter: content.chapter.key)
+        XCTAssertEqual(restored.bodyText, content.bodyText)
+    }
 }
 
 @MainActor private final class ChapterGateSource: NovelSource {
@@ -87,8 +125,14 @@ final class AppStoreTests: XCTestCase {
     func discover(feed: Feed, page: Int, pageSize: Int) async throws -> Page<Novel> { throw SourceFailure.unsupported("Not used") }
     func search(query: String, page: Int, pageSize: Int) async throws -> Page<Novel> { throw SourceFailure.unsupported("Not used") }
     func detail(key: ResourceKey) async throws -> NovelDetail { throw SourceFailure.unsupported("Not used") }
-    func volumes(key: ResourceKey, page: Int) async throws -> Page<Volume> { throw SourceFailure.unsupported("Not used") }
-    func chapters(novel: ResourceKey, volume: ResourceKey, page: Int) async throws -> Page<Chapter> { throw SourceFailure.unsupported("Not used") }
+    func volumes(key: ResourceKey, page: Int) async throws -> Page<Volume> {
+        try await Task.sleep(nanoseconds: 30_000_000_000)
+        throw SourceFailure.network("Offline metadata timeout")
+    }
+    func chapters(novel: ResourceKey, volume: ResourceKey, page: Int) async throws -> Page<Chapter> {
+        try await Task.sleep(nanoseconds: 30_000_000_000)
+        throw SourceFailure.network("Offline metadata timeout")
+    }
     func shelf() async throws -> [Novel] { throw SourceFailure.unsupported("Not used") }
     func setShelf(key: ResourceKey, add: Bool) async throws { throw SourceFailure.unsupported("Not used") }
     func history(page: Int) async throws -> Page<HistoryEntry> { throw SourceFailure.unsupported("Not used") }

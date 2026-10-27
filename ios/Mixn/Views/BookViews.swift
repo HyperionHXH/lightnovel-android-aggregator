@@ -161,6 +161,10 @@ import SwiftUI
         let scope = sourceScope(app, key.source)
         let accountRevision = app.accountRevision(key.source)
         let cacheGeneration = app.cacheGeneration
+        if let offline = app.library.records.first(where: { $0.novel.key == key }),
+           let firstSaved = offline.chapters.first(where: { offline.downloadedChapterIDs.contains($0.id) }) {
+            return firstSaved
+        }
         if volumes.isEmpty { await loadVolumes(app: app) }
         var checked = Set<String>()
         while true {

@@ -43,6 +43,17 @@ struct MixnRootView: View {
 }
 private struct RootContent: View {
     @ObservedObject var preferences: PreferencesStore
+    @Environment(\.sizeCategory) private var systemSizeCategory
+    private static let sizeCategories: [ContentSizeCategory] = [
+        .extraSmall, .small, .medium, .large, .extraLarge, .extraExtraLarge, .extraExtraExtraLarge,
+        .accessibilityMedium, .accessibilityLarge, .accessibilityExtraLarge,
+        .accessibilityExtraExtraLarge, .accessibilityExtraExtraExtraLarge
+    ]
+    private var scaledSizeCategory: ContentSizeCategory {
+        let current = Self.sizeCategories.firstIndex(of: systemSizeCategory) ?? 3
+        let offset = preferences.appearance.uiScale < 1 ? -1 : preferences.appearance.uiScale > 1 ? 1 : 0
+        return Self.sizeCategories[min(Self.sizeCategories.count - 1, max(0, current + offset))]
+    }
     var body: some View {
         Group {
             if preferences.onboardingComplete {
@@ -60,7 +71,8 @@ private struct RootContent: View {
             } else { OnboardingView() }
         }
         .preferredColorScheme(preferences.appearance.theme == "dark" ? .dark : preferences.appearance.theme == "light" ? .light : nil)
-        .font(.system(size: 17 * preferences.appearance.uiScale))
+        .environment(\.sizeCategory, scaledSizeCategory)
+        .font(.body)
         .tint(Color(red: 0.08, green: 0.39, blue: 0.38))
     }
 }
