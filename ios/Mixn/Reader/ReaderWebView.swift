@@ -283,6 +283,12 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
         settleTimer?.invalidate()
         settleTimer = Timer.scheduledTimer(withTimeInterval: 0.18, repeats: false) { [weak self] _ in self?.reportSettled() }
     }
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // WebKit installs its own tap recognizers on WKContentView. They must not
+        // cancel our image/menu tap or long press; native paging still owns pans.
+        guard gestureRecognizer is UITapGestureRecognizer || gestureRecognizer is UILongPressGestureRecognizer else { return false }
+        return otherGestureRecognizer.view?.isDescendant(of: webView) == true
+    }
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer === cardPan {
             let velocity = cardPan.velocity(in: view)
