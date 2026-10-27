@@ -26,3 +26,11 @@ jobs:
                   print('===', path, '===')
                   print(path.read_text(encoding='utf-8', errors='replace'))
           PY
+          ffmpeg -y -sseof -5 -i diagnostics/visual-tour/ios-tour.mp4 -frames:v 1 diagnostics/failure.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-ui-diagnostic
+          path: |
+            diagnostics/failure.png
+            diagnostics/visual-tour/screenshots/
+            diagnostics/visual-tour/xcode-ui.log
