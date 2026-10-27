@@ -24,7 +24,7 @@ def package(app: pathlib.Path, output: pathlib.Path):
         raise ValueError('Executable is not an iPhoneOS binary')
     if (app / 'embedded.mobileprovision').exists() or (app / '_CodeSignature').exists():
         raise ValueError('Unsigned deliverable unexpectedly contains a provisioning profile/signature')
-    if set(info.get('UISupportedInterfaceOrientations', [])) < {'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft'}:
+    if not {'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft'}.issubset(info.get('UISupportedInterfaceOrientations', [])):
         raise ValueError('Missing reader orientation support')
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():

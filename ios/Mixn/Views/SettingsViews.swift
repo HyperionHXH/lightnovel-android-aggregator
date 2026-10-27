@@ -411,31 +411,7 @@ struct OnboardingView: View {
                 ProgressView(value: Double(step + 1), total: 4).padding(.horizontal)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
-                        Group {
-                            switch step {
-                            case 0:
-                                Text("欢迎使用 Mixn").font(.largeTitle.bold())
-                                Text("聚合轻之国度与轻书架。来源账号独立，登录、书架与进度只发送给对应来源。")
-                                Label("发现、搜索、在线阅读与离线导出", systemImage: "books.vertical")
-                                Label("密码登录使用系统钥匙串保存会话", systemImage: "lock.shield")
-                            case 1:
-                                Text("连接来源账号").font(.title.bold())
-                                Text("可分别登录，也可稍后在“我的”中登录。已有登录状态会保留。")
-                                ForEach(SourceID.allCases) { id in
-                                    NavigationLink(destination: AccountView(sourceID: id)) { HStack { Text(id.title + "账号"); Spacer(); Text(app.sessions[id]?.loggedIn == true ? "已登录" : "登录").foregroundColor(.secondary) } }.padding(.vertical, 10)
-                                }
-                            case 2:
-                                Text("离线与导出目录").font(.title.bold())
-                                Text("离线内容保存在应用专用存储。可授权一个文件夹保存 EPUB / TXT 导出；换目录不会删除旧文件。")
-                                Text(app.preferences.exportDirectoryBookmark == nil ? "当前：应用专用目录" : "当前：已保留选择的文件夹")
-                                Button("选择导出文件夹") { folderPicker = true }.buttonStyle(.bordered).accessibilityIdentifier("onboarding.directory")
-                                Text("可继续使用当前目录。缓存清理不会删除已下载的书籍、必需字体或阅读进度。").font(.caption).foregroundColor(.secondary)
-                            default:
-                                Text("准备开始阅读").font(.title.bold())
-                                Text("在设置中调整字体、翻页方式、阅读背景和通知。iOS 后台更新由系统调度，无法保证固定时间运行。")
-                                Text("现有账号、阅读偏好与下载目录均会保留。")
-                            }
-                        }
+                        pageContent
                         if let error = error { Text(error).foregroundColor(.red) }
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(24)
                 }
@@ -451,6 +427,38 @@ struct OnboardingView: View {
                 .toolbar { if revisiting { ToolbarItem(placement: .cancellationAction) { Button("关闭") { presentation.wrappedValue.dismiss() } } } }
         }.navigationViewStyle(.stack)
             .sheet(isPresented: $folderPicker) { DirectoryPicker { url in do { app.preferences.exportDirectoryBookmark = try DownloadDirectory.bookmark(url) } catch { self.error = error.localizedDescription } } }
+    }
+    @ViewBuilder private var pageContent: some View {
+        switch step {
+        case 0:
+            Text("欢迎使用 Mixn").font(.largeTitle.bold())
+            Text("聚合轻之国度与轻书架。来源账号独立，登录、书架与进度只发送给对应来源。")
+            Label("发现、搜索、在线阅读与离线导出", systemImage: "books.vertical")
+            Label("密码登录使用系统钥匙串保存会话", systemImage: "lock.shield")
+        case 1:
+            Text("连接来源账号").font(.title.bold())
+            Text("可分别登录，也可稍后在“我的”中登录。已有登录状态会保留。")
+            ForEach(SourceID.allCases) { id in accountRow(id) }
+        case 2:
+            Text("离线与导出目录").font(.title.bold())
+            Text("离线内容保存在应用专用存储。可授权一个文件夹保存 EPUB / TXT 导出；换目录不会删除旧文件。")
+            Text(app.preferences.exportDirectoryBookmark == nil ? "当前：应用专用目录" : "当前：已保留选择的文件夹")
+            Button("选择导出文件夹") { folderPicker = true }.buttonStyle(.bordered).accessibilityIdentifier("onboarding.directory")
+            Text("可继续使用当前目录。缓存清理不会删除已下载的书籍、必需字体或阅读进度。").font(.caption).foregroundColor(.secondary)
+        default:
+            Text("准备开始阅读").font(.title.bold())
+            Text("在设置中调整字体、翻页方式、阅读背景和通知。iOS 后台更新由系统调度，无法保证固定时间运行。")
+            Text("现有账号、阅读偏好与下载目录均会保留。")
+        }
+    }
+    private func accountRow(_ id: SourceID) -> some View {
+        NavigationLink(destination: AccountView(sourceID: id)) {
+            HStack {
+                Text(id.title + "账号")
+                Spacer()
+                Text(app.sessions[id]?.loggedIn == true ? "已登录" : "登录").foregroundColor(.secondary)
+            }
+        }.padding(.vertical, 10)
     }
 }
 

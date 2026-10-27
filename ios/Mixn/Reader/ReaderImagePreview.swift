@@ -84,7 +84,7 @@ struct ReaderImagePreview: View {
             guard let decoded = decoded else { throw SourceFailure.parsing("图片格式无法识别或尺寸过大") }
             image = decoded.0; imageWasReduced = decoded.1; loading = false
         } catch is CancellationError { }
-        catch { loading = false; error = error.localizedDescription }
+        catch { loading = false; self.error = error.localizedDescription }
     }
     private func save() {
         guard let image = image, !saving else { return }

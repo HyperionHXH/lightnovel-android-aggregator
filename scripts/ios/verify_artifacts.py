@@ -62,6 +62,11 @@ def verify_ipa(path):
         forbidden = ['embedded.mobileprovision', '_CodeSignature/CodeResources']
         if any(n.endswith(f) for f in forbidden for n in archive.namelist()):
             raise ValueError('Unexpected signing material in unsigned IPA')
+        binary = archive.read(executable)
+        forbidden_fixture_markers = [b'MIXN_UI_TEST', b'UITestEnvironment', b'UITestSource',
+                                     '隔离 UI 验收夹具'.encode('utf-8')]
+        if any(marker in binary for marker in forbidden_fixture_markers):
+            raise ValueError('DEBUG UI fixture leaked into the release executable')
     digest = sha(path)
     expected = path.with_suffix(path.suffix + '.sha256').read_text(encoding='utf-8').split()[0]
     if digest != expected:

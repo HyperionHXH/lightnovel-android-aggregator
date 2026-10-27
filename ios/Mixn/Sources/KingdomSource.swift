@@ -867,11 +867,12 @@ enum KingdomJSON {
             ?? readState.optionalInt("published_chapter_count") ?? 0
         let volumeCount = positive(source.int("volume_count")) ?? positive(stats.int("volume_count"))
             ?? readState.optionalInt("volume_count") ?? 0
-        let score = positiveDouble(source.value("rating_score_10")).map { $0 / 2 }
-            ?? positiveDouble(rating.value("score_10")).map { $0 / 2 }
-            ?? positiveDouble(source.value("rating_score")).map { $0 / 2 }
-            ?? positiveDouble(source.value("rating_stars_average"))
-            ?? positiveDouble(rating.value("stars_average", "score"))
+        let tenPointScore: Double? = positiveDouble(source.value("rating_score_10"))
+            ?? positiveDouble(rating.value("score_10"))
+            ?? positiveDouble(source.value("rating_score"))
+        let score: Double?
+        if let tenPointScore { score = tenPointScore / 2 }
+        else { score = positiveDouble(source.value("rating_stars_average")) ?? positiveDouble(rating.value("stars_average", "score")) }
         let cover = source.string("cover_url", "cover", "banner_url", "image", "book_cover", "pic_url", "pic")
         return Novel(
             key: ResourceKey(.kingdom, id), title: source.string("title", "book_title").nilIfBlank ?? "未命名作品",
