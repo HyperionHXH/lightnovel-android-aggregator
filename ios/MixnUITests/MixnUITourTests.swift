@@ -6,6 +6,16 @@ final class MixnUITourTests: XCTestCase {
     private let runID = UUID().uuidString
 
     override func setUpWithError() throws { continueAfterFailure = false }
+    override func tearDownWithError() throws {
+        if testRun?.hasSucceeded == false, app != nil {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "failure-surface"; attachment.lifetime = .keepAlways; add(attachment)
+            let complete = expectation(description: "Capture failed native surface before app teardown")
+            URLSession.shared.dataTask(with: URL(string: "http://127.0.0.1:18764/failure")!) { _, _, _ in complete.fulfill() }.resume()
+            wait(for: [complete], timeout: 35)
+        }
+        try super.tearDownWithError()
+    }
     private func launch(onboarding: Bool = false, error: Bool = false, dark: Bool = false, large: Bool = false) {
         app = XCUIApplication()
         app.launchEnvironment["MIXN_UI_TEST"] = "1"
@@ -108,6 +118,7 @@ final class MixnUITourTests: XCTestCase {
         text("测试书评正文。表情与回复不会挡住评分。")
         open("comments.replies.root")
         text("回复内容与主评论保持层级。")
+        text("第4条折叠回复")
         try capture("07_comments")
         back()
         open("detail.read")

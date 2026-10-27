@@ -111,3 +111,16 @@ jobs:
             build/ios/*.log
             build/ios/*.xcresult/
           if-no-files-found: warn
+      - name: Upload lightweight native surfaces for direct review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mixn-ios-surfaces
+          path: |
+            build/ios/visual-tour/screenshots/
+            build/ios/visual-tour/failure-surface.png
+            build/ios/visual-tour/manifest.json
+            build/ios/visual-tour/exports/
+            build/ios/visual-tour/xcode-ui.log
+            build/ios/unit-tests.log
+          if-no-files-found: warn

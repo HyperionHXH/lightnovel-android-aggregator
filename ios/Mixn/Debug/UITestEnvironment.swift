@@ -87,7 +87,8 @@ import Foundation
     func claimReward() async throws -> RewardResult { signed = true; return RewardResult(coins: 1, balance: 26, streak: 2) }
     func comments(key: ResourceKey, latest: Bool, page: Int) async throws -> Page<Comment> {
         let reply = Comment(id: "reply", author: "测试读者乙", content: "回复内容与主评论保持层级。", rootID: "root", replyTo: "测试读者甲")
-        let original = Comment(id: "root", author: "测试读者甲", content: "测试书评正文。表情与回复不会挡住评分。", createdAt: "2026-10-27", likeCount: commentLiked ? 2 : 1, replyCount: 1, ratingStars: 4, liked: commentLiked, replies: [reply])
+        let replies = [reply] + (2...4).map { index in Comment(id: "reply\(index)", author: "测试读者\(index)", content: "第\(index)条折叠回复", rootID: "root", replyTo: "测试读者甲") }
+        let original = Comment(id: "root", author: "测试读者甲", content: "测试书评正文。表情与回复不会挡住评分。", createdAt: "2026-10-27", likeCount: commentLiked ? 2 : 1, replyCount: replies.count, ratingStars: 4, liked: commentLiked, replies: replies)
         return Page(items: page == 1 ? [original] + userComments : [], page: page, total: 1 + userComments.count)
     }
     func publishComment(key: ResourceKey, draft: CommentDraft) async throws -> Comment {

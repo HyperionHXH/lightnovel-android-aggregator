@@ -55,6 +55,14 @@ def run(args):
 
         def do_GET(self):
             request = urlsplit(self.path)
+            if request.path == '/failure':
+                try:
+                    subprocess.run(['xcrun', 'simctl', 'io', args.device, 'screenshot', str(output / 'failure-surface.png')],
+                                   check=True, capture_output=True, timeout=30)
+                    self.send_response(200); self.send_header('Content-Length', '0'); self.end_headers()
+                except Exception as error:
+                    failures.append('Failure capture: ' + str(error)); self.send_error(500, str(error))
+                return
             name = parse_qs(request.query).get('name', [''])[0]
             with lock:
                 if request.path != '/capture' or name not in expected or any(c['name'] == name for c in captures):
