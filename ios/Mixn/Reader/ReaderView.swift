@@ -416,12 +416,12 @@ private struct ReaderScreen: View {
             NavigationView {
                 List {
                     Section { Text(novel.title).font(.headline); Text(state.content?.chapter.title ?? "正在加载"); Text("已阅读 \(state.viewport.percent)%").font(.caption) }
-                    Button("打开章节目录") { panel = .catalog }.accessibilityIdentifier("reader.catalog")
-                    Button("文字样式与阅读设置") { panel = .settings }.accessibilityIdentifier("reader.settings")
+                    Button("打开章节目录") { panel = .catalog }.accessibilityIdentifier("reader.menu.catalog")
+                    Button("文字样式与阅读设置") { panel = .settings }.accessibilityIdentifier("reader.menu.settings")
                     Toggle("显示进度条", isOn: Binding(get: { preferences.reader.showProgressBar }, set: { preferences.reader.showProgressBar = $0 }))
                     Button("上一章") { panel = nil; state.boundary(-1, app: app, novel: novel) }.disabled(state.loading)
                     Button("下一章") { panel = nil; state.boundary(1, app: app, novel: novel) }.disabled(state.loading)
-                    Button("重新加载本章") { panel = nil; state.retry(app: app, novel: novel) }.accessibilityIdentifier("reader.retry")
+                    Button("重新加载本章") { panel = nil; state.retry(app: app, novel: novel) }.accessibilityIdentifier("reader.menu.retry")
                 }.navigationTitle("阅读菜单").toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { panel = nil } } }
             }.navigationViewStyle(.stack)
         }

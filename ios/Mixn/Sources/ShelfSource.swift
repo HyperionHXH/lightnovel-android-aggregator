@@ -395,7 +395,7 @@ import Foundation
 
     func profile() async throws -> SourceProfile {
         let profile = try await accountProfile()
-        session.accountID = profile.id > 0 ? String(profile.id) : nil
+        if profile.id > 0 { session.accountID = String(profile.id) }
         session.displayName = profile.name
         return profile.model
     }

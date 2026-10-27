@@ -148,7 +148,7 @@ final class MixnUITourTests: XCTestCase {
         wait(for: [advanced], timeout: 10)
         open("reader.menu")
         try capture("09_reader_menu")
-        open("reader.settings")
+        open("reader.menu.settings")
         wait("reader.mode")
         try capture("10_reader_settings")
         finishSheet()

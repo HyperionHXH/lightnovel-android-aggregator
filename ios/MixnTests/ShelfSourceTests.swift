@@ -263,6 +263,15 @@ final class ShelfSourceTests: XCTestCase {
         XCTAssertTrue(restored.loggedIn)
         XCTAssertEqual(refreshBody.string("token"), "refresh-secret")
         XCTAssertTrue(secrets.values["light_novel_shelf.tokens.v1"]?.contains("new-token") == true)
+        let stableIdentity = try XCTUnwrap(source.session.accountID)
+        fixture.socket.onSend = { text in
+            guard let root = try? JSONDecoder().decode(JSONValue.self, from: Data(text.dropLast().utf8)) else { return }
+            if root.object.string("protocol") == "json" { fixture.socket.push("{}\u{1e}"); return }
+            guard root.object.int("type") == 1 else { return }
+            fixture.socket.push("{\"type\":3,\"invocationId\":\"\(root.object.string("invocationId"))\",\"result\":{\"Id\":0,\"UserName\":\"读者\",\"Growth\":{}}}\u{1e}")
+        }
+        _ = try await source.profile()
+        XCTAssertEqual(source.session.accountID, stableIdentity, "A missing UID must not collapse private caches into a shared unknown identity")
         try await source.logout()
         XCTAssertNil(secrets.values["light_novel_shelf.tokens.v1"])
         XCTAssertEqual(secrets.values["light_novel_kingdom.session"], "kingdom-secret")

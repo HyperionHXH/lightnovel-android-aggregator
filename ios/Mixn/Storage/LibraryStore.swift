@@ -75,6 +75,12 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
                     for chapter in result.records[index].chapters where !chapter.locked {
                         let file = book.appendingPathComponent("Chapters", isDirectory: true).appendingPathComponent(sha256(chapter.id) + ".plist")
                         if FileManager.default.fileExists(atPath: file.path) {
+                            // Committed checkpoints were validated before their manifest entry.
+                            // Revalidate on read/export/retry, not every chapter at every launch.
+                            if result.records[index].downloadedChapterIDs.contains(chapter.id) {
+                                present.insert(chapter.id)
+                                continue
+                            }
                             do {
                                 let content = try StorageIO.decode(ChapterContent.self, from: file)
                                 guard content.chapter.key == chapter.key, content.chapter.novelKey == result.records[index].novel.key else { throw StorageFailure.message("离线章节归属不匹配") }

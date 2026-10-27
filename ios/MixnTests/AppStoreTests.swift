@@ -102,6 +102,28 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(restored.bodyText, content.bodyText)
     }
 
+    @MainActor func testLogoutClearsProvisionalAndResolvedIdentityButNotAnotherAccount() async throws {
+        let source = ChapterGateSource()
+        source.session.accountID = "session:opaque"
+        let app = try setupStore(source)
+        let provisional = "user:light_novel_kingdom:session:opaque"
+        let resolved = "user:light_novel_kingdom:A"
+        let other = "user:light_novel_kingdom:B"
+        try await app.cache.write(Data("provisional".utf8), key: "chapter", scope: provisional)
+        source.session.accountID = "A"
+        await app.refreshProfile(.kingdom)
+        try await app.cache.write(Data("resolved".utf8), key: "chapter", scope: resolved)
+        try await app.cache.write(Data("other account".utf8), key: "chapter", scope: other)
+        try await app.logout(.kingdom)
+        let old = await app.cache.read(key: "chapter", scope: provisional)
+        let current = await app.cache.read(key: "chapter", scope: resolved)
+        let retained = await app.cache.read(key: "chapter", scope: other)
+        XCTAssertNil(old)
+        XCTAssertNil(current)
+        XCTAssertEqual(retained, Data("other account".utf8))
+        XCTAssertFalse(app.sessions[.kingdom]?.loggedIn ?? true)
+    }
+
     @MainActor func testFastAuthorCardAppearsWithoutWaitingForSlowCardAndKeepsSourceOrder() async throws {
         let source = ChapterGateSource(), app = try setupStore(source)
         let first = Novel(key: ResourceKey(.kingdom, "slow"), title: "慢卡")

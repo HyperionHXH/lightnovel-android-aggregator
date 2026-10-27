@@ -127,6 +127,16 @@ final class StorageTests: XCTestCase {
         try await cache.write(Data([1]), key: "online")
         try await cache.clear()
         XCTAssertNotNil(try restored.savedChapter(novel: key, chapter: chapter.key))
+        try Data("corrupt committed checkpoint".utf8).write(to: checkpoint)
+        let committed = LibraryStore(rootURL: location)
+        do {
+            _ = try await committed.readableChapter(novel: key, chapter: chapter.key)
+            XCTFail("A committed manifest must not bypass chapter validation before reading")
+        } catch is DecodingError {
+        } catch {
+            XCTFail("Expected a corrupt checkpoint error, got \(error)")
+        }
+        try StorageIO.encode(content, to: checkpoint)
         try restored.delete(key)
         XCTAssertFalse(FileManager.default.fileExists(atPath: book.path))
         XCTAssertTrue(LibraryStore(rootURL: location).records.isEmpty)

@@ -11,6 +11,7 @@ import SwiftUI
     @Published var sourceErrors: [SourceID: String] = [:]
     @Published private var accountGeneration: [SourceID: Int] = [:]
     @Published private(set) var cacheGeneration = 0
+    private var sessionScopes: [SourceID: Set<String>] = [:]
     init(sources: [SourceID: any NovelSource]? = nil, preferences: PreferencesStore? = nil,
          library: LibraryStore? = nil, fonts: FontStore? = nil, cache: ContentCache? = nil) {
         let sharedCache = cache ?? ContentCache()
@@ -19,7 +20,7 @@ import SwiftUI
         self.library = library ?? LibraryStore()
         self.fonts = fonts ?? FontStore()
         self.cache = sharedCache
-        for (id, source) in self.sources { sessions[id] = source.session }
+        for (id, source) in self.sources { updateSession(id, source.session) }
     }
     func source(_ id: SourceID) -> any NovelSource { sources[id]! }
     func accountRevision(_ id: SourceID) -> Int { accountGeneration[id, default: 0] }
@@ -33,7 +34,7 @@ import SwiftUI
                     do {
                         let session = try await self.source(id).restoreSession()
                         guard self.accountGeneration[id, default: 0] == generation else { return }
-                        self.sessions[id] = session
+                        self.updateSession(id, session)
                         if session.loggedIn { await self.refreshProfile(id) }
                     } catch is CancellationError { } catch { self.sourceErrors[id] = error.localizedDescription }
                 }
@@ -45,7 +46,7 @@ import SwiftUI
         let generation = accountGeneration[id, default: 0]
         let result = try await source(id).login(identifier: identifier, password: password)
         guard accountGeneration[id, default: 0] == generation else { throw CancellationError() }
-        sessions[id] = result
+        updateSession(id, result)
         sourceErrors[id] = nil
         await refreshProfile(id)
     }
@@ -55,19 +56,22 @@ import SwiftUI
         guard let kingdom = source(.kingdom) as? KingdomSource else { throw SourceFailure.unsupported("当前来源不支持邮箱注册") }
         let session = try await kingdom.register(email: email, captcha: captcha, nickname: nickname, password: password)
         guard accountGeneration[.kingdom, default: 0] == generation else { throw CancellationError() }
-        sessions[.kingdom] = session
+        updateSession(.kingdom, session)
         sourceErrors[.kingdom] = nil
         await refreshProfile(.kingdom)
     }
 
     func logout(_ id: SourceID) async throws {
         accountGeneration[id, default: 0] += 1
-        let old = scope(id)
+        let generation = accountGeneration[id, default: 0]
+        let oldScopes = sessionScopes[id, default: []].union([scope(id)])
         try await source(id).logout()
+        guard accountGeneration[id, default: 0] == generation else { throw CancellationError() }
         sessions[id] = AccountSession()
         profiles[id] = nil
         sourceErrors[id] = nil
-        try await cache.clear(scope: old)
+        sessionScopes[id] = nil
+        for old in oldScopes { try await cache.clear(scope: old) }
     }
     func refreshProfile(_ id: SourceID) async {
         let generation = accountGeneration[id, default: 0]
@@ -75,12 +79,16 @@ import SwiftUI
             let profile = try await source(id).profile()
             guard accountGeneration[id, default: 0] == generation else { return }
             profiles[id] = profile
-            sessions[id] = source(id).session
+            updateSession(id, source(id).session)
             sourceErrors[id] = nil
         } catch is CancellationError { } catch {
             guard accountGeneration[id, default: 0] == generation else { return }
             sourceErrors[id] = error.localizedDescription
         }
+    }
+    private func updateSession(_ id: SourceID, _ session: AccountSession) {
+        sessions[id] = session
+        if session.loggedIn { sessionScopes[id, default: []].insert(scope(id)) }
     }
     private func scope(_ id: SourceID) -> String {
         let session = sessions[id] ?? source(id).session
