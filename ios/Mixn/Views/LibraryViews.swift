@@ -652,6 +652,7 @@ private struct HistoryContentView: View {
     @State private var remote = false
     @State private var localError: String?
     @State private var deleteTarget: HistoryEntry?
+    @State private var readerDestination: ReaderDestination?
     var body: some View {
         List {
             Picker("历史记录", selection: $remote) { Text("本地记录").tag(false); Text("来源记录").tag(true) }.pickerStyle(.segmented)
@@ -672,9 +673,12 @@ private struct HistoryContentView: View {
                 ForEach(library.localHistory) { entry in historyRow(entry).swipeActions { Button("删除", role: .destructive) { deleteTarget = entry } } }
             }
         }.navigationTitle("阅读历史").listStyle(.insetGrouped)
+            .fullScreenCover(item: $readerDestination) { destination in
+                ReaderView(novel: destination.novel, chapterKey: destination.chapterKey)
+            }
             .task { await refresh() }.refreshable { await refresh() }
-            .onChange(of: app.sessions) { _ in model.reset(); Task { await refresh() } }
-            .onChange(of: accountRevisionSignature(app)) { _ in model.reset(); deleteTarget = nil; Task { await refresh() } }
+            .onChange(of: app.sessions) { _ in readerDestination = nil; model.reset(); Task { await refresh() } }
+            .onChange(of: accountRevisionSignature(app)) { _ in readerDestination = nil; model.reset(); deleteTarget = nil; Task { await refresh() } }
             .confirmationDialog(remote ? "删除该来源的阅读历史？" : "删除该书的本地阅读记录？", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }), titleVisibility: .visible) {
                 if let entry = deleteTarget {
                     Button("删除", role: .destructive) {
@@ -693,7 +697,7 @@ private struct HistoryContentView: View {
                 VStack(alignment: .leading) { Text(entry.chapterTitle).font(.caption); Text(entry.readAt).font(.caption2).foregroundColor(.secondary) }
                 Spacer()
                 if let chapter = library.progress[entry.novel.id]?.chapterKey ?? entry.chapterKey {
-                    NavigationLink("继续阅读", destination: ReaderView(novel: entry.novel, chapterKey: chapter)).accessibilityIdentifier("history.resume.\(entry.novel.id)")
+                    Button("继续阅读") { readerDestination = ReaderDestination(novel: entry.novel, chapterKey: chapter) }.accessibilityIdentifier("history.resume.\(entry.novel.id)")
                 }
             }
         }

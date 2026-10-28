@@ -6,6 +6,14 @@
 Android 稳定版为 `1.22.2 / 38`，签名发布 commit `d8a23c0e5c40026f44d796344618e4cf8c63429d`、Release run `39745689348`。用户明确要求本轮 Android 不加版本、不重发 APK；iOS 完成验收后仅补充同版本 unsigned IPA，不移动既有标签。
 用户现已确认模拟器可联网、轻书架作者能显示，授权优化作者与书名同时呈现后推送编译。本轮保持现有候选 `1.22.2 / 38`，不再次增加版本；发布时必须显式指定仓库 `HyperionHXH/lightnovel-android-aggregator`（本机 gh 默认仓库可能指向另一个项目）。
 
+## iOS 首次选章与生命周期修复（开发候选）
+
+- 当前修复分支 `fix/ios-reader-entry`。用户反馈：从未读书籍的目录直接点章节，出现空白全屏且无法返回；先点开始阅读后不再触发。
+- 仅加回归的基线提交 `546f77f7e9f53dbc21a20e36a2028bc9acb9c0f6` 在原生 run `40678198388` 失败：直接点新书第 2 章后找不到 `reader.document`，旧完整生产流程仍通过。不能继续引用下方首次交付的成功覆盖这个此前未测试的入口。
+- 修复采用完整 `ReaderDestination` 与 item 驱动的全屏呈现；并检查社区导航行生命周期、用户取消下载的恢复竞争、清缓存后的下载重试及阅读进度同步取消。
+- Android 导航 `Routes.sourceReader(novelKey, chapterKey)` 已在单个路由中携带来源、作品和章节参数；这些修复属于 SwiftUI 与 iOS 生命周期，无需修改或重新发布 Android。
+- 开发候选原生验收与附件单独记录；尚不覆盖既有 `v1.22.2` Release 附件，不移动标签，不将编译成功当成修复验收。
+
 ## iOS 当前验收记录
 
 - 设计/安装/平台例外：[`ADR0002`](adr/0002-native-ios-and-joint-release.md)、[`IOS.md`](IOS.md)、[`PLATFORM_PARITY.md`](PLATFORM_PARITY.md)。Android native 保留，iOS 为 SwiftUI/UIKit/WebKit 15+；Triomi GPL 工程只借鉴方法，不复制实现。

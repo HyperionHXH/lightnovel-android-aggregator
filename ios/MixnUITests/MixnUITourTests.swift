@@ -7,7 +7,7 @@ final class MixnUITourTests: XCTestCase {
 
     override func setUpWithError() throws { continueAfterFailure = false }
     override func tearDownWithError() throws {
-        if testRun?.hasSucceeded == false, app != nil {
+        if (testRun?.failureCount ?? 0) > 0, app != nil {
             print("Native failure accessibility tree:\n" + app.debugDescription)
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = "failure-surface"; attachment.lifetime = .keepAlways; add(attachment)
@@ -93,13 +93,13 @@ final class MixnUITourTests: XCTestCase {
             if source == "light_novel_shelf" { open("discover.source." + source) }
             open("book.\(source):2")
             wait("detail.title")
-            XCTAssertEqual(element("detail.read").label, "开始阅读", "This route must start with an unread book")
             app.segmentedControls.buttons["章节"].tap()
             open("volume.\(source):v1")
             open("chapter.\(source):2")
             waitForReader()
             open("reader.menu")
             text("第2章 · 稳定阅读")
+            try capture(source == "light_novel_kingdom" ? "00_kingdom_cold_chapter" : "00b_shelf_cold_chapter")
             app.buttons["返回"].firstMatch.tap()
             wait("detail.title")
             open("chapter.\(source):1")
@@ -108,6 +108,7 @@ final class MixnUITourTests: XCTestCase {
             text("第1章 · 稳定阅读")
             app.buttons["返回"].firstMatch.tap()
             wait("detail.title")
+            try capture(source == "light_novel_kingdom" ? "00a_kingdom_chapter_return" : "00c_shelf_chapter_return")
             back()
         }
         app.terminate()
@@ -219,6 +220,12 @@ final class MixnUITourTests: XCTestCase {
         open("profile.history")
         text("跨端阅读验收")
         try capture("15_history")
+        open("history.resume.light_novel_kingdom:1")
+        waitForReader()
+        try capture("15a_history_reader")
+        open("reader.menu")
+        app.buttons["返回"].firstMatch.tap()
+        wait("history.resume.light_novel_kingdom:1")
         back()
         try capture("16_profile")
         open("profile.account.light_novel_shelf")

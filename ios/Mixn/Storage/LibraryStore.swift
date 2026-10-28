@@ -300,13 +300,19 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
         }
     }
     func resume(sources: [SourceID: any NovelSource], fonts: FontStore) async {
-        let pending = state.records.filter { $0.status == "queued" || $0.status == "downloading" }
-        for record in pending where jobs[record.id] == nil {
-            guard let source = sources[record.novel.key.source] else {
-                storageError = "无法恢复下载：缺少来源 \(record.novel.key.source.title)"
+        let pending = state.records.compactMap { record -> (ResourceKey, UInt64)? in
+            guard record.status == "queued" || record.status == "downloading" else { return nil }
+            return (record.novel.key, generations[record.id, default: 0])
+        }
+        for (key, capturedGeneration) in pending where jobs[key.id] == nil {
+            guard let source = sources[key.source] else {
+                storageError = "无法恢复下载：缺少来源 \(key.source.title)"
                 continue
             }
-            do { try await retry(record.novel.key, source: source, fonts: fonts) }
+            guard generations[key.id, default: 0] == capturedGeneration,
+                  state.records.contains(where: { $0.id == key.id && ($0.status == "queued" || $0.status == "downloading") }),
+                  jobs[key.id] == nil else { continue }
+            do { try await retry(key, source: source, fonts: fonts) }
             catch is CancellationError { if Task.isCancelled { return } }
             catch { storageError = error.localizedDescription }
         }
@@ -457,8 +463,11 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
         } catch {
             // A deleted/cancelled generation never writes its old record back.
             if generations[key.id, default: 0] == generation, state.records.contains(where: { $0.id == key.id }) {
-                record.status = error is CancellationError ? "queued" : "failed"
-                record.error = error is CancellationError ? "下载中断，将在恢复后继续" : error.localizedDescription
+                let wasTaskCancelled = error is CancellationError && Task.isCancelled
+                record.status = wasTaskCancelled ? "queued" : "failed"
+                record.error = wasTaskCancelled
+                    ? "下载中断，将在恢复后继续"
+                    : (error is CancellationError ? "下载依赖已中断，可重试继续" : error.localizedDescription)
                 do { try update(record) } catch { storageError = error.localizedDescription; throw error }
             }
             throw error

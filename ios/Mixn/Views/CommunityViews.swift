@@ -7,7 +7,7 @@ enum CommunityKind: String, CaseIterable, Identifiable {
         switch self { case .following: return "关注"; case .followers: return "粉丝"; case .publishing: return "发布管理"; case .messages: return "消息中心" }
     }
 }
-private enum CommunityMessageCategory: String, CaseIterable, Identifiable {
+enum CommunityMessageCategory: String, CaseIterable, Identifiable {
     case reply, mention, like, fan, system, dm
     var id: String { rawValue }
     var title: String {
@@ -96,7 +96,7 @@ private struct CommunityWork: Identifiable {
         words = item.string("word_count", "wordCount"); updated = item.string("updated_at", "updatedAt")
     }
 }
-private struct CommunityNotification: Identifiable {
+struct CommunityNotification: Identifiable {
     var id: String
     var title: String
     var sender: String
@@ -211,11 +211,11 @@ private enum CommunityParsing {
     }
 }
 
-@MainActor private final class CommunityModel: ObservableObject {
-    @Published var users: [CommunityUser] = []
-    @Published var works: [CommunityWork] = []
-    @Published var messages: [CommunityNotification] = []
-    @Published var conversations: [CommunityConversation] = []
+@MainActor final class CommunityModel: ObservableObject {
+    @Published fileprivate var users: [CommunityUser] = []
+    @Published fileprivate var works: [CommunityWork] = []
+    @Published fileprivate var messages: [CommunityNotification] = []
+    @Published fileprivate var conversations: [CommunityConversation] = []
     @Published var summary: JSONObject = [:]
     @Published var loading = false
     @Published var marking = false
@@ -227,17 +227,24 @@ private enum CommunityParsing {
     private var page = 0
     private var generation = UUID()
     private var context = ""
+    var notificationIDs: [String] { messages.map(\.id) }
 
-    func invalidate() {
-        generation = UUID(); context = ""; users = []; works = []; messages = []; conversations = []; summary = [:]
+    func suspend() {
+        generation = UUID()
+        loading = false; marking = false; pending = []
+    }
+
+    private func resetForContextChange() {
+        generation = UUID(); users = []; works = []; messages = []; conversations = []; summary = [:]
         loading = false; marking = false; pending = []; page = 0; total = 0; more = false; error = nil; summaryError = nil
     }
+
 
     func load(app: AppStore, kind: CommunityKind, category: CommunityMessageCategory, append: Bool = false) async {
         let session = app.sessions[.kingdom] ?? app.source(.kingdom).session
         let revision = app.accountRevision(.kingdom)
         let key = "\(kind.rawValue):\(category.rawValue):\(session.accountID ?? ""): \(session.loggedIn):\(revision)"
-        if context != key { invalidate(); context = key }
+        if context != key { resetForContextChange(); context = key }
         guard !loading, !append || more else { return }
         guard session.loggedIn else { error = "请先登录轻之国度账号"; return }
         guard let source = app.source(.kingdom) as? KingdomSource else { error = "当前来源不支持社区请求"; return }
@@ -293,7 +300,7 @@ private enum CommunityParsing {
         }
     }
 
-    func follow(_ user: CommunityUser, app: AppStore) async {
+    fileprivate func follow(_ user: CommunityUser, app: AppStore) async {
         let session = app.sessions[.kingdom], token = generation, revision = app.accountRevision(.kingdom)
         guard session?.loggedIn == true, !pending.contains(user.id), let source = app.source(.kingdom) as? KingdomSource else { return }
         guard let uid = Int64(user.id) else { error = "用户编号无效"; return }
@@ -407,7 +414,7 @@ struct CommunityView: View {
         }.navigationTitle(kind == .following || kind == .followers ? "关注与粉丝" : kind.title).navigationBarTitleDisplayMode(.inline)
             .task(id: taskID) { await load() }
             .refreshable { await load() }
-            .onDisappear { model.invalidate() }
+            .onDisappear { model.suspend() }
             .alert("取消关注？", isPresented: Binding(get: { unfollow != nil }, set: { if !$0 { unfollow = nil } })) {
                 Button("取消关注", role: .destructive) { if let user = unfollow { Task { await model.follow(user, app: app) } }; unfollow = nil }
                 Button("返回", role: .cancel) { unfollow = nil }
@@ -497,9 +504,8 @@ private struct CommunityTargetView: View {
     let chapterID: String?
     @EnvironmentObject private var app: AppStore
     @Environment(\.dismiss) private var dismiss
-    @State private var novel: Novel?
     @State private var error: String?
-    @State private var reading = false
+    @State private var readerDestination: ReaderDestination?
     var body: some View {
         Group {
             if chapterID != nil {
@@ -508,9 +514,9 @@ private struct CommunityTargetView: View {
                     else { ProgressView("读取目标书籍…") }
                 }.padding()
             } else { BookDetailView(key: ResourceKey(.kingdom, bookID)) }
-        }.task(id: "\(app.accountRevision(.kingdom)):\(app.sessions[.kingdom]?.loggedIn == true)") { if chapterID != nil { novel = nil; await load() } }
-            .fullScreenCover(isPresented: $reading, onDismiss: { dismiss() }) {
-                if let novel = novel, let chapter = chapterID { ReaderView(novel: novel, chapterKey: ResourceKey(.kingdom, chapter)) }
+        }.task(id: "\(app.accountRevision(.kingdom)):\(app.sessions[.kingdom]?.loggedIn == true)") { if chapterID != nil { readerDestination = nil; await load() } }
+            .fullScreenCover(item: $readerDestination, onDismiss: { dismiss() }) { destination in
+                ReaderView(novel: destination.novel, chapterKey: destination.chapterKey)
             }
     }
     @MainActor private func load() async {
@@ -520,8 +526,8 @@ private struct CommunityTargetView: View {
             let detail = try await app.source(.kingdom).detail(key: ResourceKey(.kingdom, bookID))
             try Task.checkCancellation()
             guard app.sessions[.kingdom] == session, app.accountRevision(.kingdom) == revision else { return }
-            novel = detail.novel
-            reading = true
+            guard let chapter = chapterID else { return }
+            readerDestination = ReaderDestination(novel: detail.novel, chapterKey: ResourceKey(.kingdom, chapter))
         } catch is CancellationError {} catch { if app.sessions[.kingdom] == session, app.accountRevision(.kingdom) == revision { self.error = error.localizedDescription } }
     }
 }

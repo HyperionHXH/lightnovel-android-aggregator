@@ -15,6 +15,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 TOUR = [
+    ('00_kingdom_cold_chapter', '轻之国度新书直接打开指定章节'),
+    ('00a_kingdom_chapter_return', '轻之国度章节切换与返回详情'),
+    ('00b_shelf_cold_chapter', '轻书架新书直接打开指定章节'),
+    ('00c_shelf_chapter_return', '轻书架章节切换与返回详情'),
     ('01_onboarding', '首次使用与下载目录'), ('02_discover', '发现与作品作者'),
     ('03_source', '轻书架独立来源'), ('03a_mandatory_woff2', '真实 WOFF2 专用字体原生渲染'),
     ('04_search', '聚合搜索结果'),
@@ -25,7 +29,7 @@ TOUR = [
     ('11_reader_scroll', '上下滚动正文'), ('12_reader_card', '卡片阅读正文'),
     ('13_shelf', '统一书架'), ('14_downloads', '离线下载管理'),
     ('14a_epub_export', '完整离线 EPUB 原生分享'), ('14b_txt_export', 'UTF-8 TXT 原生分享'),
-    ('15_history', '阅读记录'), ('16_profile', '我的与来源账号'),
+    ('15_history', '阅读记录'), ('15a_history_reader', '历史记录全屏继续阅读并可返回'), ('16_profile', '我的与来源账号'),
     ('17_accounts', '独立来源登录'), ('17a_signed_in', '独立来源登录与等级经验'),
     ('18_settings', '应用与阅读设置'),
     ('19_fonts', '字体选择'), ('20_storage', '缓存占用与安全清理'),

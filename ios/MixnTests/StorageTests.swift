@@ -15,6 +15,101 @@ final class StorageTests: XCTestCase {
               99, 109, 97, 112, 0, 0, 0, 0, 0, 0, 0, 28, 0, 0, 0, 4,
               0, 0, 0, 0])
     }
+    private func chapterContent(_ chapter: Chapter, novel: Novel) -> ChapterContent {
+        ChapterContent(chapter: chapter, novelTitle: novel.title, volumeTitle: "正文", bodyText: "离线测试正文")
+    }
+    private func offlineRecord(novel: Novel, volume: Volume, chapters: [Chapter], downloaded: Set<String> = []) -> OfflineRecord {
+        OfflineRecord(novel: novel, volumes: [volume], chapters: chapters, completed: downloaded.count,
+                      status: "queued", downloadedChapterIDs: downloaded, catalogComplete: true, volumesComplete: true)
+    }
+    private func seedLibrary(_ location: URL, records: [OfflineRecord], checkpoints: [ResourceKey: ChapterContent] = [:]) throws {
+        struct SavedState: Encodable {
+            var records: [OfflineRecord]
+            var progress: [String: ReadingProgress] = [:]
+            var history: [HistoryEntry] = []
+            var updated: Set<String> = []
+            var snapshots: [String: String] = [:]
+            var wifiOnly = true
+        }
+        let library = location.appendingPathComponent("Library", isDirectory: true)
+        try StorageIO.encode(SavedState(records: records), to: library.appendingPathComponent("library.plist"))
+        for (chapterKey, content) in checkpoints {
+            let book = library.appendingPathComponent("Books", isDirectory: true)
+                .appendingPathComponent(sha256(content.chapter.novelKey.id), isDirectory: true)
+            let file = book.appendingPathComponent("Chapters", isDirectory: true)
+                .appendingPathComponent(sha256(chapterKey.id) + ".plist")
+            try StorageIO.encode(content, to: file)
+        }
+    }
+    @MainActor func testResumeDoesNotRestartRecordCancelledWhileEarlierDownloadRuns() async throws {
+        let location = try root()
+        let aKey = ResourceKey(.kingdom, "resume-a"), bKey = ResourceKey(.kingdom, "resume-b")
+        let aNovel = Novel(key: aKey, title: "A"), bNovel = Novel(key: bKey, title: "B")
+        let aVolume = Volume(key: ResourceKey(.kingdom, "resume-a-volume"), novelKey: aKey, title: "正文")
+        let bVolume = Volume(key: ResourceKey(.kingdom, "resume-b-volume"), novelKey: bKey, title: "正文")
+        let aChapter = Chapter(key: ResourceKey(.kingdom, "resume-a-chapter"), novelKey: aKey, volumeKey: aVolume.key, title: "A")
+        let bChapter = Chapter(key: ResourceKey(.kingdom, "resume-b-chapter"), novelKey: bKey, volumeKey: bVolume.key, title: "B")
+        try seedLibrary(location, records: [
+            offlineRecord(novel: aNovel, volume: aVolume, chapters: [aChapter]),
+            offlineRecord(novel: bNovel, volume: bVolume, chapters: [bChapter])
+        ])
+        let library = LibraryStore(rootURL: location)
+        try library.setWifiOnly(false)
+        let source = DownloadLifecycleFixtureSource(
+            contents: [aChapter.id: chapterContent(aChapter, novel: aNovel), bChapter.id: chapterContent(bChapter, novel: bNovel)],
+            heldChapters: [aChapter.id]
+        )
+        let fonts = FontStore(rootURL: location)
+        let resuming = Task { await library.resume(sources: [.kingdom: source], fonts: fonts) }
+        await source.waitForChapterRequest(aChapter.key)
+
+        try library.cancel(bKey)
+        source.finishChapter(aChapter.key, with: .success(chapterContent(aChapter, novel: aNovel)))
+        await resuming.value
+
+        XCTAssertEqual(library.records.first(where: { $0.id == aKey.id })?.status, "complete")
+        XCTAssertEqual(source.chapterRequestCount(for: bChapter.key), 0)
+        XCTAssertEqual(library.records.first(where: { $0.id == bKey.id })?.status, "failed")
+    }
+    @MainActor func testDependencyCancellationFailsRetryablyAndKeepsCompletedCheckpoint() async throws {
+        let location = try root(), key = ResourceKey(.kingdom, "dependency-cancel")
+        let novel = Novel(key: key, title: "依赖中断")
+        let volume = Volume(key: ResourceKey(.kingdom, "dependency-volume"), novelKey: key, title: "正文")
+        let completed = Chapter(key: ResourceKey(.kingdom, "completed"), novelKey: key, volumeKey: volume.key, title: "已完成")
+        let interrupted = Chapter(key: ResourceKey(.kingdom, "interrupted"), novelKey: key, volumeKey: volume.key, title: "待下载")
+        let saved = chapterContent(completed, novel: novel)
+        try seedLibrary(location,
+                        records: [offlineRecord(novel: novel, volume: volume, chapters: [completed, interrupted], downloaded: [completed.id])],
+                        checkpoints: [completed.key: saved])
+        let library = LibraryStore(rootURL: location)
+        try library.setWifiOnly(false)
+        let source = DownloadLifecycleFixtureSource(
+            contents: [interrupted.id: chapterContent(interrupted, novel: novel)],
+            heldChapters: [interrupted.id]
+        )
+        let fonts = FontStore(rootURL: location)
+        let retrying = Task { try await library.retry(key, source: source, fonts: fonts) }
+        await source.waitForChapterRequest(interrupted.key)
+        source.finishChapter(interrupted.key, with: .failure(CancellationError()))
+        do {
+            try await retrying.value
+            XCTFail("The interrupted dependency should propagate its cancellation")
+        } catch is CancellationError {
+        }
+        XCTAssertFalse(source.consumerTaskWasCancelled ?? true)
+        let record = try XCTUnwrap(library.records.first(where: { $0.id == key.id }))
+        XCTAssertEqual(record.status, "failed")
+        XCTAssertEqual(record.downloadedChapterIDs, [completed.id])
+        XCTAssertEqual(record.completed, 1)
+        XCTAssertEqual(try library.savedChapter(novel: key, chapter: completed.key), saved)
+
+        try await library.retry(key, source: source, fonts: fonts)
+        let retried = try XCTUnwrap(library.records.first(where: { $0.id == key.id }))
+        XCTAssertEqual(retried.status, "complete")
+        XCTAssertEqual(retried.downloadedChapterIDs, [completed.id, interrupted.id])
+        XCTAssertEqual(source.chapterRequestCount(for: completed.key), 0)
+        XCTAssertEqual(source.chapterRequestCount(for: interrupted.key), 2)
+    }
     func testCacheScopeGenerationTTLAndRestoration() async throws {
         let location = try root(), cache = ContentCache(rootURL: location)
         let old = await cache.token(scope: "private:A")
@@ -198,4 +293,65 @@ final class StorageTests: XCTestCase {
         XCTAssertEqual(u32(offset), 0x02014b50)
         return files
     }
+}
+@MainActor private final class DownloadLifecycleFixtureSource: NovelSource {
+    let sourceID: SourceID = .kingdom
+    let feeds: [Feed] = [.popular]
+    var session = AccountSession()
+    var supportsComments: Bool { false }
+    private let contents: [String: ChapterContent]
+    private var heldChapters: Set<String>
+    private var requestCounts: [String: Int] = [:]
+    private var observers: [String: [CheckedContinuation<Void, Never>]] = [:]
+    private var continuations: [String: CheckedContinuation<ChapterContent, Error>] = [:]
+    private(set) var consumerTaskWasCancelled: Bool?
+
+    init(contents: [String: ChapterContent], heldChapters: Set<String> = []) {
+        self.contents = contents
+        self.heldChapters = heldChapters
+    }
+    func restoreSession() async throws -> AccountSession { session }
+    func login(identifier: String, password: String) async throws -> AccountSession { throw SourceFailure.unsupported("Unused fixture operation") }
+    func logout() async throws { session = AccountSession() }
+    func profile() async throws -> SourceProfile { throw SourceFailure.unsupported("Unused fixture operation") }
+    func discover(feed: Feed, page: Int, pageSize: Int) async throws -> Page<Novel> { throw SourceFailure.unsupported("Unused fixture operation") }
+    func search(query: String, page: Int, pageSize: Int) async throws -> Page<Novel> { throw SourceFailure.unsupported("Unused fixture operation") }
+    func detail(key: ResourceKey) async throws -> NovelDetail { throw SourceFailure.unsupported("Unused fixture operation") }
+    func volumes(key: ResourceKey, page: Int) async throws -> Page<Volume> { throw SourceFailure.unsupported("Unused fixture operation") }
+    func chapters(novel: ResourceKey, volume: ResourceKey, page: Int) async throws -> Page<Chapter> { throw SourceFailure.unsupported("Unused fixture operation") }
+    func chapter(novel: ResourceKey, chapter: ResourceKey) async throws -> ChapterContent {
+        requestCounts[chapter.id, default: 0] += 1
+        let pendingObservers = observers.removeValue(forKey: chapter.id) ?? []
+        for observer in pendingObservers { observer.resume() }
+        if heldChapters.contains(chapter.id) {
+            do {
+                return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<ChapterContent, Error>) in
+                    continuations[chapter.id] = continuation
+                }
+            } catch {
+                consumerTaskWasCancelled = Task.isCancelled
+                throw error
+            }
+        }
+        guard let content = contents[chapter.id] else { throw SourceFailure.parsing("Fixture chapter missing") }
+        return content
+    }
+    func shelf() async throws -> [Novel] { throw SourceFailure.unsupported("Unused fixture operation") }
+    func setShelf(key: ResourceKey, add: Bool) async throws { throw SourceFailure.unsupported("Unused fixture operation") }
+    func history(page: Int) async throws -> Page<HistoryEntry> { throw SourceFailure.unsupported("Unused fixture operation") }
+    func deleteHistory(key: ResourceKey) async throws { throw SourceFailure.unsupported("Unused fixture operation") }
+    func saveProgress(_ progress: ReadingProgress) async throws { throw SourceFailure.unsupported("Unused fixture operation") }
+    func rewards() async throws -> RewardStatus { throw SourceFailure.unsupported("Unused fixture operation") }
+    func claimReward() async throws -> RewardResult { throw SourceFailure.unsupported("Unused fixture operation") }
+
+    func waitForChapterRequest(_ key: ResourceKey) async {
+        if requestCounts[key.id, default: 0] > 0 { return }
+        await withCheckedContinuation { observers[key.id, default: []].append($0) }
+    }
+    func finishChapter(_ key: ResourceKey, with result: Result<ChapterContent, Error>) {
+        heldChapters.remove(key.id)
+        guard let continuation = continuations.removeValue(forKey: key.id) else { preconditionFailure("No chapter request is waiting") }
+        continuation.resume(with: result)
+    }
+    func chapterRequestCount(for key: ResourceKey) -> Int { requestCounts[key.id, default: 0] }
 }

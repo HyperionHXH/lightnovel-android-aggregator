@@ -251,8 +251,7 @@ private struct BookDetailContentView: View {
     @ObservedObject var model: BookDetailModel
     @ObservedObject var library: LibraryStore
     @State private var selectedTab = 0
-    @State private var readerChapter: ResourceKey?
-    @State private var reading = false
+    @State private var readerDestination: ReaderDestination?
     @State private var unlockTarget: Chapter?
     private var novel: Novel? { model.detail?.novel ?? library.records.first(where: { $0.novel.key == model.key })?.novel }
     private var progress: ReadingProgress? { library.progress[model.key.id] }
@@ -274,7 +273,7 @@ private struct BookDetailContentView: View {
                             if let score = novel.score { Label(String(format: "%.1f", score), systemImage: "star.fill").foregroundColor(.orange) }
                         }
                     }
-                    Button { startReading(novel) } label: {
+                    Button { startReading() } label: {
                         HStack { Label(progress == nil ? "开始阅读" : "继续阅读（\(progress?.percent ?? 0)%）", systemImage: "book"); Spacer(); if model.starting { ProgressView() } }
                     }.disabled(model.starting).accessibilityIdentifier("detail.read")
                     if app.source(model.key.source).session.loggedIn {
@@ -288,7 +287,6 @@ private struct BookDetailContentView: View {
                     }.disabled(model.enqueueing || downloadActive).accessibilityIdentifier("detail.download")
                     OfflineControlsView(library: library, key: model.key)
                 }
-                if let error = model.actionError { Section { InlineSourceError(message: error) } }
                 Section {
                     Picker("书籍内容", selection: $selectedTab) { Text("简介").tag(0); Text("章节").tag(1) }.pickerStyle(.segmented).accessibilityIdentifier("detail.tabs")
                     if app.source(model.key.source).supportsComments {
@@ -297,18 +295,19 @@ private struct BookDetailContentView: View {
                 }
                 if selectedTab == 0 { synopsis(novel) }
             }
+            if let error = model.actionError { Section { InlineSourceError(message: error) } }
             if selectedTab == 1 || novel == nil { catalog }
         }.listStyle(.insetGrouped).navigationTitle(novel?.title ?? "书籍详情").navigationBarTitleDisplayMode(.inline)
-            .fullScreenCover(isPresented: $reading) {
-                if let novel = novel, let chapter = readerChapter { ReaderView(novel: novel, chapterKey: chapter) }
+            .fullScreenCover(item: $readerDestination) { destination in
+                ReaderView(novel: destination.novel, chapterKey: destination.chapterKey)
             }
             .refreshable { await model.load(app: app) }
             .buttonStyle(.borderless)
-            .onChange(of: app.sessions[model.key.source]) { _ in readerChapter = nil; reading = false; unlockTarget = nil }
-            .onChange(of: app.accountRevision(model.key.source)) { _ in readerChapter = nil; reading = false; unlockTarget = nil }
+            .onChange(of: app.sessions[model.key.source]) { _ in readerDestination = nil; unlockTarget = nil }
+            .onChange(of: app.accountRevision(model.key.source)) { _ in readerDestination = nil; unlockTarget = nil }
             .alert("解锁章节", isPresented: Binding(get: { unlockTarget != nil }, set: { if !$0 { unlockTarget = nil } })) {
                 if let chapter = unlockTarget {
-                    Button("确认购买并阅读") { Task { if await model.unlock(chapter, app: app) { readerChapter = chapter.key; reading = true }; unlockTarget = nil } }
+                    Button("确认购买并阅读") { Task { if await model.unlock(chapter, app: app) { present(chapter.key) }; unlockTarget = nil } }
                     Button("取消", role: .cancel) { unlockTarget = nil }
                 }
             } message: {
@@ -369,17 +368,24 @@ private struct BookDetailContentView: View {
         else if state.hasMore { Button("加载更多章节") { Task { await model.loadChapters(volume, app: app, append: true) } }.accessibilityIdentifier("chapters.more.\(volume.id)") }
         else if state.loaded && state.items.isEmpty && state.error == nil { Text("本卷暂无章节").foregroundColor(.secondary) }
     }
-    private func startReading(_ novel: Novel) {
-        if let progress = progress { readerChapter = progress.chapterKey; reading = true; return }
+    private func startReading() {
+        if let progress = progress { present(progress.chapterKey); return }
         Task { if let chapter = await model.firstChapter(app: app) { open(chapter) } }
     }
     private func open(_ chapter: Chapter) {
         if chapter.locked {
             do {
-                if try library.savedChapter(novel: model.key, chapter: chapter.key) != nil { readerChapter = chapter.key; reading = true }
+                if try library.savedChapter(novel: model.key, chapter: chapter.key) != nil { present(chapter.key) }
                 else { unlockTarget = chapter }
             } catch { model.actionError = error.localizedDescription }
-        } else { readerChapter = chapter.key; reading = true }
+        } else { present(chapter.key) }
+    }
+    private func present(_ chapter: ResourceKey) {
+        guard let novel = novel else {
+            model.actionError = "书籍详情尚未加载，请加载详情后再打开章节"
+            return
+        }
+        readerDestination = ReaderDestination(novel: novel, chapterKey: chapter)
     }
 }
 

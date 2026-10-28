@@ -1,6 +1,12 @@
 import SwiftUI
 import UIKit
 
+struct ReaderDestination: Identifiable {
+    let id = UUID()
+    let novel: Novel
+    let chapterKey: ResourceKey
+}
+
 struct ReaderView: View {
     @EnvironmentObject private var app: AppStore
     let novel: Novel
@@ -11,7 +17,7 @@ struct ReaderView: View {
     }
 }
 
-private struct ReaderRender {
+struct ReaderRender {
     var id: UUID
     var html: String
     var settings: ReaderSettings
@@ -19,13 +25,13 @@ private struct ReaderRender {
     var percent: Int
     var atEnd: Bool
 }
-private struct ReaderCatalogSection: Identifiable {
+struct ReaderCatalogSection: Identifiable {
     var volume: Volume
     var chapters: [Chapter]
     var id: String { volume.id }
 }
 
-@MainActor private final class ReaderState: ObservableObject {
+@MainActor final class ReaderState: ObservableObject {
     @Published var content: ChapterContent?
     @Published var render: ReaderRender?
     @Published var loading = false
@@ -159,6 +165,8 @@ private struct ReaderCatalogSection: Identifiable {
             do { try await Task.sleep(nanoseconds: 800_000_000); try Task.checkCancellation() }
             catch { return }
             guard let self = self, self.content?.chapter.key == content.chapter.key else { return }
+            // Only the delay is cancellable. Leaving the reader must not cancel a sync already sent.
+            self.progressTask = nil
             self.lastSaved = (content.chapter.key, position)
             await app.recordProgress(novel: novel, content: content, paragraph: position.paragraph, percent: position.percent)
         }

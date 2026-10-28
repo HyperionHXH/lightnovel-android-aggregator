@@ -102,6 +102,27 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(restored.bodyText, content.bodyText)
     }
 
+    @MainActor func testLeavingReaderPreservesProgressSyncAlreadyInFlight() async throws {
+        let source = ChapterGateSource(), app = try setupStore(source)
+        let novel = Novel(key: source.novel, title: source.content.novelTitle)
+        let reader = ReaderState()
+        reader.content = source.content
+        reader.render = ReaderRender(id: UUID(), html: "", settings: ReaderSettings(), paragraph: 0, percent: 0, atEnd: false)
+        let started = expectation(description: "Debounced progress reached the source")
+        let completed = expectation(description: "Source finished after reader dismissal")
+        source.progressStarted = { started.fulfill() }
+        source.progressCompleted = { completed.fulfill() }
+        reader.settled(ReaderViewport(paragraph: 12, percent: 34), app: app, novel: novel)
+        await fulfillment(of: [started], timeout: 3)
+        reader.stop(app: app, novel: novel)
+        source.finishProgress()
+        await fulfillment(of: [completed], timeout: 3)
+        XCTAssertEqual(source.savedProgress.map(\.paragraphIndex), [12])
+        XCTAssertEqual(source.savedProgress.map(\.percent), [34])
+        XCTAssertEqual(app.library.progress[novel.id]?.paragraphIndex, 12)
+        XCTAssertNil(app.sourceErrors[.kingdom])
+    }
+
     @MainActor func testLogoutClearsProvisionalAndResolvedIdentityButNotAnotherAccount() async throws {
         let source = ChapterGateSource()
         source.session.accountID = "session:opaque"
@@ -173,6 +194,11 @@ final class AppStoreTests: XCTestCase {
     var started: (() -> Void)?
     var list: [Novel]?
     var detailStarted: ((ResourceKey) -> Void)?
+    var progressStarted: (() -> Void)?
+    var progressCompleted: (() -> Void)?
+    private var pendingProgress: CheckedContinuation<Void, Never>?
+    private(set) var savedProgress: [ReadingProgress] = []
+    func finishProgress() { pendingProgress?.resume(); pendingProgress = nil }
     private var details: [ResourceKey: CheckedContinuation<NovelDetail, Error>] = [:]
     func finishDetail(_ key: ResourceKey, authors: [String]) {
         var novel = list!.first { $0.key == key }!
@@ -208,7 +234,13 @@ final class AppStoreTests: XCTestCase {
     func shelf() async throws -> [Novel] { throw SourceFailure.unsupported("Not used") }
     func setShelf(key: ResourceKey, add: Bool) async throws { throw SourceFailure.unsupported("Not used") }
     func history(page: Int) async throws -> Page<HistoryEntry> { throw SourceFailure.unsupported("Not used") }
-    func saveProgress(_ progress: ReadingProgress) async throws { throw SourceFailure.unsupported("Not used") }
+    func saveProgress(_ progress: ReadingProgress) async throws {
+        guard progressStarted != nil else { throw SourceFailure.unsupported("Not used") }
+        defer { progressCompleted?() }
+        await withCheckedContinuation { pendingProgress = $0; progressStarted?() }
+        try Task.checkCancellation()
+        savedProgress.append(progress)
+    }
     func rewards() async throws -> RewardStatus { throw SourceFailure.unsupported("Not used") }
     func claimReward() async throws -> RewardResult { throw SourceFailure.unsupported("Not used") }
 }
