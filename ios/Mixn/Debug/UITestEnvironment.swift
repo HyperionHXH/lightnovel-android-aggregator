@@ -10,6 +10,7 @@ import Foundation
         let defaults = UserDefaults(suiteName: "io.github.hyperionhxh.mixn.uitests." + identifier)!
         let preferences = PreferencesStore(defaults: defaults)
         preferences.onboardingComplete = ProcessInfo.processInfo.environment["MIXN_UI_ONBOARDING"] != "1"
+        if ProcessInfo.processInfo.environment["MIXN_UI_DARK"] == "1" { preferences.appearance.theme = "dark" }
         let font = try! UITestFont.make(in: root)
         let sources: [SourceID: any NovelSource] = [.kingdom: UITestSource(.kingdom), .shelf: UITestSource(.shelf, mandatoryFont: font)]
         return AppStore(sources: sources, preferences: preferences, library: LibraryStore(rootURL: root),

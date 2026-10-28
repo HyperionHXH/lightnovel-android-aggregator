@@ -22,6 +22,7 @@ final class MixnUITourTests: XCTestCase {
         app.launchEnvironment["MIXN_UI_TEST"] = "1"
         app.launchEnvironment["MIXN_UI_RUN"] = runID + (error ? "-error" : "") + (dark ? "-dark" : "") + (large ? "-large" : "")
         app.launchEnvironment["MIXN_UI_ONBOARDING"] = onboarding ? "1" : "0"
+        app.launchEnvironment["MIXN_UI_DARK"] = dark ? "1" : "0"
         app.launchEnvironment["MIXN_UI_ERROR"] = error ? "1" : "0"
         if let runtimePath = ProcessInfo.processInfo.environment["DYLD_FALLBACK_LIBRARY_PATH"] {
             app.launchEnvironment["DYLD_FALLBACK_LIBRARY_PATH"] = runtimePath
