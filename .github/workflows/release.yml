@@ -19,13 +19,38 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  source:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve existing release tag to immutable source
+        id: resolve
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          sha="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   ios:
+    needs: source
     uses: ./.github/workflows/ios.yml
+    with:
+      source_ref: ${{ needs.source.outputs.sha }}
     permissions:
       contents: read
 
   release:
-    needs: ios
+    needs: [source, ios]
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -33,20 +58,17 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
         with:
+          ref: ${{ needs.source.outputs.sha }}
           fetch-depth: 0
 
       - name: Resolve version
         id: version
         shell: bash
         env:
-          RELEASE_INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_INPUT_TAG: ${{ needs.source.outputs.tag }}
           GATED_IOS_VERSION: ${{ needs.ios.outputs.version }}
         run: |
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            tag="$RELEASE_INPUT_TAG"
-          else
-            tag="${GITHUB_REF_NAME}"
-          fi
+          tag="$RELEASE_INPUT_TAG"
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid release tag: $tag" >&2
             exit 1
@@ -135,6 +157,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION_TAG: ${{ steps.version.outputs.tag }}
           APK_FILE: ${{ steps.package.outputs.apk }}
+          RELEASE_SOURCE_SHA: ${{ needs.source.outputs.sha }}
         run: |
           if gh release view "$VERSION_TAG" >/dev/null 2>&1; then
             gh release upload "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256"
@@ -147,7 +170,7 @@ jobs:
             ' CHANGELOG.md > release-notes.md
             if [[ -s release-notes.md ]]; then
               if gh release create "$VERSION_TAG" \
-                --target "$GITHUB_SHA" \
+                --target "$RELEASE_SOURCE_SHA" \
                 --title "Mixn $version" \
                 --notes-file release-notes.md; then
                 :
@@ -156,7 +179,7 @@ jobs:
               fi
             else
               if gh release create "$VERSION_TAG" \
-                --target "$GITHUB_SHA" \
+                --target "$RELEASE_SOURCE_SHA" \
                 --title "Mixn $version" \
                 --generate-notes; then
                 :

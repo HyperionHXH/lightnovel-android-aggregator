@@ -7,6 +7,11 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      source_ref:
+        description: Exact source commit selected by the joint release gate
+        required: false
+        type: string
     outputs:
       version:
         description: Version verified against Android and packaged for iOS
@@ -30,6 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:

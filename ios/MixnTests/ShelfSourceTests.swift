@@ -268,7 +268,9 @@ final class ShelfSourceTests: XCTestCase {
             guard let root = try? JSONDecoder().decode(JSONValue.self, from: Data(text.dropLast().utf8)) else { return }
             if root.object.string("protocol") == "json" { fixture.socket.push("{}\u{1e}"); return }
             guard root.object.int("type") == 1 else { return }
-            fixture.socket.push("{\"type\":3,\"invocationId\":\"\(root.object.string("invocationId"))\",\"result\":{\"Id\":0,\"UserName\":\"读者\",\"Growth\":{}}}\u{1e}")
+            let response: JSONObject = ["type": 3, "invocationId": j(root.object.string("invocationId")),
+                                        "result": .object(["Success": true, "Response": .object(["Id": 0, "UserName": "读者", "Growth": .object([:])])])]
+            fixture.socket.push(String(data: try! JSONEncoder().encode(JSONValue.object(response)), encoding: .utf8)! + "\u{1e}")
         }
         _ = try await source.profile()
         XCTAssertEqual(source.session.accountID, stableIdentity, "A missing UID must not collapse private caches into a shared unknown identity")

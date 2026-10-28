@@ -8,6 +8,7 @@ final class MixnUITourTests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
     override func tearDownWithError() throws {
         if testRun?.hasSucceeded == false, app != nil {
+            print("Native failure accessibility tree:\n" + app.debugDescription)
             let attachment = XCTAttachment(screenshot: app.screenshot())
             attachment.name = "failure-surface"; attachment.lifetime = .keepAlways; add(attachment)
             let complete = expectation(description: "Capture failed native surface before app teardown")

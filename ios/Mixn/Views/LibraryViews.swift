@@ -549,6 +549,7 @@ struct OfflineControlsView: View {
     @State private var error: String?
     @State private var share: LibraryShareItem?
     @State private var deleteConfirmation = false
+    @State private var exportConfirmation = false
     private var record: OfflineRecord? { library.records.first { $0.novel.key == key } }
     var body: some View {
         if let record = record {
@@ -564,10 +565,7 @@ struct OfflineControlsView: View {
                 if let error = error { InlineSourceError(message: error) }
                 HStack {
                     if record.status == "failed" { Button("重试") { Task { do { try await library.retry(key, source: app.source(key.source), fonts: app.fonts) } catch is CancellationError { } catch { self.error = error.localizedDescription } } }.accessibilityIdentifier("download.retry") }
-                    Menu("导出 / 分享") {
-                        Button("导出 TXT") { export(epub: false) }
-                        Button("导出 EPUB（含字体）") { export(epub: true) }
-                    }.accessibilityIdentifier("download.export")
+                    Button("导出 / 分享") { exportConfirmation = true }.accessibilityIdentifier("download.export")
                     Spacer()
                     Button(role: .destructive) { deleteConfirmation = true } label: { Label("删除离线", systemImage: "trash") }.accessibilityIdentifier("download.delete")
                 }.disabled(busy)
@@ -575,6 +573,11 @@ struct OfflineControlsView: View {
             }
             .buttonStyle(.borderless)
             .sheet(item: $share) { item in ShareSheet(items: [item.url]) }
+            .confirmationDialog("选择导出格式", isPresented: $exportConfirmation, titleVisibility: .visible) {
+                Button("导出 TXT") { export(epub: false) }
+                Button("导出 EPUB（含字体）") { export(epub: true) }
+                Button("取消", role: .cancel) {}
+            }
             .confirmationDialog("删除离线文件并取消该书下载？本地阅读进度和在线书架不受影响。", isPresented: $deleteConfirmation, titleVisibility: .visible) {
                 Button("删除离线文件", role: .destructive) { do { try library.delete(key) } catch { self.error = error.localizedDescription } }
                 Button("取消", role: .cancel) {}
