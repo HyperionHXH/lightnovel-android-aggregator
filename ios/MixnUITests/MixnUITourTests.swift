@@ -87,6 +87,32 @@ final class MixnUITourTests: XCTestCase {
         XCTAssertTrue(app.buttons["header.closeButton"].waitForExistence(timeout: 10), "System share sheet must be dismissible")
     }
 
+    func testColdCatalogChapterCanBeReadAndDismissedForEachSource() throws {
+        launch()
+        for source in ["light_novel_kingdom", "light_novel_shelf"] {
+            if source == "light_novel_shelf" { open("discover.source." + source) }
+            open("book.\(source):2")
+            wait("detail.title")
+            XCTAssertEqual(element("detail.read").label, "开始阅读", "This route must start with an unread book")
+            app.segmentedControls.buttons["章节"].tap()
+            open("volume.\(source):v1")
+            open("chapter.\(source):2")
+            waitForReader()
+            open("reader.menu")
+            text("第2章 · 稳定阅读")
+            app.buttons["返回"].firstMatch.tap()
+            wait("detail.title")
+            open("chapter.\(source):1")
+            waitForReader()
+            open("reader.menu")
+            text("第1章 · 稳定阅读")
+            app.buttons["返回"].firstMatch.tap()
+            wait("detail.title")
+            back()
+        }
+        app.terminate()
+    }
+
     func testProductionRoutesAndReadingStates() throws {
         launch(onboarding: true)
         text("欢迎使用 Mixn")
