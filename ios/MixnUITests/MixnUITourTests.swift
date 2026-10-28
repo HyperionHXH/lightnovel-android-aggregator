@@ -203,7 +203,7 @@ final class MixnUITourTests: XCTestCase {
         let password = element("account.password")
         password.tap(); password.typeText("synthetic-password")
         open("account.login")
-        wait("account.logout")
+        text("UID fixture")
         text("测试账号")
         try capture("17a_signed_in")
         back()
