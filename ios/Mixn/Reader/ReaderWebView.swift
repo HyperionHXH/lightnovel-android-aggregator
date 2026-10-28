@@ -56,6 +56,7 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
     private(set) var webView: WKWebView!
     private var viewport = ReaderViewport()
     private var ready = false
+    private var awaitingInitialRestore = false
     private var turning = false
     private var restoring = false
     private var settling = false
@@ -114,9 +115,17 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
         guard size.width > 0, size.height > 0, size != lastSize else { return }
         let previous = lastSize
         lastSize = size
-        if ready && previous != .zero { restore(anchor: viewport) }
+        if awaitingInitialRestore { restorePreparedDocumentIfVisible() }
+        else if ready && previous != .zero { restore(anchor: viewport) }
+    }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        restorePreparedDocumentIfVisible()
     }
     func tearDown() {
+        documentGeneration = UUID()
+        ready = false; awaitingInitialRestore = false
+        owner = nil
         settleTimer?.invalidate()
         documentTimer?.invalidate()
         webView.stopLoading()
@@ -133,6 +142,7 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
         guard let owner = owner else { return }
         documentGeneration = UUID()
         ready = false; turning = false; restoring = true; pendingCapture = false
+        awaitingInitialRestore = false
         settling = false
         cardActive = false; cardTranslation = 0; cardDirection = 0; pendingBoundary = nil
         webView.isUserInteractionEnabled = true
@@ -141,6 +151,11 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
         let generation = documentGeneration
         documentTimer = Timer.scheduledTimer(withTimeInterval: 24, repeats: false) { [weak self] _ in
             guard let self = self, self.documentGeneration == generation, !self.ready else { return }
+            self.evaluate("JSON.stringify({tokenMatches:document.body?.dataset.token==='\(generation.uuidString)',domReady:document.readyState,visible:document.body?.classList.contains('ready'),fontStatus:document.fonts.status,pendingImages:Array.from(document.images).filter(image=>!image.complete).length,viewport:[innerWidth,innerHeight]})") { [weak self] value in
+                guard let self = self, self.documentGeneration == generation, !self.ready else { return }
+                NSLog("Reader document readiness timeout: attached=%@ diagnostics=%@",
+                      self.webView.window == nil ? "no" : "yes", value as? String ?? "unavailable")
+            }
             self.owner?.onError("章节排版超时，请重新加载正文与字体")
         }
         webView.stopLoading()
@@ -180,12 +195,11 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
               body["token"] as? String == documentGeneration.uuidString, let kind = body["kind"] as? String else { return }
         switch kind {
         case "ready":
-            guard let owner = owner else { return }
+            guard !ready else { return }
             ready = true
+            awaitingInitialRestore = true
             documentTimer?.invalidate()
-            let anchor = savedAnchor ?? ReaderViewport(paragraph: owner.restoreParagraph, percent: owner.restorePercent)
-            savedAnchor = nil
-            restore(anchor: anchor, end: owner.restoreAtEnd)
+            restorePreparedDocumentIfVisible()
         case "error":
             documentTimer?.invalidate()
             ready = false; turning = false; restoring = false
@@ -195,6 +209,14 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
         case "imageError": break // The document exposes an explicit retryable image error beside that illustration.
         default: break
         }
+    }
+    private func restorePreparedDocumentIfVisible() {
+        guard ready, awaitingInitialRestore, view.window != nil,
+              view.bounds.width > 0, view.bounds.height > 0, let owner = owner else { return }
+        awaitingInitialRestore = false
+        let anchor = savedAnchor ?? ReaderViewport(paragraph: owner.restoreParagraph, percent: owner.restorePercent)
+        savedAnchor = nil
+        restore(anchor: anchor, end: owner.restoreAtEnd)
     }
     private func restore(anchor: ReaderViewport, end: Bool = false) {
         restoring = true; turning = true
@@ -412,7 +434,12 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
       let timeout;Promise.race([font,new Promise((_,reject)=>{timeout=setTimeout(()=>reject(new Error('章节字体载入超时，请重试')),15000);})]).then(loaded=>{
         clearTimeout(timeout);if(document.body.dataset.embedded==='yes'&&(!loaded||!loaded.length))throw new Error('章节字体无法用于排版，请重试');
         return Promise.all(images.map(image=>image.complete?Promise.resolve():new Promise(resolve=>{image.addEventListener('load',resolve,{once:true});image.addEventListener('error',resolve,{once:true});setTimeout(resolve,5000);})));
-      }).then(()=>{measure();document.body.classList.add('ready');requestAnimationFrame(()=>requestAnimationFrame(()=>send('ready')));}).catch(error=>send('error',{message:error.message}));
+      }).then(()=>{
+        measure();document.body.classList.add('ready');
+        // Layout reads flush the revealed document synchronously. Animation frames
+        // can be suspended during native presentation, so they cannot gate the bridge.
+        article.getBoundingClientRect();send('ready');
+      }).catch(error=>send('error',{message:error.message}));
     })();
     """#
 }

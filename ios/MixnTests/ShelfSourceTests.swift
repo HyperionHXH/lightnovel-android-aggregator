@@ -143,6 +143,9 @@ final class ShelfSourceTests: XCTestCase {
     @MainActor func testSignalRNegotiatesCorrelatesOutOfOrderAndPropagatesServerError() async throws {
         let fixture = ShelfTransportFixture()
         defer { fixture.close() }
+        let negotiating = expectation(description: "initial negotiation suspended")
+        fixture.suspendNegotiation = true
+        fixture.onNegotiate = { negotiating.fulfill() }
         var calls: [JSONObject] = []
         let allSent = expectation(description: "both invocation frames sent")
         fixture.socket.onSend = { text in
@@ -154,7 +157,16 @@ final class ShelfSourceTests: XCTestCase {
             }
         }
         let first = Task { try await fixture.hub.invoke("First", params: .object(["Id": 1]), token: "access-one") }
-        let second = Task { try await fixture.hub.invoke("Second", params: .null, token: "access-one") }
+        await fulfillment(of: [negotiating], timeout: 2)
+        let secondStarted = expectation(description: "second invocation joins negotiation")
+        let second = Task {
+            secondStarted.fulfill()
+            return try await fixture.hub.invoke("Second", params: .null, token: "access-one")
+        }
+        await fulfillment(of: [secondStarted], timeout: 2)
+        XCTAssertEqual(fixture.requests.count, 1)
+        XCTAssertNil(fixture.socketRequest)
+        fixture.releaseNegotiations()
         await fulfillment(of: [allSent], timeout: 2)
         let secondID = try XCTUnwrap(calls.first { $0.string("target") == "Second" }?.string("invocationId"))
         let firstID = try XCTUnwrap(calls.first { $0.string("target") == "First" }?.string("invocationId"))
@@ -162,6 +174,8 @@ final class ShelfSourceTests: XCTestCase {
         let firstResult = try await first.value, secondResult = try await second.value
         XCTAssertEqual(firstResult, 11); XCTAssertEqual(secondResult, 22)
         XCTAssertEqual(calls.first?.array("arguments").last?.object.bool("UseGzip"), true)
+        XCTAssertEqual(fixture.requests.count, 1)
+        XCTAssertEqual(fixture.socketRequests.count, 1)
         XCTAssertEqual(fixture.requests.first?.url?.path, "/hub/api/negotiate")
         XCTAssertEqual(fixture.requests.first?.httpMethod, "POST")
         XCTAssertEqual(fixture.requests.first?.value(forHTTPHeaderField: "Authorization"), "Bearer access-one")
@@ -175,6 +189,75 @@ final class ShelfSourceTests: XCTestCase {
         }
         do { _ = try await fixture.hub.invoke("Denied", params: .null, token: "access-one"); XCTFail("Expected server authentication error") }
         catch { XCTAssertEqual(error as? SourceFailure, .authentication("unauthorized 401")) }
+    }
+
+    @MainActor func testCancelingOneNegotiationWaiterPreservesSharedConnection() async throws {
+        let fixture = ShelfTransportFixture(fallback: true)
+        defer { fixture.close() }
+        let negotiating = expectation(description: "shared negotiation suspended")
+        fixture.suspendNegotiation = true
+        fixture.onNegotiate = { negotiating.fulfill() }
+        fixture.socket.onSend = { text in
+            guard let root = try? JSONDecoder().decode(JSONValue.self, from: Data(text.dropLast().utf8)) else { return }
+            if root.object.string("protocol") == "json" { fixture.socket.push("{}\u{1e}"); return }
+            guard root.object.string("target") == "Survivor" else { return }
+            fixture.socket.push("{\"type\":3,\"invocationId\":\"\(root.object.string("invocationId"))\",\"result\":9}\u{1e}")
+        }
+        let canceled = Task { try await fixture.hub.invoke("Canceled", params: .null, token: "access-one") }
+        await fulfillment(of: [negotiating], timeout: 2)
+        let survivorStarted = expectation(description: "survivor joins negotiation")
+        let survivor = Task {
+            survivorStarted.fulfill()
+            return try await fixture.hub.invoke("Survivor", params: .null, token: "access-one")
+        }
+        await fulfillment(of: [survivorStarted], timeout: 2)
+        canceled.cancel()
+        do { _ = try await canceled.value; XCTFail("Expected cancellation") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertEqual(fixture.requests.count, 1)
+        XCTAssertNil(fixture.socketRequest)
+        fixture.releaseNegotiations()
+        let result = try await survivor.value
+        XCTAssertEqual(result, 9)
+        XCTAssertEqual(fixture.requests.count, 1)
+        XCTAssertEqual(fixture.socketRequests.count, 1)
+        XCTAssertFalse(fixture.socket.sent.contains { $0.contains("Canceled") })
+    }
+
+    @MainActor func testTokenSwitchDoesNotShareSuspendedNegotiationOrSendOldInvocation() async throws {
+        let fixture = ShelfTransportFixture()
+        defer { fixture.close() }
+        let oldNegotiating = expectation(description: "old token negotiation suspended")
+        let newNegotiating = expectation(description: "new token negotiates separately")
+        fixture.suspendNegotiation = true
+        fixture.onNegotiate = {
+            switch fixture.requests.last?.value(forHTTPHeaderField: "Authorization") {
+            case "Bearer old-token": oldNegotiating.fulfill()
+            case "Bearer new-token": newNegotiating.fulfill()
+            default: XCTFail("Unexpected negotiation credentials")
+            }
+        }
+        fixture.socket.onSend = { text in
+            guard let root = try? JSONDecoder().decode(JSONValue.self, from: Data(text.dropLast().utf8)) else { return }
+            if root.object.string("protocol") == "json" { fixture.socket.push("{}\u{1e}"); return }
+            guard root.object.string("target") == "NewAccount" else { return }
+            fixture.socket.push("{\"type\":3,\"invocationId\":\"\(root.object.string("invocationId"))\",\"result\":12}\u{1e}")
+        }
+        let old = Task { try await fixture.hub.invoke("OldAccount", params: .null, token: "old-token") }
+        await fulfillment(of: [oldNegotiating], timeout: 2)
+        let current = Task { try await fixture.hub.invoke("NewAccount", params: .null, token: "new-token") }
+        await fulfillment(of: [newNegotiating], timeout: 2)
+        do { _ = try await old.value; XCTFail("Expected switched session to fail") }
+        catch { XCTAssertEqual(error as? SourceFailure, .network("轻书架会话已切换")) }
+        fixture.releaseNegotiations()
+        let result = try await current.value
+        XCTAssertEqual(result, 12)
+        XCTAssertEqual(fixture.requests.map { $0.value(forHTTPHeaderField: "Authorization") }, ["Bearer old-token", "Bearer new-token"])
+        XCTAssertEqual(fixture.socketRequests.count, 1)
+        XCTAssertEqual(fixture.socketRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer new-token")
+        let query = URLComponents(url: try XCTUnwrap(fixture.socketRequest?.url), resolvingAgainstBaseURL: false)?.queryItems
+        XCTAssertEqual(query?.first { $0.name == "access_token" }?.value, "new-token")
+        XCTAssertFalse(fixture.socket.sent.contains { $0.contains("OldAccount") })
     }
 
     @MainActor func testCanceledInvocationDoesNotReplayAndOtherInvocationSurvives() async throws {
@@ -557,25 +640,32 @@ private final class ShelfMemorySecrets: SecretStore {
 }
 
 private final class ShelfFixtureURLProtocol: URLProtocol {
-    static var respond: ((URLRequest) -> (Int, Data))?
+    @MainActor static var respond: (@MainActor (URLRequest, @escaping @MainActor (Int, Data) -> Void) -> Void)?
+    @MainActor private var stopped = false
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         let request = request
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            let result = Self.respond?(request) ?? (500, Data())
-            let response = HTTPURLResponse(url: request.url!, statusCode: result.0, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
-            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-            self.client?.urlProtocol(self, didLoad: result.1)
-            self.client?.urlProtocolDidFinishLoading(self)
+            guard let respond = Self.respond else { self.finish(status: 500, data: Data()); return }
+            respond(request) { [weak self] status, data in self?.finish(status: status, data: data) }
         }
     }
-    override func stopLoading() {}
+    @MainActor private func finish(status: Int, data: Data) {
+        guard !stopped else { return }
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {
+        DispatchQueue.main.async { self.stopped = true }
+    }
 }
 
 private final class ShelfFixtureSocket: ShelfSocket {
-    var onSend: ((String) -> Void)?
+    @MainActor var onSend: (@MainActor (String) -> Void)?
     private let lock = NSLock()
     private var records: [String] = []
     private var messages: [Data] = []
@@ -588,7 +678,11 @@ private final class ShelfFixtureSocket: ShelfSocket {
     func send(_ text: String) async throws {
         try Task.checkCancellation()
         record(text)
-        onSend?(text)
+        // Nonisolated async socket methods run off-actor; callbacks own MainActor test state.
+        try await MainActor.run {
+            try Task.checkCancellation()
+            self.onSend?(text)
+        }
     }
     private func record(_ text: String) { lock.lock(); records.append(text); lock.unlock() }
     func receive() async throws -> Data {
@@ -623,9 +717,13 @@ private final class ShelfFixtureSocket: ShelfSocket {
     let origins: [URL]
     private(set) var hub: ShelfSignalR!
     private(set) var requests: [URLRequest] = []
-    private(set) var socketRequest: URLRequest?
+    private(set) var socketRequests: [URLRequest] = []
+    var socketRequest: URLRequest? { socketRequests.last }
     var primaryStatus = 200
     var httpResponse: ((URLRequest) -> (Int, Data)?)?
+    var suspendNegotiation = false
+    var onNegotiate: (() -> Void)?
+    private var negotiations: [() -> Void] = []
     init(fallback: Bool = false, invocationTimeout: TimeInterval = 1) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ShelfFixtureURLProtocol.self]
@@ -633,22 +731,35 @@ private final class ShelfFixtureSocket: ShelfSocket {
         var clock: TimeInterval = 0
         limiter = ShelfRateLimiter(now: { clock }, sleep: { clock += $0 })
         origins = fallback ? [URL(string: "https://primary.test")!, URL(string: "https://fallback.test")!] : [URL(string: "https://primary.test")!]
-        ShelfFixtureURLProtocol.respond = { [weak self] request in
-            guard let self = self else { return (500, Data()) }
+        ShelfFixtureURLProtocol.respond = { [weak self] request, complete in
+            guard let self = self else { complete(500, Data()); return }
             self.requests.append(request)
-            if let response = self.httpResponse?(request) { return response }
             let status = request.url?.host == "primary.test" ? self.primaryStatus : 200
-            return (status, Data("{\"connectionToken\":\"connection-token\",\"availableTransports\":[{\"transport\":\"WebSockets\"}]}".utf8))
+            let result = self.httpResponse?(request) ?? (status, Data("{\"connectionToken\":\"connection-token\",\"availableTransports\":[{\"transport\":\"WebSockets\"}]}".utf8))
+            let respond = { complete(result.0, result.1) }
+            if request.url?.path == "/hub/api/negotiate" {
+                if self.suspendNegotiation { self.negotiations.append(respond) }
+                else { respond() }
+                self.onNegotiate?()
+            } else { respond() }
         }
         hub = ShelfSignalR(http: http, limiter: limiter, origins: origins, handshakeTimeout: 1, invocationTimeout: invocationTimeout, socketFactory: { [weak self] request in
-            self!.socketRequest = request
+            self!.socketRequests.append(request)
             return self!.socket
         })
         socket.onSend = { [weak socket] text in if text.contains("\"protocol\"") { socket?.push("{}\u{1e}") } }
     }
+    func releaseNegotiations() {
+        suspendNegotiation = false
+        let responses = negotiations
+        negotiations.removeAll()
+        for respond in responses { respond() }
+    }
     func close() {
         hub.reset()
         socket.onSend = nil
+        onNegotiate = nil
+        negotiations.removeAll()
         http.session.invalidateAndCancel()
         ShelfFixtureURLProtocol.respond = nil
     }
