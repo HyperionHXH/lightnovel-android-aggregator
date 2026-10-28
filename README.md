@@ -10,7 +10,7 @@ Mixn 是面向个人账号的轻小说聚合阅读器，内置轻之国度（LK�
 
 - Android Release：[v1.22.2](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/tag/v1.22.2)
 - Android APK：[Mixn-1.22.2.apk](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-1.22.2.apk)
-- iOS 构建目标：**1.22.2 / 38**，最低 iOS/iPadOS 15.0；初次移植正在验收，是否可下载以该 Release 的实际附件为准。**只提供未签名 IPA，普通 iPhone 不能直接点开安装。** [安装、更新与平台限制](docs/IOS.md)。
+- iOS / iPadOS：**1.22.2 / 38**，最低系统 15.0；[下载未签名 IPA](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.ipa)。**普通 iPhone 不能直接点开安装，需自行签名或使用已兼容的安装环境。** [安装、更新、验收与平台限制](docs/IOS.md)。
 
 > 本项目是非官方客户端，不隶属于轻之国度或轻书架。请遵守两个站点的服务条款和内容版权要求，不要批量抓取、分发或商业使用站点内容。
 
@@ -115,6 +115,8 @@ Android Release APK 使用 Android Keystore 签名。首次配置可运行：
 ### iOS 构建与验收
 
 使用固定 Xcode 16.4 + XcodeGen，在 Mac 生成工程并分别构建真机 Release 和模拟器测试。完整命令及产物目录见 [iOS 构建文档](docs/IOS.md#在-mac-上构建)；[云端 iOS Acceptance](.github/workflows/ios.yml)不自动发布。Release 不含 DEBUG 的测试账号/书籍夹具，且不携带 Apple 签名材料。
+
+首次 iOS 交付通过 [原生验收 run 40618756803](https://github.com/HyperionHXH/lightnovel-android-aggregator/actions/runs/40618756803)：56 项 XCTest、完整生产路径 XCUITest、30 张原生截图和实际 EPUB/TXT 导出；下载后已核验安装包/录屏并逐张检查截图。模拟器不等于真机侧载或真实账号付费权限验收；具体边界见安装文档。
 
 ## 测试
 

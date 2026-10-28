@@ -1,11 +1,25 @@
 # Mixn 项目交接记录
 
-更新时间：2026-10-22
+更新时间：2026-10-28
 仓库：`https://github.com/HyperionHXH/lightnovel-android-aggregator.git`
-当前分支：`feature/multi-source-foundation`
-当前分支最新提交以 `git log -1` 为准；本文件记录的最近认证与阅读交互增强均已随分支提交推送。
-`1.22.1 / 37` 已通过用户的 Android 模拟器人工验收；用户已授权提交、推送当前分支并创建 `v1.22.1` 发布标签。签名 APK 与 SHA-256 由 Android Release 工作流生成，构建和发布状态以对应 Actions 运行结果为准。
+初次移植分支：`feat/ios-parity`；iOS 原生验收已通过，已向既有 `v1.22.2` 追加 unsigned IPA、摘要和构建来源清单；不以此承诺全部真机或真实账号能力已验收。
+Android 稳定版为 `1.22.2 / 38`，签名发布 commit `d8a23c0e5c40026f44d796344618e4cf8c63429d`、Release run `39745689348`。用户明确要求本轮 Android 不加版本、不重发 APK；iOS 完成验收后仅补充同版本 unsigned IPA，不移动既有标签。
 用户现已确认模拟器可联网、轻书架作者能显示，授权优化作者与书名同时呈现后推送编译。本轮保持现有候选 `1.22.2 / 38`，不再次增加版本；发布时必须显式指定仓库 `HyperionHXH/lightnovel-android-aggregator`（本机 gh 默认仓库可能指向另一个项目）。
+
+## iOS 当前验收记录
+
+- 设计/安装/平台例外：[`ADR0002`](adr/0002-native-ios-and-joint-release.md)、[`IOS.md`](IOS.md)、[`PLATFORM_PARITY.md`](PLATFORM_PARITY.md)。Android native 保留，iOS 为 SwiftUI/UIKit/WebKit 15+；Triomi GPL 工程只借鉴方法，不复制实现。
+- 用户已明确授权推开发分支运行 cloud macOS 编译/测试/截图；验收通过前不得创建 Release。Windows 没有 Xcode，也没有假装用 Android 模拟器验证 iOS。
+- Android 回归：`:app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon -Pkotlin.incremental=false` 已成功，53 tasks（11 executed）。只有共享协议样例与测试资源接入变更，Android 版本仍 `1.22.2 / 38`。
+- iOS 交付源码 `2f7016ca8dd4a26ceb76291b8f4fb940717bdf5e`，[run 40618756803](https://github.com/HyperionHXH/lightnovel-android-aggregator/actions/runs/40618756803) 全部成功。Xcode 16.4、iPhone 16 / iOS 18.5，56 项 XCTest（0 failure / 0 skip）、1 项完整生产路径 XCUITest（0 failure / 0 skip）。
+- 实际联网覆盖 LK 公开列表→详情→分卷→章节资源身份一致性、LNS 真实 SignalR 握手→服务器认证要求。UI 账号和正文为 DEBUG 隔离夹具，不能把其成功冒充真实账号注册、签到、付费或私信验收。
+- Device Release / simulator Debug 都通过；WebKit 293831 使用官方测试进程 `DYLD_FALLBACK_LIBRARY_PATH` workaround，未改最低系统或 Release。已修复搜索行误触、目录空白点击、WebKit 插图手势竞争、阅读页根 Tab 覆盖和导出入口问题；测试定位使用可见身份与系统实际分享视图。
+- 已下载同 run 至 `release_ios/40618756803/`，30 张原生截图全部逐张读取；截图哈希/尺寸/唯一性/顺序通过。401.783333 秒录屏、3763 可解码帧，SHA 校验及抽帧检查通过，不宣称逐帧观看。原生 EPUB 4 章 ZIP/XML、TXT 完整末段/UTF-8 通过。
+- IPA `4,743,024` 字节，SHA-256 `478dce1b6ba97c2cd900d09eabde3e90e3e0eb49dc957fae1534dbfaca1e3ead`，来源清单记录准确 SHA/run；DEBUG 账号/书籍/字体夹具与 Apple 签名材料未进入 Release。
+- 已发布附件为 `Mixn-iOS-1.22.2-Unsigned.ipa`、`.ipa.sha256`、`Mixn-iOS-1.22.2-Unsigned.json`；iOS 源码晚于既有 Android 标签，故不移动标签或声称相同源提交。旧 APK 摘要仍应为 `6b16999e1ba7ef3e1945e445f3fc3175ebba7b2d9e0ba0f72218d86ea59a0590`，大小 `32,677,717` 字节。未来新标签用同一不可变提交联合发布；本轮没有运行 Android Release workflow。
+- 真机侧载、真实账号权限写入、后台调度、iPad/最低系统组合、相册拒绝与硬件仍未验证；安装/签名到期/升级备份/公开 API 限制见 `IOS.md`，不可删掉这些边界而宣传“100% 完全正常”。
+
+以下为 Android 历史实现与约束，平台差异以上述 iOS 文档为准。
 
 ## 项目定位
 
