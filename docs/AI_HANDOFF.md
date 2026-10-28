@@ -6,21 +6,22 @@
 Android 稳定版为 `1.22.2 / 38`，签名发布 commit `d8a23c0e5c40026f44d796344618e4cf8c63429d`、Release run `39745689348`。用户明确要求本轮 Android 不加版本、不重发 APK；iOS 完成验收后仅补充同版本 unsigned IPA，不移动既有标签。
 用户现已确认模拟器可联网、轻书架作者能显示，授权优化作者与书名同时呈现后推送编译。本轮保持现有候选 `1.22.2 / 38`，不再次增加版本；发布时必须显式指定仓库 `HyperionHXH/lightnovel-android-aggregator`（本机 gh 默认仓库可能指向另一个项目）。
 
-## iOS 首次选章与生命周期修复（原生验收通过，未覆盖正式附件）
+## iOS 首次选章与生命周期修复（已更新正式 Release）
 
 - 当前修复分支 `fix/ios-reader-entry`。用户反馈：从未读书籍的目录直接点章节，出现空白全屏且无法返回；先点开始阅读后不再触发。
 - 仅加回归的基线提交 `546f77f7e9f53dbc21a20e36a2028bc9acb9c0f6` 在原生 run `40678198388` 失败：直接点新书第 2 章后找不到 `reader.document`，旧完整生产流程仍通过。不能继续引用下方首次交付的成功覆盖这个此前未测试的入口。
 - 修复采用完整 `ReaderDestination` 与 item 驱动的全屏呈现；并检查社区导航行生命周期、用户取消下载的恢复竞争、清缓存后的下载重试及阅读进度同步取消。
 - Android 导航 `Routes.sourceReader(novelKey, chapterKey)` 已在单个路由中携带来源、作品和章节参数；这些修复属于 SwiftUI 与 iOS 生命周期，无需修改或重新发布 Android。
-- 开发候选原生验收与附件单独记录；尚不覆盖既有 `v1.22.2` Release 附件，不移动标签，不将编译成功当成修复验收。
+- 前一轮只推了已验证修复分支和 Actions 产物，未同步正式下载，因此 README 仍取得初版。用户现明确要求更新 Release/README且不影响其他端；已仅替换既有 `v1.22.2` 的三个同名 iOS 附件，同步默认分支 README/安装说明，不移动标签、不提升其他端版本、不替换 APK。今后只提供 Actions 产物不算完成发布，规则写入 ADR0002。
 - 首个修复候选 `77ef0dc` 的 run `40681106786` 已通过双源冷启动指定第 2 章、返回、重新打开第 1 章；四张新增原生截图已读取。新增五项进度/社区/下载状态回归全部通过；完整门槛仍失败，不得交付：后续普通阅读出现可见正文但原生就绪超时，SignalR 既有并发测试丢失第二个请求，另有 LK 真实匿名 API 超时。正在处理实际就绪/连接竞争，未放宽断言或添加假成功。
 - 后续诊断：SignalR 正式连接在同步路径绑定来源/令牌，没有证据支持改动生产协议；失帧来自非隔离 async 夹具并发调用 MainActor 测试闭包，现固定回到 MainActor，并补充协商期间取消/换账号隔离。WebKit 正文可见证明字体/图片门槛已完成，动画帧握手是可暂停的剩余依赖；移除它，仍须真实 DOM 恢复成功才报告停稳，并用实际 WKWebView 验证禁用帧回调、离屏后挂载、旧令牌和字体解码失败。原次超时是否完全由帧暂停造成仍需完整 UI 回归确认。
 - 第二候选 `922f56f` / run `40684331674`：真实匿名 LK/LNS、全部 SignalR 24 项及原有状态回归通过；全流程已走过正文、插图、三模式翻页和导出，未再出现原可见正文就绪超时。新增历史退出断言确实发现“继续阅读”同时激活整行 NavigationLink，返回错误落到详情页；现给按钮明确 borderless 样式。新增 WK 测试的离屏零尺寸导航实际被 WebKit 延迟、错误提前启动排版计时；现等窗口挂载与正尺寸后才启动导航/计时。单像素夹具固定 scale=1，不再把屏幕 3x 缩放生成的 PNG 当 1px。临时就绪诊断日志已删除；仍待最终完整门槛通过。
 - 最终修复源码 `49e9731b800b7ba78e447e4ffba67e4ac3f6a34a` / run `40687351676` 全门槛成功：Xcode 16.4，iPhone 16 / iOS 18.5；66 项 XCTest（包括真实匿名来源、原生 WKWebView 与状态竞争回归）/ 0 failure，2 项 XCUITest / 0 failure。双源新书直接打开第 2 章、返回后打开第 1 章、历史继续阅读后回到历史列表均实际执行。
 - 同 run 全部产物已下载至 `release_ios/40687351676/`；35 张原生截图已以五组拼图逐张目视，摘要/顺序/尺寸验证通过；340.073333 秒录屏、4252 个可解码帧。实际 EPUB 4 章 ZIP/XML 与 TXT 完整末段/UTF-8 通过。不宣称逐帧观看录屏。
-- 新候选 `mixn-ios-unsigned/Mixn-iOS-1.22.2-Unsigned.ipa` 为 arm64 device unsigned IPA，4,755,852 字节，SHA-256 `512442f58f7887f3911601b7e7130f033f23e2befb2eef3a56425b318fcfebbe`；来源清单对应上述精确提交/run。此为修复分支的已验证构建，既有 Release 仍是下方首次交付的旧附件，没有被覆盖；Android 版本与 APK 未改。真实账号操作、真机侧载与系统权限仍需用户环境确认。
+- 正式修复 IPA 为 arm64 device unsigned，4,755,852 字节，SHA-256 `512442f58f7887f3911601b7e7130f033f23e2befb2eef3a56425b318fcfebbe`；来源清单对应上述精确提交/run。公开下载入口已重新下载验证，与已验收产物逐字节一致。应用内版本仍 `1.22.2（38）`，README 链接用 `revision=49e9731` 区分同版本修订；Release 只保留一个 `.ipa`，兼容既有 iOS 关于页按扩展名选择安装包的逻辑。
+- 远端 Release ID、名称、tag/target 和 Android 说明未变；Android APK/校验文件的完整附件元数据未变，公开下载 APK 摘要仍 `6b16999e1ba7ef3e1945e445f3fc3175ebba7b2d9e0ba0f72218d86ea59a0590`，标签对象未移动。旧 iOS 附件备份位于 `release_ios/pre-reader-fix-publication-40687351676/`，发布前后元数据/公开下载核验保存在 `release_ios/publication-reader-fix-40687351676/`。下方为首次移植历史验收，不是当前下载包摘要；真实账号操作、真机侧载和系统权限仍需用户环境确认。
 
-## iOS 当前验收记录
+## iOS 首次移植历史验收记录
 
 - 设计/安装/平台例外：[`ADR0002`](adr/0002-native-ios-and-joint-release.md)、[`IOS.md`](IOS.md)、[`PLATFORM_PARITY.md`](PLATFORM_PARITY.md)。Android native 保留，iOS 为 SwiftUI/UIKit/WebKit 15+；Triomi GPL 工程只借鉴方法，不复制实现。
 - 用户已明确授权推开发分支运行 cloud macOS 编译/测试/截图；验收通过前不得创建 Release。Windows 没有 Xcode，也没有假装用 Android 模拟器验证 iOS。

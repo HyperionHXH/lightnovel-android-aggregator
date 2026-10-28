@@ -18,6 +18,7 @@ Android Compose、Cronet、Keystore、DataStore、WorkManager 和 SAF 不能直�
 5. 不用私有 API 模拟音量键接管、强制后台常驻、签名绕过或静默安装。后台刷新是系统调度的最早时间，不能冒充 Android 六小时周期保证；详见 `docs/IOS.md`。
 6. XcodeGen 与固定 Xcode 在 macOS CI 生成工程，分别产生 arm64 iPhoneOS 无签名 Release IPA、模拟器 XCTest/XCUITest、原生截图和录屏。自动完整性核验后仍须下载目视截图；不能用语法检查或图片哈希当界面验收。
 7. 未来新版本标签由联合门槛控制，双端都通过后发布 APK + unsigned IPA。本次先通过 iOS 全部门槛，再仅给既有 `v1.22.2` 追加新 IPA/摘要，不移动标签、不替换已发布 Android 文件。未通过则不发。
+8. 已发布版本的平台独有修复经该平台原生验收、用户明确授权发布后，可只更新既有 Release 的对应平台安装包、摘要与来源清单；不提升无改动平台版本、不替换其附件、不移动既有标签。必须同时更新默认分支 README/安装说明和 Release 说明，并从公开下载入口重新下载核验。只提供 Actions 临时附件不算完成发布；IPA 同版本修订以精确源提交和 SHA-256 区分。
 
 ## 理由
 

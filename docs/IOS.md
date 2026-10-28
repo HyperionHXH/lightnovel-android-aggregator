@@ -10,14 +10,15 @@ Mixn iOS 使用原生 SwiftUI / UIKit / WebKit，最低 iOS/iPadOS 15.0；应用
 - iPhoneOS arm64 Release `.app` 才能打包 IPA；iOS Simulator `.app` 仅能在 Mac 模拟器运行，不能当手机安装包。
 - 模拟器、自动断言、截图和录屏只能证明对应测试场景；不是所有型号/系统/网站账号的保证。每次验收以精确提交、Actions run 和产物摘要为准。
 
-### 首次交付验收
+### 当前修复版验收（2026-10-28）
 
-- 下载：[IPA](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.ipa)、[SHA-256](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.ipa.sha256)、[构建来源清单](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.json)。
-- 源码 `2f7016ca8dd4a26ceb76291b8f4fb940717bdf5e`，[验收 run 40618756803](https://github.com/HyperionHXH/lightnovel-android-aggregator/actions/runs/40618756803)。iOS 初次补充晚于 Android，因此此 IPA 的源码提交与现有 `v1.22.2` Android 标签不同；未移动标签、未替换 APK。
-- Xcode 16.4 / iPhone 16 / iOS 18.5：device Release、56 项 XCTest（0 failure / 0 skip）、1 项完整路径 XCUITest（0 failure / 0 skip）。实际联网仅覆盖 LK 匿名资源身份一致性及 LNS 匿名握手/认证边界；UI 的账号与正文是 DEBUG 隔离夹具，不代表真实账号验收。
-- 30 张原生截图已逐张目视：引导、发现/双源、WOFF2 阅读、搜索、详情、目录、评论、三种阅读模式/菜单/插图相册操作、书架、下载、EPUB/TXT 系统分享、历史、账号、设置、字体、存储、关于、错误、深色及最大辅助字号。图像中未发现白屏或致命遮挡；最大字号需要滚动，长书名会省略，水平频道可滚动。
-- 录屏 `401.783333` 秒 / `3763` 可解码帧，已校验 SHA-256 并抽帧检查；未声称逐帧观看。实际 EPUB 含 4 章且 ZIP/XML 校验通过，TXT 含完整末段和 UTF-8 中文。
-- IPA `4,743,024` 字节，SHA-256：`478dce1b6ba97c2cd900d09eabde3e90e3e0eb49dc957fae1534dbfaca1e3ead`。下载后的 ZIP/元数据/摘要/DEBUG 夹具排除检查通过。完整证据位于该 run 的 `mixn-ios-acceptance`，截图、导出清单及日志另有 `mixn-ios-surfaces`；Actions 附件按仓库保留期失效。
+- 下载：[阅读器修复版 IPA](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.ipa?revision=49e9731)、[SHA-256](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.ipa.sha256?revision=49e9731)、[构建来源清单](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.json?revision=49e9731)。
+- 修复新书不先点“开始阅读”、直接点章节时空白全屏且无法返回；同时修复历史继续阅读误跳详情、社区子页导航、下载取消/重试和退出阅读时的进度同步。WebKit 就绪不依赖动画帧，页面挂载且尺寸有效后才开始加载与排版计时。
+- 源码 `49e9731b800b7ba78e447e4ffba67e4ac3f6a34a`，[验收 run 40687351676](https://github.com/HyperionHXH/lightnovel-android-aggregator/actions/runs/40687351676)。本次仅更新既有 `v1.22.2` 的 iOS 附件，Android APK、版本和标签均不变；IPA 源码与早先 Android 标签不同，以来源清单为准。
+- Xcode 16.4 / iPhone 16 / iOS 18.5：device Release、66 项 XCTest（0 failure / 0 skip）、2 项生产路径 XCUITest（0 failure / 0 skip）。双源新书直接打开第 2 章、返回后打开第 1 章，以及历史继续阅读退出后返回历史列表均实际执行。真实联网仅覆盖 LK 匿名资源身份一致性及 LNS 匿名握手/认证边界；UI 账号和正文是 DEBUG 隔离夹具，不代表真实账号验收。
+- 35 张原生截图已通过五组拼图逐张目视，覆盖首次选章/返回、WOFF2、三种阅读模式、插图、历史及既有完整流程。录屏 `340.073333` 秒 / `4252` 可解码帧，已核验摘要和完整性，不宣称逐帧观看；实际 EPUB 含 4 章且 ZIP/XML 校验通过，TXT 含完整末段和 UTF-8 中文。
+- IPA `4,755,852` 字节，SHA-256：`512442f58f7887f3911601b7e7130f033f23e2befb2eef3a56425b318fcfebbe`。应用内版本保持 `1.22.2（38）`，与初版同号；通过摘要和构建来源清单辨认修复版，而不是只看版本号。已有用户使用原签名/安装工具覆盖升级前先备份，不要先卸载。
+- 当前三个同名 iOS Release 附件由上述已验收修复包替换；初版源码/验收记录保留在 `AI_HANDOFF.md` 的历史段落。证据位于当前 run 的 `mixn-ios-acceptance` / `mixn-ios-surfaces`；Actions 附件按保留期失效，正式下载以 Release 为准。
 - 未验证：实体 iPhone/iPad 签名安装、全部最低系统/横屏/多窗口组合、真实账号注册/付费解锁/签到写入、真机相册权限拒绝、后台调度与硬件行为。不将这些限制称作全部真机验收通过。
 
 ## 安装路径
@@ -86,7 +87,7 @@ Xcode 16.4 的 iOS 18.5 模拟器有 [WebKit 官方缺陷 293831](https://bugs.w
 
 CI 还显式开启 `RUN_MIXN_LIVE_SMOKE=1` 原生匿名联网检查：LK 的公开列表/详情/目录资源一致性，以及 LNS 真实握手后服务器要求搜索认证的边界。不能由此宣称 LNS 登录后作者、付费阅读、注册邮件、签到或私信的真实账号验收已通过；这些由脱敏协议回归覆盖，并需使用者在自己的设备/账号确认。默认本地 XCTest 不联网。
 
-下载成功 run 的 `mixn-ios-unsigned` 和 `mixn-ios-acceptance` 到独立的 `release_ios/<RUN_ID>/`，核对 SHA-256、IPA 元数据和每张图；不要用别的提交的截图作为证据。本轮 iOS 初次发布只向已有 `v1.22.2` 增补新的 IPA/校验文件，不移动标签、不替换旧 Android APK。
+下载成功 run 的 `mixn-ios-unsigned` 和 `mixn-ios-acceptance` 到独立的 `release_ios/<RUN_ID>/`，核对 SHA-256、IPA 元数据和每张图；不要用别的提交的截图作为证据。平台独有修复须在明确发布授权后，仅更新对应平台附件和校验/来源清单，同步默认分支 README 与安装文档，并从公开下载入口重新下载验证；不得只停留在 Actions 临时附件。本次替换 iOS 附件，不移动 `v1.22.2` 标签、不替换 Android APK、不提升其他端版本。
 
 以后的新版本 `v*` 统一发布由双端门槛约束：iOS 验收成功后才构建、验证 Android 签名 APK；两者都通过才发布 APK 与 unsigned IPA。普通功能/bug 在同一分支和 PR 中维护，见 [`双端功能对照`](PLATFORM_PARITY.md)。
 
