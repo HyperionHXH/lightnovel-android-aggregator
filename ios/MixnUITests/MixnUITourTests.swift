@@ -80,6 +80,12 @@ final class MixnUITourTests: XCTestCase {
         wait("reader.document")
     }
 
+    private func waitForSystemShare() {
+        let share = app.descendants(matching: .any).matching(identifier: "ActivityListView").firstMatch
+        XCTAssertTrue(share.waitForExistence(timeout: 30), "Expected the real iOS activity sheet")
+        XCTAssertTrue(app.buttons["header.closeButton"].waitForExistence(timeout: 10), "System share sheet must be dismissible")
+    }
+
     func testProductionRoutesAndReadingStates() throws {
         launch(onboarding: true)
         text("欢迎使用 Mixn")
@@ -177,10 +183,9 @@ final class MixnUITourTests: XCTestCase {
         for (name, action) in [("14a_epub_export", "导出 EPUB（含字体）"), ("14b_txt_export", "导出 TXT")] {
             open("download.export")
             app.buttons[action].firstMatch.tap()
-            wait("system.share", timeout: 30)
+            waitForSystemShare()
             try capture(name)
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12))
-                .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
+            app.buttons["header.closeButton"].tap()
             wait("download.export")
         }
         back()

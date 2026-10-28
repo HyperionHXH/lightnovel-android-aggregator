@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import plistlib
 import shutil
@@ -45,6 +46,8 @@ def package(app: pathlib.Path, output: pathlib.Path):
     manifest = {'bundle': info['CFBundleIdentifier'], 'version': info['CFBundleShortVersionString'],
                 'build': info['CFBundleVersion'], 'architectures': architectures, 'unsigned': True,
                 'name': output.name, 'bytes': output.stat().st_size, 'sha256': digest}
+    manifest['sourceCommit'] = os.environ.get('MIXN_SOURCE_SHA')
+    manifest['actionsRun'] = os.environ.get('GITHUB_RUN_ID')
     output.with_suffix('.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(manifest, indent=2))
 

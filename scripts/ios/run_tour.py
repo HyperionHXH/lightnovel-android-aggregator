@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import re
 import signal
@@ -131,6 +132,8 @@ def run(args):
         manifest = {'schema': 1, 'device': args.device, 'captures': captures, 'errors': failures,
                     'expected': [n for n, _ in TOUR], 'xcodeExit': result,
                     'elapsedSeconds': round(time.monotonic() - started, 3)}
+        manifest['sourceCommit'] = os.environ.get('MIXN_SOURCE_SHA')
+        manifest['actionsRun'] = os.environ.get('GITHUB_RUN_ID')
         manifest['exports'] = exported
         if recording.exists():
             manifest['video'] = {'file': recording.name, 'bytes': recording.stat().st_size, 'sha256': digest(recording)}

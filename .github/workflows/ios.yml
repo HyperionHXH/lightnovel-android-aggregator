@@ -45,6 +45,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "MIXN_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           xcodebuild -version
           xcrun swift --version
           python -m pip install Pillow==11.3.0 PyYAML==6.0.3
