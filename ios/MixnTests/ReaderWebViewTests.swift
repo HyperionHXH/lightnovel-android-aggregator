@@ -33,7 +33,7 @@ final class ReaderWebViewTests: XCTestCase {
         }
     }
 
-    @MainActor func testOffscreenResourceCompletionWaitsForVisibleNativeRestore() async throws {
+    @MainActor func testDetachedReaderDefersLoadingUntilVisibleThenRestoresPosition() async throws {
         let controller = ReaderWebController()
         controller.loadViewIfNeeded()
         let premature = expectation(description: "Detached document must not settle")
@@ -45,17 +45,7 @@ final class ReaderWebViewTests: XCTestCase {
             settled.fulfill()
         })
         controller.loadDocument()
-        let deadline = Date().addingTimeInterval(8)
-        var resourcesReady = false
-        while Date() < deadline {
-            if let value = try? await evaluate("document.body?.classList.contains('ready') === true", in: controller),
-               value as? Bool == true {
-                resourcesReady = true
-                break
-            }
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
-        XCTAssertTrue(resourcesReady, "Actual document did not finish its resource gates")
+        XCTAssertNil(controller.webView.url, "A detached zero-size reader must not start WebKit navigation")
         await fulfillment(of: [premature], timeout: 0.2)
         let window = show(controller)
         defer {
@@ -63,7 +53,7 @@ final class ReaderWebViewTests: XCTestCase {
             window.isHidden = true
             window.rootViewController = nil
         }
-        await fulfillment(of: [settled], timeout: 8)
+        await fulfillment(of: [settled], timeout: 30)
     }
 
     @MainActor func testReplacedDocumentRejectsOldReadyAndInvalidEmbeddedFont() async throws {
@@ -133,7 +123,9 @@ final class ReaderWebViewTests: XCTestCase {
         let content = ChapterContent(chapter: chapter, novelTitle: "书", volumeTitle: "卷", bodyText: text)
         var settings = ReaderSettings()
         settings.mode = .scroll
-        let image = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).pngData { context in
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format).pngData { context in
             UIColor.red.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
         }

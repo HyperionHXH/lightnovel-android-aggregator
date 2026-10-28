@@ -697,7 +697,7 @@ private struct HistoryContentView: View {
                 VStack(alignment: .leading) { Text(entry.chapterTitle).font(.caption); Text(entry.readAt).font(.caption2).foregroundColor(.secondary) }
                 Spacer()
                 if let chapter = library.progress[entry.novel.id]?.chapterKey ?? entry.chapterKey {
-                    Button("继续阅读") { readerDestination = ReaderDestination(novel: entry.novel, chapterKey: chapter) }.accessibilityIdentifier("history.resume.\(entry.novel.id)")
+                    Button("继续阅读") { readerDestination = ReaderDestination(novel: entry.novel, chapterKey: chapter) }.buttonStyle(.borderless).accessibilityIdentifier("history.resume.\(entry.novel.id)")
                 }
             }
         }

@@ -57,6 +57,7 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
     private var viewport = ReaderViewport()
     private var ready = false
     private var awaitingInitialRestore = false
+    private var awaitingDocumentLoad = false
     private var turning = false
     private var restoring = false
     private var settling = false
@@ -112,6 +113,7 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         let size = view.bounds.size
+        loadPreparedDocumentIfVisible()
         guard size.width > 0, size.height > 0, size != lastSize else { return }
         let previous = lastSize
         lastSize = size
@@ -120,11 +122,12 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
     }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        loadPreparedDocumentIfVisible()
         restorePreparedDocumentIfVisible()
     }
     func tearDown() {
         documentGeneration = UUID()
-        ready = false; awaitingInitialRestore = false
+        ready = false; awaitingInitialRestore = false; awaitingDocumentLoad = false
         owner = nil
         settleTimer?.invalidate()
         documentTimer?.invalidate()
@@ -139,7 +142,7 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
         loadDocument()
     }
     func loadDocument() {
-        guard let owner = owner else { return }
+        guard owner != nil else { return }
         documentGeneration = UUID()
         ready = false; turning = false; restoring = true; pendingCapture = false
         awaitingInitialRestore = false
@@ -148,17 +151,19 @@ final class ReaderWebController: UIViewController, WKScriptMessageHandler, WKNav
         webView.isUserInteractionEnabled = true
         settleTimer?.invalidate()
         documentTimer?.invalidate()
+        webView.stopLoading()
+        awaitingDocumentLoad = true
+        loadPreparedDocumentIfVisible()
+    }
+    private func loadPreparedDocumentIfVisible() {
+        guard awaitingDocumentLoad, view.window != nil,
+              view.bounds.width > 0, view.bounds.height > 0, let owner = owner else { return }
+        awaitingDocumentLoad = false
         let generation = documentGeneration
         documentTimer = Timer.scheduledTimer(withTimeInterval: 24, repeats: false) { [weak self] _ in
             guard let self = self, self.documentGeneration == generation, !self.ready else { return }
-            self.evaluate("JSON.stringify({tokenMatches:document.body?.dataset.token==='\(generation.uuidString)',domReady:document.readyState,visible:document.body?.classList.contains('ready'),fontStatus:document.fonts.status,pendingImages:Array.from(document.images).filter(image=>!image.complete).length,viewport:[innerWidth,innerHeight]})") { [weak self] value in
-                guard let self = self, self.documentGeneration == generation, !self.ready else { return }
-                NSLog("Reader document readiness timeout: attached=%@ diagnostics=%@",
-                      self.webView.window == nil ? "no" : "yes", value as? String ?? "unavailable")
-            }
             self.owner?.onError("章节排版超时，请重新加载正文与字体")
         }
-        webView.stopLoading()
         webView.backgroundColor = UIColor(owner.settings.theme.background)
         webView.scrollView.backgroundColor = UIColor(owner.settings.theme.background)
         webView.scrollView.isPagingEnabled = owner.settings.mode == .paged
