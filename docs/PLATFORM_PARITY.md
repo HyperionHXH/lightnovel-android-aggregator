@@ -27,7 +27,7 @@
 | 音量键/常亮/亮度 | `ReaderHardwareControls` | `ReaderView` 生命周期 | 常亮/亮度恢复；音量键拦截无公开等价，明确不支持 |
 | 书架/下载筛选/更新标记/全部已读 | `feature/bookshelf`, `core/updates` | `LibraryViews`, `Storage/LibraryStore` | 来源键隔离；只有可信基线增长才更新；标记不改远端历史 |
 | 远端与本地历史/继续阅读/删除 | `feature/history` | `LibraryViews`, `LibraryStore` | 本地进度不谎称通用云同步；来源能力允许才删除远端 |
-| 全书/分卷下载/失败重试/删除/重启恢复 | `core/offline` | `Storage/LibraryStore` | 逐章检查点，锁章不当已下载，删除旧任务不复活 |
+| 全书/分卷下载/章节明细/失败重试/删除/重启恢复 | `core/offline`, `SourceBook*`, `AggregateBookshelfScreen` | `Storage/LibraryStore`, `BookViews`, `LibraryViews` | 实际章节 ID 标记、选卷/全书范围、新章/解锁补下、删除旧任务不复活、删除失败可见；远端删章/重新锁定不撤销已保存正文及导出 |
 | TXT / EPUB3 /封面/图片/字体 | `core/txt`, `core/epub` | `Storage/EPUBWriter`, `LibraryStore` | 合法ZIP mimetype首项、OPF/nav、离线字体与图片、系统分享/目录 |
 | 缓存统计/安全清理/容量上限 | `core/cache`, `DataStatsScreen` | `Storage/ContentCache`, `FontStore`, `DataStatsView` | 8MiB内存/96MiB磁盘/64MiB临时字体，不删下载/进度/凭据 |
 | 来源等级/经验/轻币/签到 | `Profile*`, `SourceAccounts*`, source协议 | `SettingsViews`, 两来源 | 成长与访问等级分离，经验门槛不猜，签到后读取真实资料 |
@@ -51,4 +51,4 @@
 普通开发分支只跑构建/测试，不创建 Release。未来新 `v*` 标签由双端工作流执行，iOS验收与Android签名构建全部成功后才上传两端产物。
 手动发布也必须先解析已经存在的版本标签，两端检出同一不可变提交；不能用主分支的新源码重新编译旧标签。IPA 和原生巡检清单保存实际源码提交与 Actions run。当前初次追加 iOS 的例外则在交付记录中明确其提交不同于早先 Android 标签。
 
-这轮用户明确要求 Android 不变：不增加版本、不移动现有 `v1.22.2`、不重新构建发布旧 APK。iOS 全部可执行门槛成功、产物下载核验与截图目视完成后，仅追加新的 unsigned IPA/摘要到既有版本。已有同名不同摘要文件一律拒绝覆盖。
+`v1.22.2` 首次追加 iOS 及同版本修复属于历史例外，不移动旧标签、不替换其 APK。`1.23.0 / 39` 下载功能改动同时影响两端，按联合门槛创建新版本；发布前必须完成本机 Android 原生下载路径和云端 iOS XCTest/XCUITest、截图目视及产物核验。

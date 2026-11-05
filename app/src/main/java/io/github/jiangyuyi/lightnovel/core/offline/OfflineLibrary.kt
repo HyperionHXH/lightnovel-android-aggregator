@@ -34,13 +34,24 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.withContext
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 
-class OfflineLibrary(
+class OfflineLibrary internal constructor(
     context: Context,
     private val registry: SourceRegistry,
     private val chapterFonts: ChapterFontAccess,
     private val coverFetcher: suspend (String) -> ByteArray? = { null },
     private val workManager: WorkManager = WorkManager.getInstance(context.applicationContext),
+    bookStore: OfflineBookStore? = null,
 ) : OfflineLibraryAccess {
     private val applicationContext = context.applicationContext
     private val preferences = applicationContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
@@ -49,13 +60,17 @@ class OfflineLibrary(
         File(applicationContext.filesDir, OFFLINE_DIRECTORY),
     )
     @Volatile
-    private var store: OfflineBookStore = createStore(preferences.getString(KEY_DOWNLOAD_DIRECTORY, null))
+    private var store: OfflineBookStore = bookStore ?: createStore(preferences.getString(KEY_DOWNLOAD_DIRECTORY, null))
     private val _books = MutableStateFlow<List<OfflineBookRecord>>(emptyList())
     override val books: StateFlow<List<OfflineBookRecord>> = _books.asStateFlow()
     private val _wifiOnly = MutableStateFlow(preferences.getBoolean(KEY_WIFI_ONLY, true))
     override val wifiOnly: StateFlow<Boolean> = _wifiOnly.asStateFlow()
     private val _downloadDirectory = MutableStateFlow(preferences.getString(KEY_DOWNLOAD_DIRECTORY, null))
     override val downloadDirectory: StateFlow<String?> = _downloadDirectory.asStateFlow()
+    private val bookLocks = ConcurrentHashMap<NovelKey, Mutex>()
+    private val deleting = ConcurrentHashMap.newKeySet<NovelKey>()
+    private val bookRevision = AtomicLong()
+    private fun bookLock(key: NovelKey): Mutex = bookLocks.getOrPut(key) { Mutex() }
 
     init {
         scope.launch { reload() }
@@ -94,7 +109,9 @@ class OfflineLibrary(
 
     override fun enqueue(novel: NovelSummary, volumeKey: VolumeKey?) {
         require(volumeKey == null || volumeKey.sourceId == novel.key.sourceId)
-        scope.launch {
+        if (_books.value.any { it.novel.key == novel.key &&
+                (it.status == OfflineDownloadStatus.QUEUED || it.status == OfflineDownloadStatus.DOWNLOADING) }) return
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { bookLock(novel.key).withLock {
             val activeStore = store
             val existing = activeStore.readBook(novel.key)
             if (existing?.status == OfflineDownloadStatus.QUEUED ||
@@ -108,6 +125,7 @@ class OfflineLibrary(
                 status = OfflineDownloadStatus.QUEUED,
                 error = null,
                 updatedAtMillis = System.currentTimeMillis(),
+                requestId = UUID.randomUUID().toString(),
             )
             activeStore.writeBook(queued)
             publish(queued)
@@ -116,26 +134,62 @@ class OfflineLibrary(
                     novelKey = novel.key,
                     selectedVolumeId = volumeKey?.remoteId,
                     wifiOnly = _wifiOnly.value,
+                    requestId = queued.requestId,
                 ),
-                ExistingWorkPolicy.KEEP,
+                ExistingWorkPolicy.REPLACE,
             )
-        }
+        } }
     }
 
-    override fun retry(record: OfflineBookRecord) = enqueue(
-        record.novel,
-        record.selectedVolumeId?.let { remoteId -> VolumeKey(record.novel.key.sourceId, remoteId) },
-    )
+    override fun retry(record: OfflineBookRecord) = enqueue(record.novel, record.retryVolumeKey())
 
     override fun delete(key: NovelKey) {
-        workManager.cancelUniqueWork(workName(key))
-        scope.launch {
-            store.deleteBook(key)
-            _books.update { records -> records.filterNot { it.novel.key == key } }
-        }
+        val previous = _books.value.firstOrNull { it.novel.key == key }
+        deleting.add(key)
+        bookRevision.incrementAndGet()
+        _books.update { records -> records.filterNot { it.novel.key == key } }
+        val cancellation = runCatching { workManager.cancelUniqueWork(workName(key)) }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { bookLock(key).withLock {
+            val activeStore = store
+            var restored: OfflineBookRecord? = null
+            try {
+                // Cancellation is not a join: the book lock waits for in-flight writes too.
+                withContext(Dispatchers.IO) { cancellation.getOrThrow().result.get() }
+                activeStore.deleteBook(key)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                val remaining = runCatching { activeStore.readBook(key) }.getOrNull() ?: previous
+                restored = remaining?.copy(
+                    status = OfflineDownloadStatus.FAILED,
+                    error = error.message?.take(160)?.takeIf(String::isNotBlank) ?: "无法删除离线书籍",
+                    updatedAtMillis = System.currentTimeMillis(),
+                )
+                restored?.let { record -> runCatching { activeStore.writeBook(record) } }
+            } finally {
+                deleting.remove(key)
+            }
+            restored?.let(::publish)
+        } }
     }
 
-    override suspend fun readBook(key: NovelKey): OfflineBookRecord? = store.readBook(key)
+    override suspend fun markChapterUnlocked(chapter: io.github.jiangyuyi.lightnovel.core.source.ChapterSummary) = bookLock(chapter.novelKey).withLock {
+        val novelKey = chapter.novelKey
+        require(chapter.key.sourceId == novelKey.sourceId)
+        if (novelKey in deleting) return@withLock
+        val record = store.readBook(novelKey) ?: return@withLock
+        if (chapter.key.remoteId in record.unlockedChapterIds) return@withLock
+        val updated = record.copy(
+            chapters = (record.chapters + chapter.copy(locked = false)).associateBy { it.key }.values.toList(),
+            unlockedChapterIds = record.unlockedChapterIds + chapter.key.remoteId,
+            updatedAtMillis = System.currentTimeMillis(),
+        )
+        store.writeBook(updated)
+        publish(updated)
+    }
+
+    override suspend fun readBook(key: NovelKey): OfflineBookRecord? =
+        if (key in deleting) null else store.readBook(key)
 
     override suspend fun readChapter(novelKey: NovelKey, chapterKey: ChapterKey): ChapterContent? =
         store.readChapter(novelKey, chapterKey)
@@ -213,13 +267,18 @@ class OfflineLibrary(
         result.exportedChapters to result.skippedChapters
     }
 
-    internal suspend fun executeDownload(novelKey: NovelKey, selectedVolumeId: String?) {
+    internal suspend fun executeDownload(novelKey: NovelKey, selectedVolumeId: String?, requestId: String = ""): Unit = bookLock(novelKey).withLock {
+        coroutineContext.ensureActive()
+        val queued = store.readBook(novelKey)
+        if (novelKey in deleting || queued == null || queued.requestId != requestId) return@withLock
         val activeStore = store
         val downloader = OfflineDownloader(registry, activeStore, chapterFonts, onUpdated = ::publish)
         try {
             downloader.download(novelKey, selectedVolumeId)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Throwable) {
-            val current = store.readBook(novelKey)
+            val current = activeStore.readBook(novelKey)?.takeUnless { novelKey in deleting }
             if (current != null) {
                 val failed = current.copy(
                     status = OfflineDownloadStatus.FAILED,
@@ -227,7 +286,7 @@ class OfflineLibrary(
                         .ifBlank { "下载失败" },
                     updatedAtMillis = System.currentTimeMillis(),
                 )
-                store.writeBook(failed)
+                activeStore.writeBook(failed)
                 publish(failed)
             }
             throw error
@@ -235,7 +294,18 @@ class OfflineLibrary(
     }
 
     private suspend fun reload() {
-        _books.value = store.listBooks()
+        while (true) {
+            coroutineContext.ensureActive()
+            val activeStore = store
+            val revision = bookRevision.get()
+            val records = activeStore.listBooks()
+            var accepted = false
+            _books.update { current ->
+                accepted = bookRevision.get() == revision && store === activeStore
+                if (accepted) records.filterNot { it.novel.key in deleting } else current
+            }
+            if (accepted) return
+        }
     }
 
     private suspend fun migrateBooks(from: OfflineBookStore, to: OfflineBookStore) {
@@ -309,7 +379,10 @@ class OfflineLibrary(
     }
 
     private fun publish(record: OfflineBookRecord) {
+        if (record.novel.key in deleting) return
+        bookRevision.incrementAndGet()
         _books.update { current ->
+            if (record.novel.key in deleting) return@update current
             (current.filterNot { it.novel.key == record.novel.key } + record)
                 .sortedByDescending(OfflineBookRecord::updatedAtMillis)
         }
@@ -323,6 +396,7 @@ class OfflineLibrary(
             .putString(OfflineDownloadWorker.KEY_SOURCE_ID, spec.novelKey.sourceId)
             .putString(OfflineDownloadWorker.KEY_NOVEL_ID, spec.novelKey.remoteId)
             .putString(OfflineDownloadWorker.KEY_VOLUME_ID, spec.selectedVolumeId)
+            .putString(OfflineDownloadWorker.KEY_REQUEST_ID, spec.requestId)
             .build()
         val request = OneTimeWorkRequestBuilder<OfflineDownloadWorker>()
             .setInputData(input)

@@ -4,6 +4,7 @@ import io.github.jiangyuyi.lightnovel.MainDispatcherRule
 import io.github.jiangyuyi.lightnovel.core.model.LocalReadingProgress
 import io.github.jiangyuyi.lightnovel.core.model.ReaderPreferences
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineBookRecord
+import io.github.jiangyuyi.lightnovel.core.offline.OfflineDownloadStatus
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineLibraryAccess
 import io.github.jiangyuyi.lightnovel.core.preferences.ReaderPreferencesAccess
 import io.github.jiangyuyi.lightnovel.core.source.ChapterContent
@@ -421,6 +422,83 @@ class SourceBookViewModelTest {
         viewModel.downloadBook()
 
         assertEquals(listOf(source.novelKey to null), offline.enqueued)
+    }
+
+    @Test
+    fun `unlocking a chapter immediately enables book and volume continuation without refresh`() = runTest(mainDispatcherRule.dispatcher) {
+        val source = object : FakeReadableSource() {
+            override suspend fun getChapters(novelKey: NovelKey, volumeKey: VolumeKey, page: Int, pageSize: Int): SourcePage<ChapterSummary> {
+                val result = super.getChapters(novelKey, volumeKey, page, pageSize)
+                return if (page == 1) result.copy(items = result.items.map { it.copy(locked = true) }) else result
+            }
+        }
+        val offline = FakeOfflineLibrary()
+        val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)), offline)
+        advanceUntilIdle()
+        viewModel.loadMoreChapters(source.volumeKey)
+        advanceUntilIdle()
+        val catalog = viewModel.state.value
+        offline.books.value = listOf(OfflineBookRecord(
+            novel = catalog.detail!!.novel,
+            volumes = catalog.volumes,
+            chapters = catalog.chapters.getValue(source.volumeKey).items,
+            downloadedChapterIds = setOf("2"),
+            completeDirectoryVolumeIds = setOf(source.volumeKey.remoteId),
+            status = OfflineDownloadStatus.COMPLETE,
+        ))
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.bookDownloaded)
+        assertTrue(viewModel.state.value.volumeDownloaded(catalog.volumes.single()))
+        var unlocked = false
+        viewModel.unlockChapter(catalog.chapters.getValue(source.volumeKey).items.first(), {}, { unlocked = true })
+        advanceUntilIdle()
+        assertTrue(unlocked)
+        assertFalse(viewModel.state.value.bookDownloaded)
+        assertFalse(viewModel.state.value.volumeDownloaded(catalog.volumes.single()))
+        viewModel.downloadBook()
+        assertEquals(listOf(source.novelKey to null), offline.enqueued)
+    }
+
+    @Test
+    fun `complete catalog disables repeated downloads deletion resets and new chapters enable continuation`() = runTest(mainDispatcherRule.dispatcher) {
+        val source = FakeReadableSource()
+        val offline = FakeOfflineLibrary()
+        val viewModel = SourceBookViewModel(source.novelKey, SourceRegistry(listOf(source)), offline)
+        advanceUntilIdle()
+        viewModel.loadMoreChapters(source.volumeKey)
+        advanceUntilIdle()
+        val catalog = viewModel.state.value
+        val record = OfflineBookRecord(
+            novel = catalog.detail!!.novel,
+            volumes = catalog.volumes,
+            chapters = catalog.chapters.getValue(source.volumeKey).items,
+            downloadedChapterIds = setOf("1", "2"),
+            completeDirectoryVolumeIds = setOf(source.volumeKey.remoteId),
+            status = OfflineDownloadStatus.COMPLETE,
+        )
+        offline.books.value = listOf(record)
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.bookDownloaded)
+        assertTrue(viewModel.state.value.volumeDownloaded(catalog.volumes.single()))
+        viewModel.downloadBook()
+        viewModel.downloadVolume(source.volumeKey)
+        assertTrue(offline.enqueued.isEmpty())
+
+        offline.books.value = emptyList()
+        advanceUntilIdle()
+        assertFalse(viewModel.state.value.bookDownloaded)
+        assertFalse(viewModel.state.value.volumeDownloaded(catalog.volumes.single()))
+        viewModel.downloadBook()
+        assertEquals(listOf(source.novelKey to null), offline.enqueued)
+
+        val newChapter = record.chapters.first().copy(key = ChapterKey(source.descriptor.id, "new"))
+        val updated = catalog.copy(
+            offlineRecord = record,
+            chapters = mapOf(source.volumeKey to VolumeChaptersState(items = record.chapters + newChapter, hasMore = false)),
+        )
+        assertFalse(updated.bookDownloaded)
+        assertFalse(updated.volumeDownloaded(catalog.volumes.single()))
+        assertFalse(catalog.copy(offlineRecord = record.copy(novel = record.novel.copy(key = NovelKey("other", "1")))).bookDownloaded)
     }
 
     @Test

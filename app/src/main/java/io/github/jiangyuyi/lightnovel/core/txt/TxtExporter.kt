@@ -28,7 +28,6 @@ class TxtExporter {
     ): TxtExportResult {
         val candidates = book.chapters
             .asSequence()
-            .filterNot { it.locked }
             .filter { it.key.remoteId in book.downloadedChapterIds }
             .sortedWith(compareBy({ it.order }, { it.key.remoteId }))
             .toList()

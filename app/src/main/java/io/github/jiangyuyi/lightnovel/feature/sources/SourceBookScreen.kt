@@ -55,6 +55,8 @@ import io.github.jiangyuyi.lightnovel.core.source.ChapterSummary
 import io.github.jiangyuyi.lightnovel.core.source.CommentSort
 import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.offline.OfflineDownloadStatus
+import io.github.jiangyuyi.lightnovel.core.offline.OfflineBookRecord
+import io.github.jiangyuyi.lightnovel.core.offline.OfflineChapterStatus
 import io.github.jiangyuyi.lightnovel.core.ui.EmptyPane
 import io.github.jiangyuyi.lightnovel.core.ui.ErrorPane
 import io.github.jiangyuyi.lightnovel.core.ui.LoadingPane
@@ -182,17 +184,18 @@ fun SourceBookScreen(
                                 offline?.status == OfflineDownloadStatus.DOWNLOADING
                             OutlinedButton(
                                 onClick = viewModel::downloadBook,
-                                enabled = !downloadActive,
+                                enabled = !downloadActive && !state.bookDownloaded,
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
                                 Text(
-                                    when (offline?.status) {
-                                        OfflineDownloadStatus.QUEUED -> "等待下载"
-                                        OfflineDownloadStatus.DOWNLOADING ->
+                                    when {
+                                        state.bookDownloaded -> "全书已下载"
+                                        offline?.status == OfflineDownloadStatus.QUEUED -> "等待下载"
+                                        offline?.status == OfflineDownloadStatus.DOWNLOADING ->
                                             "下载中 ${offline.completedChapters}/${offline.totalChapters}"
-                                        OfflineDownloadStatus.COMPLETE -> "补全离线章节"
-                                        OfflineDownloadStatus.FAILED -> "重试下载"
-                                        null -> "下载全书"
+                                        offline?.status == OfflineDownloadStatus.FAILED -> "重试下载"
+                                        offline != null -> "继续下载全书"
+                                        else -> "下载全书"
                                     },
                                 )
                             }
@@ -357,19 +360,22 @@ fun SourceBookScreen(
                 state.directoryError?.let { message ->
                     item { ErrorPane(message, onRetry = { viewModel.load(true) }) }
                 }
-                if (state.volumes.isEmpty() && state.directoryError == null) {
+                if (state.visibleVolumes.isEmpty() && state.directoryError == null) {
                     item { EmptyPane("暂无目录") }
                 } else {
-                    items(state.volumes, key = { "${it.key.sourceId}:${it.key.remoteId}" }) { volume ->
+                    items(state.visibleVolumes, key = { "${it.key.sourceId}:${it.key.remoteId}" }) { volume ->
                         SourceVolumeCard(
                             title = volume.title,
                             chapterCount = volume.chapterCount,
                             expanded = state.expandedVolumeKey == volume.key,
-                            chapters = state.chapters[volume.key],
+                            chapters = state.visibleChapters(volume.key),
                             onToggle = { viewModel.toggleVolume(volume.key) },
                             onDownload = { viewModel.downloadVolume(volume.key) },
                             downloadEnabled = state.offlineRecord?.status != OfflineDownloadStatus.QUEUED &&
-                                state.offlineRecord?.status != OfflineDownloadStatus.DOWNLOADING,
+                                state.offlineRecord?.status != OfflineDownloadStatus.DOWNLOADING &&
+                                !state.volumeDownloaded(volume),
+                            downloaded = state.volumeDownloaded(volume),
+                            offlineRecord = state.offlineRecord,
                             onLoadMore = { viewModel.loadMoreChapters(volume.key) },
                             onRead = onRead,
                             onUnlock = { chapter -> unlockTarget = chapter },
@@ -439,6 +445,8 @@ private fun SourceVolumeCard(
     onToggle: () -> Unit,
     onDownload: () -> Unit,
     downloadEnabled: Boolean,
+    downloaded: Boolean,
+    offlineRecord: OfflineBookRecord?,
     onLoadMore: () -> Unit,
     onRead: (ChapterKey) -> Unit,
     onUnlock: (ChapterSummary) -> Unit,
@@ -459,18 +467,23 @@ private fun SourceVolumeCard(
                     Text(title, fontWeight = FontWeight.SemiBold)
                     Text("$chapterCount 章", style = MaterialTheme.typography.bodySmall)
                 }
-                TextButton(onClick = onDownload, enabled = downloadEnabled) { Text("下载本卷") }
+                TextButton(onClick = onDownload, enabled = downloadEnabled) {
+                    Text(if (downloaded) "本卷已下载" else "下载本卷")
+                }
                 Text(if (expanded) "收起" else "展开")
             }
             if (expanded) {
                 chapters?.items.orEmpty().forEach { chapter ->
+                    val locallyAvailable = offlineRecord?.chapterStatus(chapter) == OfflineChapterStatus.DOWNLOADED
+                    val requiresUnlock = chapter.locked && !locallyAvailable &&
+                        chapter.key.remoteId !in offlineRecord?.unlockedChapterIds.orEmpty()
                     HorizontalDivider()
                     Row(
                         modifier = Modifier.fillMaxWidth()
-                            .clickable { if (chapter.locked) onUnlock(chapter) else onRead(chapter.key) }
+                            .clickable { if (requiresUnlock) onUnlock(chapter) else onRead(chapter.key) }
                             .padding(horizontal = 16.dp, vertical = 13.dp),
                     ) {
-                        if (chapter.locked) {
+                        if (requiresUnlock) {
                             Icon(
                                 imageVector = Icons.Filled.Lock,
                                 contentDescription = "已锁定",
@@ -479,7 +492,12 @@ private fun SourceVolumeCard(
                             )
                         }
                         Text(chapter.title, Modifier.weight(1f))
-                        if (chapter.locked) Text(chapter.coinPrice?.let { "$it 轻币" } ?: "锁定", color = MaterialTheme.colorScheme.error)
+                        if (!requiresUnlock) Text(
+                            (offlineRecord?.chapterStatus(chapter) ?: OfflineChapterStatus.NOT_DOWNLOADED).label,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (requiresUnlock) Text(chapter.coinPrice?.let { "$it 轻币" } ?: "锁定", color = MaterialTheme.colorScheme.error)
                     }
                 }
                 if (chapters?.loading == true) {

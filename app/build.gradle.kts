@@ -37,8 +37,8 @@ android {
         applicationId = "io.github.jiangyuyi.lightnovel"
         minSdk = 26
         targetSdk = 35
-        versionCode = providers.environmentVariable("APP_VERSION_CODE").orNull?.toIntOrNull() ?: 38
-        versionName = providers.environmentVariable("APP_VERSION_NAME").orNull ?: "1.22.2"
+        versionCode = providers.environmentVariable("APP_VERSION_CODE").orNull?.toIntOrNull() ?: 39
+        versionName = providers.environmentVariable("APP_VERSION_NAME").orNull ?: "1.23.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -135,4 +135,5 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.work:work-testing:2.10.0")
 }

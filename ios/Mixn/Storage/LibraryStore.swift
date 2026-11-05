@@ -13,6 +13,45 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
     var downloadedChapterIDs: Set<String> = []
     var catalogComplete: Bool = false
     var volumesComplete: Bool = false
+    // nil selects the whole book; a set selects only those volumes, not the union of past requests.
+    var requestedVolumeIDs: Set<String>? = nil
+    var catalogVolumeIDs: Set<String>? = nil
+    var currentChapterID: String? = nil
+    var active: Bool { status == "queued" || status == "downloading" }
+    var downloadableChapters: [Chapter] { chapters.filter { !$0.locked || downloadedChapterIDs.contains($0.id) } }
+    var downloadedCount: Int { chapters.reduce(0) { $0 + (downloadedChapterIDs.contains($1.id) ? 1 : 0) } }
+    func chapterStatus(_ chapter: Chapter) -> String {
+        if downloadedChapterIDs.contains(chapter.id) { return "已下载" }
+        if chapter.locked { return "已锁定" }
+        if currentChapterID == chapter.id { return status == "failed" ? "下载失败" : active ? "正在下载" : "未下载" }
+        return "未下载"
+    }
+    func volumeComplete(_ volume: Volume) -> Bool {
+        let known = catalogVolumeIDs?.contains(volume.id) ?? catalogComplete
+        let items = chapters.filter { $0.volumeKey == volume.key && (!$0.locked || downloadedChapterIDs.contains($0.id)) }
+        return known && chapters.filter({ $0.volumeKey == volume.key }).count >= volume.chapterCount && !items.isEmpty && items.allSatisfy { downloadedChapterIDs.contains($0.id) }
+    }
+    var bookComplete: Bool {
+        guard volumesComplete, !volumes.isEmpty, volumes.count >= novel.volumeCount, chapters.contains(where: { !$0.locked || downloadedChapterIDs.contains($0.id) }) else { return false }
+        return volumes.allSatisfy { volume in
+            let known = catalogVolumeIDs?.contains(volume.id) ?? catalogComplete
+            let items = chapters.filter { $0.volumeKey == volume.key }
+            return known && items.count >= volume.chapterCount && items.allSatisfy { $0.locked || downloadedChapterIDs.contains($0.id) }
+        }
+    }
+    func volumeSummary(_ volume: Volume) -> String {
+        let items = chapters.filter { $0.volumeKey == volume.key && (!$0.locked || downloadedChapterIDs.contains($0.id)) }
+        let count = items.filter { downloadedChapterIDs.contains($0.id) }.count
+        if items.isEmpty && chapters.contains(where: { $0.volumeKey == volume.key && $0.locked }) { return "已锁定" }
+        if active && (requestedVolumeIDs?.contains(volume.id) ?? true) { return "下载中 · \(count)/\(items.count) 章" }
+        if volumeComplete(volume) { return "已下载 · \(count)/\(items.count) 章" }
+        return count > 0 ? "部分下载 · \(count)/\(items.count) 章" : "未下载"
+    }
+    var summary: String {
+        if active { return status == "queued" ? "等待下载" : "正在下载" }
+        if status == "failed" { return downloadedCount > 0 ? "部分下载 · 下载失败" : "下载失败" }
+        return bookComplete ? "下载完成" : downloadedCount > 0 ? "部分下载" : "未下载"
+    }
     var id: String { novel.id }
 }
 
@@ -46,6 +85,15 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
     private var generations: [String: UInt64] = [:]
     private let diskEpochs = StorageEpoch()
     private var jobs: [String: Task<Void, Error>] = [:]
+    private struct CatalogObservation {
+        var generation: UInt64
+        var volumes: [Volume]
+        var chapters: [Chapter]
+        var allVolumes: Bool
+        var completeVolume: ResourceKey?
+    }
+    private var pendingCatalog: [String: [CatalogObservation]] = [:]
+    private var pendingNovels: [String: (UInt64, Novel)] = [:]
     private var activeJob: UUID?
     private var slotWaiters: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
     private let network = NWPathMonitor()
@@ -61,6 +109,12 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
                 guard FileManager.default.fileExists(atPath: url.path) else { return State() }
                 var result = try StorageIO.decode(State.self, from: url)
                 for index in result.records.indices {
+                    if result.records[index].catalogVolumeIDs == nil {
+                        result.records[index].catalogVolumeIDs = result.records[index].catalogComplete ? Set(result.records[index].volumes.map(\.id)) : []
+                        // Old versions used this flag for a selected scope, never proof of a full-book catalog.
+                        result.records[index].volumesComplete = false
+                        result.records[index].requestedVolumeIDs = result.records[index].volumes.isEmpty ? nil : Set(result.records[index].volumes.map(\.id))
+                    }
                     if ["queued", "downloading"].contains(result.records[index].status) {
                         result.records[index].status = "queued"
                         result.records[index].error = nil
@@ -72,7 +126,7 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
                         catch { result.records[index].status = "failed"; result.records[index].error = "离线封面损坏：" + error.localizedDescription }
                     }
                     var present: Set<String> = []
-                    for chapter in result.records[index].chapters where !chapter.locked {
+                    for chapter in result.records[index].chapters {
                         let file = book.appendingPathComponent("Chapters", isDirectory: true).appendingPathComponent(sha256(chapter.id) + ".plist")
                         if FileManager.default.fileExists(atPath: file.path) {
                             // Committed checkpoints were validated before their manifest entry.
@@ -99,7 +153,8 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
                     result.records[index].downloadedChapterIDs = present
                     result.records[index].completed = present.count
                     result.records[index].byteCount = try StorageIO.size(book)
-                    if result.records[index].status == "complete", present.count != result.records[index].chapters.filter({ !$0.locked }).count {
+                    let expected = result.records[index].chapters.filter { !$0.locked && (result.records[index].requestedVolumeIDs?.contains($0.volumeKey.id) ?? true) }
+                    if result.records[index].status == "complete", !expected.allSatisfy({ present.contains($0.id) }) {
                         result.records[index].status = "failed"
                         result.records[index].error = "部分离线章节丢失，请重试下载"
                     }
@@ -221,6 +276,67 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
             return content
         }
     }
+    func observeNovel(_ novel: Novel) throws {
+        try ready()
+        guard let index = state.records.firstIndex(where: { $0.id == novel.id }) else { return }
+        if jobs[novel.id] != nil { pendingNovels[novel.id] = (generations[novel.id, default: 0], novel); return }
+        guard novel.chapterCount > state.records[index].novel.chapterCount || novel.volumeCount > state.records[index].novel.volumeCount else { return }
+        var next = state
+        next.records[index].novel.chapterCount = novel.chapterCount
+        next.records[index].novel.volumeCount = novel.volumeCount
+        next.records[index].volumesComplete = false
+        next.records[index].catalogComplete = false
+        next.records[index].catalogVolumeIDs = []
+        try commit(next)
+    }
+    /// Persists catalog knowledge from the detail consumer without creating a download.
+    /// Running jobs own their manifest snapshot and discover their own catalog.
+    func observeCatalog(_ key: ResourceKey, volumes: [Volume], chapters: [Chapter] = [], allVolumes: Bool = false, completeVolume: ResourceKey? = nil) throws {
+        try ready()
+        guard let index = state.records.firstIndex(where: { $0.id == key.id }) else { return }
+        if jobs[key.id] != nil {
+            pendingCatalog[key.id, default: []].append(CatalogObservation(generation: generations[key.id, default: 0], volumes: volumes, chapters: chapters, allVolumes: allVolumes, completeVolume: completeVolume))
+            return
+        }
+        var next = state
+        var record = next.records[index]
+        if record.catalogVolumeIDs == nil { record.catalogVolumeIDs = record.catalogComplete ? Set(record.volumes.map(\.id)) : [] }
+        for volume in volumes where volume.novelKey == key {
+            if let position = record.volumes.firstIndex(where: { $0.key == volume.key }) {
+                if record.volumes[position].chapterCount != volume.chapterCount { record.catalogVolumeIDs?.remove(volume.id) }
+                record.volumes[position] = volume
+            } else { record.volumes.append(volume) }
+        }
+        if allVolumes { record.volumesComplete = true }
+        Self.mergeChapters(chapters, into: &record, completeVolume: completeVolume)
+        if let volume = completeVolume {
+            if record.catalogVolumeIDs == nil { record.catalogVolumeIDs = record.catalogComplete ? Set(record.volumes.map(\.id)) : [] }
+            record.catalogVolumeIDs?.insert(volume.id)
+        }
+        record.completed = record.downloadedCount
+        record.catalogComplete = false // A retry must refresh the requested scope, including new chapters.
+        next.records[index] = record
+        try commit(next)
+    }
+    /// Local checkpoints outlive source catalog removal and account entitlement changes.
+    private static func mergeChapters(_ incoming: [Chapter], into record: inout OfflineRecord, completeVolume: ResourceKey? = nil) {
+        if let volume = completeVolume {
+            let incomingIDs = Set(incoming.map(\.id))
+            let downloaded = record.downloadedChapterIDs
+            record.chapters.removeAll { $0.volumeKey == volume && !incomingIDs.contains($0.id) && !downloaded.contains($0.id) }
+        }
+        var positions = Dictionary(uniqueKeysWithValues: record.chapters.enumerated().map { ($0.element.id, $0.offset) })
+        for chapter in incoming where chapter.novelKey == record.novel.key && chapter.key.source == record.novel.key.source {
+            if let position = positions[chapter.id] { record.chapters[position] = chapter }
+            else { positions[chapter.id] = record.chapters.count; record.chapters.append(chapter) }
+        }
+    }
+    private func applyPending(_ key: ResourceKey, generation: UInt64) throws {
+        if let (captured, novel) = pendingNovels.removeValue(forKey: key.id), captured == generation { try observeNovel(novel) }
+        for observation in pendingCatalog.removeValue(forKey: key.id) ?? [] where observation.generation == generation {
+            try observeCatalog(key, volumes: observation.volumes, chapters: observation.chapters, allVolumes: observation.allVolumes, completeVolume: observation.completeVolume)
+        }
+    }
     func enqueue(novel: Novel, volumes: [Volume], source: any NovelSource, fonts: FontStore) async throws {
         try ready()
         guard source.sourceID == novel.key.source, !novel.key.remoteID.isEmpty,
@@ -229,19 +345,18 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
         var next = state
         if let index = next.records.firstIndex(where: { $0.id == novel.id }) {
             next.records[index].novel = novel
-            if !volumes.isEmpty {
-                var merged = next.records[index].volumes
-                for volume in volumes where !merged.contains(where: { $0.key == volume.key }) { merged.append(volume) }
-                next.records[index].volumes = merged
-                next.records[index].catalogComplete = false
-                next.records[index].volumesComplete = true
+            for volume in volumes {
+                if let position = next.records[index].volumes.firstIndex(where: { $0.key == volume.key }) { next.records[index].volumes[position] = volume }
+                else { next.records[index].volumes.append(volume) }
             }
-            else {
-                next.records[index].volumesComplete = false
-                next.records[index].catalogComplete = false
-            }
+            next.records[index].requestedVolumeIDs = volumes.isEmpty ? nil : Set(volumes.map(\.id))
+            if volumes.isEmpty { next.records[index].volumesComplete = false }
+            next.records[index].catalogComplete = false
+            next.records[index].currentChapterID = nil
             next.records[index].status = "queued"; next.records[index].error = nil
-        } else { next.records.append(OfflineRecord(novel: novel, volumes: Self.uniqueVolumes(volumes), volumesComplete: !volumes.isEmpty)) }
+        } else {
+            next.records.append(OfflineRecord(novel: novel, volumes: Self.uniqueVolumes(volumes), requestedVolumeIDs: volumes.isEmpty ? nil : Set(volumes.map(\.id)), catalogVolumeIDs: []))
+        }
         try commit(next)
         try await schedule(novel.key, source: source, fonts: fonts)
     }
@@ -266,14 +381,18 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
         jobs[key.id] = task
         do {
             try await withTaskCancellationHandler(operation: { try await task.value }, onCancel: { task.cancel() })
-            if generations[key.id, default: 0] == generation { jobs[key.id] = nil }
+            guard generations[key.id, default: 0] == generation else { throw CancellationError() }
+            jobs[key.id] = nil
+            try applyPending(key, generation: generation)
         } catch {
             if generations[key.id, default: 0] == generation {
                 jobs[key.id] = nil
+                try applyPending(key, generation: generation)
                 if error is CancellationError, let index = state.records.firstIndex(where: { $0.id == key.id }), state.records[index].status == "queued" {
                     var next = state; next.records[index].error = "下载中断，将在恢复后继续"; try commit(next)
                 }
             }
+            if generations[key.id, default: 0] != generation { throw CancellationError() }
             throw error
         }
     }
@@ -322,6 +441,7 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
         try ready(); generations[key.id, default: 0] &+= 1
         diskEpochs.advance(key.id)
         jobs.removeValue(forKey: key.id)?.cancel()
+        pendingCatalog[key.id] = nil; pendingNovels[key.id] = nil
         guard let index = state.records.firstIndex(where: { $0.id == key.id }) else { return }
         var next = state; next.records[index].status = "failed"; next.records[index].error = "下载已取消，可重试继续"
         try commit(next)
@@ -330,6 +450,7 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
         try ready(); generations[key.id, default: 0] &+= 1
         diskEpochs.advance(key.id)
         jobs.removeValue(forKey: key.id)?.cancel()
+        pendingCatalog[key.id] = nil; pendingNovels[key.id] = nil
         // Persist the tombstone before removing owned files. A stale task cannot recreate it.
         var next = state; next.records.removeAll { $0.id == key.id }
         try commit(next)
@@ -345,38 +466,51 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
         do {
             record.status = "downloading"; record.error = nil; try update(record)
             try await waitForNetwork(); try current(key, generation)
-            if !record.volumesComplete {
+            var sourceVolumeIDs = Set(record.volumes.map(\.id))
+            if record.requestedVolumeIDs == nil && !record.volumesComplete {
                 var page = 1
+                var freshVolumes: [Volume] = []
                 repeat {
                     try await waitForNetwork(); try current(key, generation)
                     let result = try await source.volumes(key: key, page: page)
                     try current(key, generation)
                     guard result.items.allSatisfy({ $0.novelKey == key && $0.key.source == key.source }) else { throw StorageFailure.message("来源返回了其他书籍的分卷") }
-                    for volume in result.items where !record.volumes.contains(where: { $0.id == volume.id }) { record.volumes.append(volume) }
+                    for volume in result.items where !freshVolumes.contains(where: { $0.id == volume.id }) { freshVolumes.append(volume) }
                     try update(record)
                     if !result.hasMore { break }
                     page += 1; if page > 1000 { throw StorageFailure.message("分卷分页数量异常") }
                 } while true
+                let retainedVolumes = Set(record.chapters.filter { record.downloadedChapterIDs.contains($0.id) }.map { $0.volumeKey.id })
+                let freshIDs = Set(freshVolumes.map(\.id))
+                sourceVolumeIDs = freshIDs
+                record.volumes = freshVolumes + record.volumes.filter { !freshIDs.contains($0.id) && retainedVolumes.contains($0.id) }
+                let downloaded = record.downloadedChapterIDs
+                let volumeIDs = Set(record.volumes.map(\.id))
+                record.chapters.removeAll { !volumeIDs.contains($0.volumeKey.id) && !downloaded.contains($0.id) }
+                record.catalogVolumeIDs?.formIntersection(volumeIDs)
                 record.volumesComplete = true; try update(record)
             }
             if !record.catalogComplete {
-                for volume in record.volumes {
+                for volume in record.volumes where sourceVolumeIDs.contains(volume.id) && (record.requestedVolumeIDs?.contains(volume.id) ?? true) {
                     var page = 1
+                    var fresh: [Chapter] = []
                     repeat {
                         try await waitForNetwork(); try current(key, generation)
                         let result = try await source.chapters(novel: key, volume: volume.key, page: page)
                         try current(key, generation)
                         guard result.items.allSatisfy({ $0.novelKey == key && $0.volumeKey == volume.key && $0.key.source == key.source }) else { throw StorageFailure.message("来源返回了其他书籍的章节") }
-                        for chapter in result.items {
-                            if let index = record.chapters.firstIndex(where: { $0.id == chapter.id }) { record.chapters[index] = chapter }
-                            else { record.chapters.append(chapter) }
-                        }
+                        let seen = Set(fresh.map(\.id))
+                        fresh.append(contentsOf: result.items.filter { !seen.contains($0.id) })
+                        Self.mergeChapters(result.items, into: &record)
                         try update(record)
                         if !result.hasMore { break }
                         page += 1; if page > 1000 { throw StorageFailure.message("章节分页数量异常") }
                     } while true
+                    Self.mergeChapters(fresh, into: &record, completeVolume: volume.key)
+                    if record.catalogVolumeIDs == nil { record.catalogVolumeIDs = [] }
+                    record.catalogVolumeIDs?.insert(volume.id)
+                    try update(record)
                 }
-                record.downloadedChapterIDs.formIntersection(Set(record.chapters.filter { !$0.locked }.map(\.id)))
                 record.completed = record.downloadedChapterIDs.count
                 let order = Dictionary(uniqueKeysWithValues: record.volumes.enumerated().map { ($0.element.id, $0.offset) })
                 record.chapters.sort { lhs, rhs in
@@ -386,14 +520,14 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
                 }
                 record.catalogComplete = true; try update(record)
             }
-            guard !record.chapters.filter({ !$0.locked }).isEmpty else { throw StorageFailure.message("没有可下载的未锁定章节") }
+            guard record.chapters.contains(where: { (!$0.locked || record.downloadedChapterIDs.contains($0.id)) && (record.requestedVolumeIDs?.contains($0.volumeKey.id) ?? true) }) else { throw StorageFailure.message("没有可下载的未锁定章节") }
             let book = bookURL(key)
             if let cover = record.novel.coverURL {
                 let local = try await saveAsset(cover, book: book, generation: generation, key: key)
                 try current(key, generation)
                 record.novel.coverURL = local; try update(record)
             }
-            for chapter in record.chapters where !chapter.locked {
+            for chapter in record.chapters where !chapter.locked && (record.requestedVolumeIDs?.contains(chapter.volumeKey.id) ?? true) {
                 try await waitForNetwork(); try current(key, generation)
                 try current(key, generation)
                 let existing: ChapterContent?
@@ -414,9 +548,11 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
                     }
                 }
                 try await waitForNetwork(); try current(key, generation)
+                record.currentChapterID = chapter.id; try update(record)
                 var content = try await source.chapter(novel: key, chapter: chapter.key)
                 try current(key, generation)
                 guard content.chapter.key == chapter.key, content.chapter.novelKey == key else { throw StorageFailure.message("章节下载结果不匹配") }
+                guard !content.chapter.locked else { throw StorageFailure.message("章节仍被锁定，未保存为离线下载") }
                 guard !content.bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !content.bodyHTML.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     throw StorageFailure.message("来源返回了空章节，下载未完成")
                 }
@@ -457,7 +593,7 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
                 record.byteCount = try await io.perform { try StorageIO.size(book) }
                 try current(key, generation); try update(record)
             }
-            record.status = "complete"; record.error = nil
+            record.status = "complete"; record.error = nil; record.currentChapterID = nil
             record.byteCount = try await io.perform { try StorageIO.size(book) }
             try current(key, generation); try update(record)
         } catch {
@@ -524,7 +660,7 @@ struct OfflineRecord: Codable, Hashable, Identifiable {
         let generation = generations[key.id, default: 0]
         let destination = directory.appendingPathComponent(Self.safeName(record.novel.title) + "-" + String(sha256(key.id).prefix(8)) + (epub ? ".epub" : ".txt"))
         var chapters: [ChapterContent] = []
-        for chapter in record.chapters where record.downloadedChapterIDs.contains(chapter.id) && !chapter.locked {
+        for chapter in record.chapters where record.downloadedChapterIDs.contains(chapter.id) {
             guard let content = try savedChapter(novel: key, chapter: chapter.key) else { throw StorageFailure.message("离线章节缺失，无法完整导出") }
             chapters.append(content)
         }

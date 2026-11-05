@@ -189,4 +189,4 @@ jobs:
             fi
             gh release upload "$VERSION_TAG" "$APK_FILE" "$APK_FILE.sha256"
           fi
-          gh release upload "$VERSION_TAG" release-ios/*.ipa release-ios/*.ipa.sha256
+          gh release upload "$VERSION_TAG" release-ios/*.ipa release-ios/*.ipa.sha256 release-ios/*.json

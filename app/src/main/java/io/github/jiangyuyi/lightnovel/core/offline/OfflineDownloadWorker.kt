@@ -8,6 +8,7 @@ import io.github.jiangyuyi.lightnovel.core.source.NovelKey
 import io.github.jiangyuyi.lightnovel.core.source.SourceErrorKind
 import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 
 class OfflineDownloadWorker(
     appContext: Context,
@@ -22,8 +23,11 @@ class OfflineDownloadWorker(
             library.executeDownload(
                 novelKey = NovelKey(sourceId, novelId),
                 selectedVolumeId = inputData.getString(KEY_VOLUME_ID),
+                requestId = inputData.getString(KEY_REQUEST_ID).orEmpty(),
             )
             Result.success()
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: SourceException) {
             when (error.kind) {
                 SourceErrorKind.TIMEOUT,
@@ -48,5 +52,6 @@ class OfflineDownloadWorker(
         const val KEY_SOURCE_ID = "source_id"
         const val KEY_NOVEL_ID = "novel_id"
         const val KEY_VOLUME_ID = "volume_id"
+        const val KEY_REQUEST_ID = "request_id"
     }
 }

@@ -58,6 +58,20 @@ class SourceReaderViewModelTest {
         }
 
     @Test
+    fun `saved body remains readable when chapter metadata is remotely locked`() = runTest(mainDispatcherRule.dispatcher) {
+        val source = FakeReaderSource()
+        val saved = source.chapter("保留的离线正文").let { it.copy(chapter = it.chapter.copy(locked = true)) }
+        val reader = SourceReaderViewModel(
+            source.novelKey, source.chapterKey, SourceRegistry(listOf(source)),
+            FakeReaderPreferences(), FakeOfflineLibrary(saved),
+        )
+        advanceUntilIdle()
+        assertEquals("保留的离线正文", reader.state.value.chapter?.bodyText)
+        assertNull(reader.state.value.error)
+        assertEquals(0, source.chapterRequests)
+    }
+
+    @Test
     fun `missing local chapter falls back to the remote source`() =
         runTest(mainDispatcherRule.dispatcher) {
             val source = FakeReaderSource()

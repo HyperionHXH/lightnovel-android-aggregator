@@ -30,7 +30,7 @@ def check(root=ROOT):
     toolchain = json.loads((root / 'ios/toolchain.json').read_text(encoding='utf-8'))
     if not re.fullmatch(r'[a-f0-9]{64}', toolchain['xcodegenSha256']):
         raise ValueError('XcodeGen download must be pinned by checksum')
-    print(f'Cross-platform version/fixture contract: {name} ({code}), iOS >=15.0; no Android release bump')
+    print(f'Cross-platform version/fixture contract: {name} ({code}), iOS >=15.0')
     return name, code
 
 

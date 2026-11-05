@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -77,6 +79,7 @@ fun AggregateBookshelfScreen(
     val selectedTabIndex = if (state.downloadedOnly) 1 else 0
     val updateSummary = bookshelfUpdateSummary(state)
     var deleteTarget by remember { mutableStateOf<OfflineBookRecord?>(null) }
+    var directoryTarget by remember { mutableStateOf<NovelKey?>(null) }
     var exportChooserTarget by remember { mutableStateOf<OfflineBookRecord?>(null) }
     var exportTarget by remember { mutableStateOf<OfflineBookRecord?>(null) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
@@ -87,7 +90,7 @@ fun AggregateBookshelfScreen(
     fun runUriExport(uri: android.net.Uri, record: OfflineBookRecord, format: ExportFormat) {
         exportJob = exportScope.launch {
             try {
-                exportProgress = 0 to record.chapters.count { !it.locked && it.key.remoteId in record.downloadedChapterIds }
+                exportProgress = 0 to record.completedChapters
                 val exportedChapters = context.contentResolver.openOutputStream(uri)?.use { output ->
                     when (format) {
                         ExportFormat.EPUB -> viewModel.exportEpub(record, output) { progress ->
@@ -130,7 +133,7 @@ fun AggregateBookshelfScreen(
         if (exportJob != null) return
         exportJob = exportScope.launch {
             try {
-                exportProgress = 0 to record.chapters.count { !it.locked && it.key.remoteId in record.downloadedChapterIds }
+                exportProgress = 0 to record.completedChapters
                 val result = when (format) {
                     ExportFormat.EPUB -> viewModel.exportEpubToDownloadDirectory(record) { progress ->
                         exportProgress = progress.completed to progress.total
@@ -309,6 +312,7 @@ fun AggregateBookshelfScreen(
                     onRetry = { viewModel.retryDownload(record) },
                     onDelete = { deleteTarget = record },
                     onExport = { exportChooserTarget = record },
+                    onDirectory = { directoryTarget = record.novel.key },
                 )
             }
             state.sourceOptions.isEmpty() -> item { EmptyPane("没有支持书架的在线来源") }
@@ -332,6 +336,37 @@ fun AggregateBookshelfScreen(
                 )
             }
         }
+    }
+
+    state.offlineBooks.firstOrNull { it.novel.key == directoryTarget }?.let { record ->
+        AlertDialog(
+            onDismissRequest = { directoryTarget = null },
+            title = { Text("下载章节 · ${record.novel.title}") },
+            text = {
+                val groups = record.chapters.groupBy { it.volumeKey }
+                val volumeKeys = (record.volumes.map { it.key } + groups.keys).distinct()
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (volumeKeys.isEmpty()) item { Text("等待加载目录，尚无已下载章节") }
+                    volumeKeys.forEach { key ->
+                        val chapters = groups[key].orEmpty()
+                        item(key = "volume:${key.sourceId}:${key.remoteId}") {
+                            val title = record.volumes.firstOrNull { it.key == key }?.title ?: key.remoteId
+                            val completed = chapters.count { it.key.remoteId in record.downloadedChapterIds }
+                            Text("$title · 已下载 $completed/${chapters.count { !it.locked || it.key.remoteId in record.downloadedChapterIds || it.key.remoteId in record.unlockedChapterIds }} 章", style = MaterialTheme.typography.titleSmall)
+                        }
+                        items(chapters, key = { "chapter:${it.key.sourceId}:${it.key.remoteId}" }) { chapter ->
+                            Column {
+                                Text("${chapter.title} · ${record.chapterStatus(chapter).label}")
+                                record.failedChapters[chapter.key.remoteId]?.takeIf { !chapter.locked }?.let { error ->
+                                    Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { directoryTarget = null }) { Text("关闭") } },
+        )
     }
 
     deleteTarget?.let { record ->
@@ -374,6 +409,7 @@ private fun OfflineDownloadItem(
     onRetry: () -> Unit,
     onDelete: () -> Unit,
     onExport: () -> Unit,
+    onDirectory: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SourceNovelCard(
@@ -408,9 +444,10 @@ private fun OfflineDownloadItem(
                     MaterialTheme.colorScheme.onSurfaceVariant
                 },
             )
-            if (showManagementActions && record.status == OfflineDownloadStatus.FAILED) {
+            if (showManagementActions && (record.status == OfflineDownloadStatus.FAILED ||
+                    (record.status == OfflineDownloadStatus.COMPLETE && !record.isFullyDownloaded()))) {
                 IconButton(onClick = onRetry) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "重试下载")
+                    Icon(Icons.Filled.Refresh, contentDescription = if (record.status == OfflineDownloadStatus.FAILED) "重试下载" else "继续下载")
                 }
             }
             if (showManagementActions && record.status == OfflineDownloadStatus.COMPLETE) {
@@ -424,6 +461,9 @@ private fun OfflineDownloadItem(
                     Icon(Icons.Filled.Delete, contentDescription = "删除离线书籍")
                 }
             }
+        }
+        TextButton(onClick = onDirectory, modifier = Modifier.padding(horizontal = 8.dp)) {
+            Text("查看下载章节")
         }
     }
 }
@@ -501,7 +541,7 @@ private fun downloadDirectoryLabel(value: String?): String = value?.let { uri ->
 private fun offlineStatusLabel(record: OfflineBookRecord): String = when (record.status) {
     OfflineDownloadStatus.QUEUED -> "等待下载"
     OfflineDownloadStatus.DOWNLOADING -> "正在下载 · ${record.downloadSummary()}"
-    OfflineDownloadStatus.COMPLETE -> "已下载 · ${record.downloadSummary()}"
+    OfflineDownloadStatus.COMPLETE -> "${if (record.isFullyDownloaded()) "全书已下载" else "部分已下载"} · ${record.downloadSummary()}"
     OfflineDownloadStatus.FAILED -> record.error ?: "下载失败"
 }
 

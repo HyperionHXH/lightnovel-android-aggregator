@@ -68,7 +68,8 @@ struct ReaderCatalogSection: Identifiable {
     }
     func load(app: AppStore, novel: Novel, chapter: ResourceKey, atEnd: Bool = false, purchased: Bool = false) {
         guard chapter.source == novel.key.source else { error = "章节来源与书籍不一致"; return }
-        if let row = catalog.flatMap({ $0.chapters }).first(where: { $0.key == chapter }), row.locked, !purchased {
+        let downloaded = app.library.records.contains { $0.novel.key == novel.key && $0.downloadedChapterIDs.contains(chapter.id) }
+        if let row = catalog.flatMap({ $0.chapters }).first(where: { $0.key == chapter }), row.locked, !purchased, !downloaded {
             lockedChapter = row; return
         }
         flush(app: app, novel: novel)
@@ -218,6 +219,8 @@ struct ReaderCatalogSection: Identifiable {
                 for volumeIndex in self.catalog.indices {
                     if let index = self.catalog[volumeIndex].chapters.firstIndex(where: { $0.key == chapter.key }) { self.catalog[volumeIndex].chapters[index].locked = false }
                 }
+                var unlocked = chapter; unlocked.locked = false
+                try app.library.observeCatalog(novel.key, volumes: [], chapters: [unlocked])
                 self.load(app: app, novel: novel, chapter: chapter.key, purchased: true)
             } catch is CancellationError { }
             catch {

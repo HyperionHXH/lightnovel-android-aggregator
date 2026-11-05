@@ -24,7 +24,6 @@ import SwiftUI
     @Published var shelfError: String?
     @Published var actionError: String?
     @Published var starting = false
-    @Published var enqueueing = false
     @Published var unlocking = false
     let key: ResourceKey
     private var generations: [String: UUID] = [:]
@@ -63,6 +62,7 @@ import SwiftUI
             guard valid(name, id, scope, app) else { return }
             guard result.novel.key == key else { throw SourceFailure.parsing("来源返回了其他书籍的详情") }
             detail = result
+            try app.library.observeNovel(result.novel)
             try await app.cache.write(JSONEncoder().encode(result), key: "detail:" + key.id, scope: scope, ttl: 300, token: cacheToken)
         } catch is CancellationError { } catch { if valid(name, id, scope, app) { detailError = error.localizedDescription } }
         if generations[name] == id { detailLoading = false }
@@ -86,6 +86,7 @@ import SwiftUI
             var ids = Set<String>()
             volumes = ((append ? volumes : []) + result.items).filter { $0.novelKey == key && ids.insert($0.id).inserted }
             volumesPage = result.page; volumesMore = result.hasMore
+            try app.library.observeCatalog(key, volumes: volumes, allVolumes: !volumesMore)
             let cached = Page(items: volumes, page: volumesPage, total: result.total, hasMore: volumesMore)
             try await app.cache.write(JSONEncoder().encode(cached), key: "volumes:" + key.id, scope: scope, ttl: 300, token: cacheToken)
         } catch is CancellationError { } catch { if valid(name, id, scope, app) { volumesError = error.localizedDescription } }
@@ -149,6 +150,7 @@ import SwiftUI
             next.items = ((append ? next.items : []) + result.items).filter { $0.novelKey == key && $0.volumeKey == volume.key && ids.insert($0.id).inserted }
             next.page = result.page; next.hasMore = result.hasMore; next.loaded = true; next.loading = false; next.error = nil
             chapters[volume.id] = next
+            try app.library.observeCatalog(key, volumes: [volume], chapters: next.hasMore ? result.items : next.items, completeVolume: next.hasMore ? nil : volume.key)
             let cached = Page(items: next.items, page: next.page, total: result.total, hasMore: next.hasMore)
             try await app.cache.write(JSONEncoder().encode(cached), key: name, scope: scope, ttl: 300, token: cacheToken)
         } catch is CancellationError { } catch { if valid(name, id, scope, app) { chapters[volume.id]?.error = error.localizedDescription } }
@@ -188,31 +190,14 @@ import SwiftUI
         return nil
     }
     func download(app: AppStore, volume: Volume? = nil) async {
-        guard !enqueueing, let novel = detail?.novel else { return }
-        enqueueing = true; actionError = nil
+        guard !app.library.records.contains(where: { $0.novel.key == key && $0.active }),
+              let novel = detail?.novel ?? app.library.records.first(where: { $0.novel.key == key })?.novel else { return }
+        actionError = nil
         let scope = sourceScope(app, key.source)
         let accountRevision = app.accountRevision(key.source)
-        defer { enqueueing = false }
         do {
-            let selected: [Volume]
-            if let volume = volume { selected = [volume] }
-            else {
-                var all: [Volume] = []; var page = 1; var seen = Set<String>()
-                while true {
-                    let result = try await app.source(key.source).volumes(key: key, page: page)
-                    try Task.checkCancellation()
-                    guard sourceScope(app, key.source) == scope, accountRevision == app.accountRevision(key.source) else { throw CancellationError() }
-                    let fresh = result.items.filter { $0.novelKey == key && seen.insert($0.id).inserted }
-                    all += fresh
-                    if !result.hasMore { break }
-                    guard !fresh.isEmpty, result.page >= page else { throw SourceFailure.parsing("分卷分页没有前进，请稍后重试") }
-                    page = result.page + 1
-                }
-                selected = all
-            }
-            guard !selected.isEmpty else { throw SourceFailure.server("没有可下载的分卷") }
-            guard sourceScope(app, key.source) == scope, accountRevision == app.accountRevision(key.source), !Task.isCancelled else { throw CancellationError() }
-            try await app.library.enqueue(novel: novel, volumes: selected, source: app.source(key.source), fonts: app.fonts)
+            // The store owns full-book discovery; passing the visible volume page would silently narrow it.
+            try await app.library.enqueue(novel: novel, volumes: volume.map { [$0] } ?? [], source: app.source(key.source), fonts: app.fonts)
         } catch is CancellationError { } catch { if sourceScope(app, key.source) == scope && accountRevision == app.accountRevision(key.source) { actionError = error.localizedDescription } }
     }
     func unlock(_ chapter: Chapter, app: AppStore) async -> Bool {
@@ -225,6 +210,12 @@ import SwiftUI
             try await app.source(key.source).unlock(chapter: chapter.key)
             guard sourceScope(app, key.source) == scope, accountRevision == app.accountRevision(key.source) else { return false }
             if let index = chapters[chapter.volumeKey.id]?.items.firstIndex(where: { $0.id == chapter.id }) { chapters[chapter.volumeKey.id]?.items[index].locked = false }
+            var unlocked = chapter; unlocked.locked = false
+            let state = chapters[chapter.volumeKey.id] ?? ChaptersState()
+            let containsChapter = state.items.contains { $0.id == chapter.id }
+            let items = containsChapter ? state.items : [unlocked]
+            let complete = state.loaded && !state.hasMore && containsChapter
+            try app.library.observeCatalog(key, volumes: volumes.filter { $0.key == chapter.volumeKey }, chapters: items, completeVolume: complete ? chapter.volumeKey : nil)
             return true
         } catch { if sourceScope(app, key.source) == scope && accountRevision == app.accountRevision(key.source) { actionError = error.localizedDescription }; return false }
     }
@@ -255,7 +246,8 @@ private struct BookDetailContentView: View {
     @State private var unlockTarget: Chapter?
     private var novel: Novel? { model.detail?.novel ?? library.records.first(where: { $0.novel.key == model.key })?.novel }
     private var progress: ReadingProgress? { library.progress[model.key.id] }
-    private var downloadActive: Bool { library.records.contains { $0.novel.key == model.key && ["queued", "downloading"].contains($0.status) } }
+    private var offline: OfflineRecord? { library.records.first { $0.novel.key == model.key } }
+    private var downloadActive: Bool { offline?.active == true }
     var body: some View {
         List {
             if model.detailLoading && model.detail == nil { Section { ProgressView("加载书籍详情…") } }
@@ -283,8 +275,8 @@ private struct BookDetailContentView: View {
                     } else { NavigationLink("登录\(model.key.source.title)管理书架", destination: AccountView(sourceID: model.key.source)).accessibilityIdentifier("detail.login") }
                     if let error = model.shelfError { InlineSourceError(message: error) { Task { await model.loadShelf(app: app) } } }
                     Button { Task { await model.download(app: app) } } label: {
-                        HStack { Label(downloadActive ? "下载中 / 等待网络" : model.enqueueing ? "正在准备目录…" : "下载全书 / 补全离线", systemImage: "arrow.down.circle"); Spacer(); if model.enqueueing { ProgressView() } }
-                    }.disabled(model.enqueueing || downloadActive).accessibilityIdentifier("detail.download")
+                        HStack { Label(downloadActive ? "下载中 / 等待网络" : offline?.bookComplete == true ? "全书已下载" : "下载全书 / 补全离线", systemImage: offline?.bookComplete == true ? "checkmark.circle.fill" : "arrow.down.circle"); Spacer(); if downloadActive { ProgressView() } }
+                    }.disabled(downloadActive || offline?.bookComplete == true).accessibilityIdentifier("detail.download")
                     OfflineControlsView(library: library, key: model.key)
                 }
                 Section {
@@ -339,10 +331,10 @@ private struct BookDetailContentView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Button { Task { await model.toggle(volume, app: app) } } label: {
-                            HStack { Image(systemName: model.expanded.contains(volume.id) ? "chevron.down" : "chevron.right"); Text(volume.title).font(.headline); Spacer(); Text("\(volume.chapterCount) 章").font(.caption).foregroundColor(.secondary) }
+                            HStack { Image(systemName: model.expanded.contains(volume.id) ? "chevron.down" : "chevron.right"); VStack(alignment: .leading) { Text(volume.title).font(.headline); Text(offline?.volumeSummary(volume) ?? "未下载").font(.caption).foregroundColor(.secondary).accessibilityIdentifier("volume.downloadStatus.\(volume.id)") }; Spacer(); Text("\(volume.chapterCount) 章").font(.caption).foregroundColor(.secondary) }
                                 .contentShape(Rectangle())
                         }.buttonStyle(.plain).accessibilityIdentifier("volume.\(volume.id)")
-                        Button { Task { await model.download(app: app, volume: volume) } } label: { Image(systemName: "arrow.down.circle") }.disabled(model.enqueueing || downloadActive).accessibilityLabel("下载\(volume.title)")
+                        Button { Task { await model.download(app: app, volume: volume) } } label: { Image(systemName: offline?.volumeComplete(volume) == true ? "checkmark.circle.fill" : "arrow.down.circle") }.disabled(downloadActive || offline?.volumeComplete(volume) == true).accessibilityLabel(offline?.volumeComplete(volume) == true ? "\(volume.title)已下载" : "下载\(volume.title)").accessibilityIdentifier("volume.download.\(volume.id)")
                     }
                     if model.expanded.contains(volume.id) { chapterRows(volume) }
                 }.padding(.vertical, 5)
@@ -360,9 +352,10 @@ private struct BookDetailContentView: View {
                 HStack(alignment: .top) {
                     Text(chapter.title).foregroundColor(progress?.chapterKey == chapter.key ? .accentColor : .primary).frame(maxWidth: .infinity, alignment: .leading)
                     if chapter.locked { Label(chapter.coinPrice.map { "\($0)" } ?? "", systemImage: "lock.fill").foregroundColor(.orange).font(.caption) }
+                    Text(offline?.chapterStatus(chapter) ?? (chapter.locked ? "已锁定" : "未下载")).font(.caption).foregroundColor(offline?.downloadedChapterIDs.contains(chapter.id) == true ? .green : .secondary).accessibilityIdentifier("chapter.downloadStatus.\(chapter.id)")
                     if chapter.wordCount > 0 { Text("\(chapter.wordCount) 字").font(.caption).foregroundColor(.secondary) }
                 }.padding(.vertical, 4).contentShape(Rectangle())
-            }.buttonStyle(.plain).disabled(model.unlocking).accessibilityIdentifier("chapter.\(chapter.id)")
+            }.buttonStyle(.plain).disabled(model.unlocking).accessibilityIdentifier("chapter.\(chapter.id)").accessibilityValue(offline?.chapterStatus(chapter) ?? (chapter.locked ? "已锁定" : "未下载"))
         }
         if state.loading { ProgressView("加载章节…") }
         else if state.hasMore { Button("加载更多章节") { Task { await model.loadChapters(volume, app: app, append: true) } }.accessibilityIdentifier("chapters.more.\(volume.id)") }

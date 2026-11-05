@@ -73,7 +73,7 @@ internal class OfflineDocumentStore(
             resolver.openInputStream(file.uri)?.use { input ->
                 runCatching {
                     json.decodeFromString<ChapterContent>(input.readBytes().toString(StandardCharsets.UTF_8))
-                }.getOrNull()
+                }.getOrNull()?.takeIf { it.chapter.key == chapterKey && it.chapter.novelKey == novelKey }
             }
         }
     }
@@ -84,6 +84,7 @@ internal class OfflineDocumentStore(
                 require(content.chapter.key.sourceId == novelKey.sourceId) {
                     "chapter belongs to another source"
                 }
+                require(content.chapter.novelKey == novelKey) { "chapter belongs to another book" }
                 val directory = chaptersDirectory(novelKey)
                 replaceFile(
                     directory,
@@ -96,7 +97,7 @@ internal class OfflineDocumentStore(
 
     override suspend fun deleteBook(key: NovelKey) = withContext(Dispatchers.IO) {
         mutex.withLock {
-            bookDirectory(key)?.delete()
+            bookDirectory(key)?.let { directory -> check(directory.delete()) { "无法删除离线书籍" } }
             Unit
         }
     }

@@ -554,8 +554,9 @@ struct OfflineControlsView: View {
     var body: some View {
         if let record = record {
             VStack(alignment: .leading, spacing: 8) {
-                HStack { Label(status(record.status), systemImage: record.status == "complete" ? "checkmark.circle" : "arrow.down.circle"); Spacer(); Text("\(record.completed)/\(record.chapters.count) 章").monospacedDigit() }.font(.caption)
-                if record.status == "downloading" || record.status == "queued" { ProgressView(value: Double(record.completed), total: Double(max(record.chapters.count, 1))) }
+                HStack { Label(record.summary, systemImage: record.bookComplete ? "checkmark.circle" : "arrow.down.circle"); Spacer(); Text("\(record.downloadedCount)/\(record.downloadableChapters.count) 章").monospacedDigit() }.font(.caption)
+                if record.active { ProgressView(value: Double(record.downloadedCount), total: Double(max(record.downloadableChapters.count, 1))) }
+                NavigationLink(destination: OfflineDownloadDetailView(library: library, key: key)) { Label("按卷查看下载章节", systemImage: "list.bullet.rectangle") }.accessibilityIdentifier("download.details.\(key.id)")
                 if record.status == "queued" || record.status == "downloading" {
                     Text(library.wifiOnly ? "仅 Wi-Fi 下载：网络不可用时等待连接" : "允许使用移动网络下载").font(.caption).foregroundColor(.secondary)
                     Button("暂停下载（保留已下载章节）") { do { try library.cancel(key) } catch { self.error = error.localizedDescription } }.accessibilityIdentifier("download.cancel")
@@ -584,7 +585,7 @@ struct OfflineControlsView: View {
             }
         }
     }
-    private func status(_ value: String) -> String { switch value { case "queued": return "等待下载"; case "downloading": return "正在下载"; case "complete": return "下载完成"; case "failed": return "下载失败"; default: return value } }
+    
     private func run(_ operation: @escaping @MainActor () async throws -> Void) {
         busy = true; error = nil
         Task { @MainActor in defer { busy = false }; do { try await operation() } catch is CancellationError { } catch { self.error = error.localizedDescription } }
@@ -596,6 +597,51 @@ struct OfflineControlsView: View {
             // Share the sandbox copy: the selected folder's security-scoped lease has ended.
             share = LibraryShareItem(url: url)
         }
+    }
+}
+
+/// Uses only the persisted manifest. Inspecting a download never requires the source to be online.
+@MainActor
+struct OfflineDownloadDetailView: View {
+    @ObservedObject var library: LibraryStore
+    let key: ResourceKey
+    @State private var readerDestination: ReaderDestination?
+    private var record: OfflineRecord? { library.records.first { $0.novel.key == key } }
+    var body: some View {
+        List {
+            if let record = record {
+                Section {
+                    Text(record.novel.title).font(.headline)
+                    Text(record.summary)
+                    Text("已下载 \(record.downloadedCount) / 可下载 \(record.downloadableChapters.count) 章；锁定 \(record.chapters.filter { $0.locked && !record.downloadedChapterIDs.contains($0.id) }.count) 章").font(.caption).foregroundColor(.secondary)
+                    NavigationLink("书籍详情 / 补全下载", destination: BookDetailView(key: key)).accessibilityIdentifier("download.bookDetail")
+                    if let error = record.error { InlineSourceError(message: error) }
+                    if !record.catalogComplete && record.catalogVolumeIDs?.count != record.volumes.count { Text("目录尚未完整，未列出的章节不代表已下载。").font(.caption).foregroundColor(.secondary) }
+                }
+                ForEach(record.volumes) { volume in
+                    Section(header: VStack(alignment: .leading) { Text(volume.title); Text(record.volumeSummary(volume)).font(.caption) }) {
+                        let chapters = record.chapters.filter { $0.volumeKey == volume.key }
+                        if chapters.isEmpty { Text("尚未获取本卷章节目录").foregroundColor(.secondary) }
+                        ForEach(chapters) { chapter in
+                            Button {
+                                readerDestination = ReaderDestination(novel: record.novel, chapterKey: chapter.key)
+                            } label: {
+                                HStack {
+                                    Text(chapter.title).foregroundColor(.primary)
+                                    Spacer()
+                                    Label(record.chapterStatus(chapter), systemImage: record.downloadedChapterIDs.contains(chapter.id) ? "checkmark.circle.fill" : chapter.locked ? "lock.fill" : record.currentChapterID == chapter.id && record.status == "failed" ? "exclamationmark.circle" : "circle")
+                                        .font(.caption).foregroundColor(record.downloadedChapterIDs.contains(chapter.id) ? .green : chapter.locked ? .orange : .secondary)
+                                }
+                            }.disabled(!record.downloadedChapterIDs.contains(chapter.id)).accessibilityIdentifier("download.chapter.\(chapter.id)").accessibilityValue(record.chapterStatus(chapter))
+                        }
+                    }
+                }
+            } else {
+                Text("离线文件已删除，可重新下载。")
+                NavigationLink("书籍详情 / 下载", destination: BookDetailView(key: key))
+            }
+        }.navigationTitle("下载章节明细").navigationBarTitleDisplayMode(.inline)
+            .fullScreenCover(item: $readerDestination) { destination in ReaderView(novel: destination.novel, chapterKey: destination.chapterKey) }
     }
 }
 

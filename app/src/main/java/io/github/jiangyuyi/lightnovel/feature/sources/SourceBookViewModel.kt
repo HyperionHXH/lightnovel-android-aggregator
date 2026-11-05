@@ -76,7 +76,40 @@ data class SourceBookState(
     val mentionCandidates: List<SourceMentionCandidate> = emptyList(),
     val commentMedia: List<SourceCommentMedia> = emptyList(),
     val uploadingCommentImage: Boolean = false,
-)
+) {
+    val visibleVolumes: List<VolumeSummary>
+        get() {
+            val offline = offlineRecord ?: return volumes
+            val retainedKeys = offline.chapters.filter { it.key.remoteId in offline.downloadedChapterIds }
+                .map { it.volumeKey }.toSet()
+            return (offline.volumes.filter { it.key in retainedKeys } + volumes).associateBy { it.key }.values.toList()
+        }
+
+    fun visibleChapters(volumeKey: VolumeKey): VolumeChaptersState? {
+        val current = chapters[volumeKey]
+        val saved = offlineRecord?.let { offline ->
+            offline.chapters.filter { it.volumeKey == volumeKey && it.key.remoteId in offline.downloadedChapterIds }
+        }.orEmpty()
+        if (current == null && saved.isEmpty()) return null
+        return (current ?: VolumeChaptersState()).copy(
+            items = (saved + current?.items.orEmpty()).associateBy { it.key }.values.toList(),
+        )
+    }
+
+    val bookDownloaded: Boolean
+        get() {
+            val offline = offlineRecord ?: return false
+            if (detail != null && offline.novel.key != detail.novel.key) return false
+            return offline.copy(novel = detail?.novel ?: offline.novel).isFullyDownloaded(
+                (offline.volumes + volumes).associateBy { it.key }.values.toList(),
+                chapters.values.flatMap { it.items },
+            )
+        }
+
+    fun volumeDownloaded(volume: VolumeSummary): Boolean = offlineRecord?.isVolumeDownloaded(
+        volume, chapters[volume.key]?.items.orEmpty(),
+    ) == true
+}
 
 class SourceBookViewModel(
     private val novelKey: NovelKey,
@@ -97,9 +130,11 @@ class SourceBookViewModel(
     private var commentsJob: Job? = null
     private val chapterJobs = mutableMapOf<VolumeKey, Job>()
 
+    private var offlineRevision = 0L
     init {
         viewModelScope.launch {
             offlineLibrary.books.collect { books ->
+                offlineRevision += 1
                 _state.value = _state.value.copy(
                     offlineRecord = books.firstOrNull { it.novel.key == novelKey },
                 )
@@ -144,9 +179,10 @@ class SourceBookViewModel(
                 var volumesPending = true
                 var detailShelfMembership: Boolean? = null
                 val offlineRequest = async {
+                    val requestedRevision = offlineRevision
                     val record = runSourceCatching { offlineLibrary.readBook(novelKey) }.getOrNull()
                     ensureActive()
-                    if (record != null) {
+                    if (record != null && offlineRevision == requestedRevision) {
                         _state.value = _state.value.copy(offlineRecord = record)
                     }
                     record
@@ -246,6 +282,10 @@ class SourceBookViewModel(
                         current.copy(items = current.items.map { item -> if (item.key == chapter.key) item.copy(locked = false) else item })
                     }
                     _state.value = _state.value.copy(unlockingChapterKey = null, unlockError = null)
+                    runSourceCatching { offlineLibrary.markChapterUnlocked(chapter) }
+                        .onFailure { error ->
+                            _state.value = _state.value.copy(unlockError = error.toSourceUiMessage("离线目录更新失败"))
+                        }
                     onUnlocked()
                 }
                 .onFailure { error ->
@@ -260,13 +300,15 @@ class SourceBookViewModel(
 
     fun downloadBook() {
         val novel = _state.value.detail?.novel ?: return
-        if (_state.value.offlineRecord?.status.isActiveDownload()) return
+        if (_state.value.offlineRecord?.status.isActiveDownload() || _state.value.bookDownloaded) return
         offlineLibrary.enqueue(novel)
     }
 
     fun downloadVolume(volumeKey: VolumeKey) {
         val novel = _state.value.detail?.novel ?: return
         if (_state.value.offlineRecord?.status.isActiveDownload()) return
+        val volume = _state.value.visibleVolumes.firstOrNull { it.key == volumeKey } ?: return
+        if (_state.value.volumeDownloaded(volume)) return
         offlineLibrary.enqueue(novel, volumeKey)
     }
 
@@ -335,8 +377,11 @@ class SourceBookViewModel(
             onReady(chapterKey)
             return
         }
-        val firstVolume = _state.value.volumes.firstOrNull()?.key ?: return
-        val loadedTarget = _state.value.chapters[firstVolume]?.items?.firstOrNull { !it.locked }?.key
+        val firstVolume = _state.value.visibleVolumes.firstOrNull()?.key ?: return
+        val loadedTarget = _state.value.visibleChapters(firstVolume)?.items?.firstOrNull {
+            !it.locked || it.key.remoteId in _state.value.offlineRecord?.downloadedChapterIds.orEmpty() ||
+                it.key.remoteId in _state.value.offlineRecord?.unlockedChapterIds.orEmpty()
+        }?.key
         if (loadedTarget != null) {
             onReady(loadedTarget)
             return

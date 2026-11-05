@@ -9,6 +9,8 @@ import io.github.jiangyuyi.lightnovel.core.source.SourceException
 import io.github.jiangyuyi.lightnovel.core.source.SourceRegistry
 import io.github.jiangyuyi.lightnovel.core.source.VolumeSummary
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 
 internal class OfflineDownloader(
     private val registry: SourceRegistry,
@@ -29,39 +31,54 @@ internal class OfflineDownloader(
                 throw SourceException(SourceErrorKind.UNKNOWN, "找不到要下载的分卷")
             }
         } ?: allVolumes
-        val targetChapters = targetVolumes.flatMap { volume -> loadAllChapters(novelKey, volume) }
+        // Keep the full directory for offline management, even for a single-volume request.
+        val remoteDirectory = allVolumes.flatMap { volume -> loadAllChapters(novelKey, volume) }
+        val targetKeys = targetVolumes.map { it.key }.toSet()
         val existing = store.readBook(novelKey)
-        val mergedVolumes = (existing?.volumes.orEmpty() + targetVolumes).distinctBy { it.key }
-        val mergedChapters = (existing?.chapters.orEmpty() + targetChapters)
-            .distinctBy { it.key }
-            .sortedWith(compareBy(ChapterSummary::order, { it.key.remoteId }))
+        val knownChapters = (existing?.chapters.orEmpty() + remoteDirectory).associateBy { it.key }.values
+        val validDownloadedIds = buildSet {
+            knownChapters.forEach { chapter ->
+                if (store.readChapter(novelKey, chapter.key)?.chapter?.let {
+                        it.key == chapter.key && it.novelKey == novelKey
+                    } == true
+                ) add(chapter.key.remoteId)
+            }
+        }
+        // Remote removals and account locks never revoke user-owned valid checkpoints.
+        val remoteKeys = remoteDirectory.map { it.key }.toSet()
+        val retained = existing?.chapters.orEmpty().filter {
+            it.key !in remoteKeys && it.key.remoteId in validDownloadedIds
+        }
+        val directory = (remoteDirectory + retained).map { chapter ->
+            if (chapter.key.remoteId in validDownloadedIds || chapter.key.remoteId in existing?.unlockedChapterIds.orEmpty()) chapter.copy(locked = false) else chapter
+        }
+        val retainedVolumeKeys = retained.map { it.volumeKey }.toSet()
+        val volumes = (existing?.volumes.orEmpty().filter { it.key in retainedVolumeKeys } + allVolumes)
+            .associateBy { it.key }.values.toList()
+        val targetChapters = directory.filter { it.volumeKey in targetKeys }
         var record = OfflineBookRecord(
             novel = detail.novel.copy(inRemoteShelf = detail.novel.inRemoteShelf),
             selectedVolumeId = selectedVolumeId,
-            volumes = mergedVolumes,
-            chapters = mergedChapters,
-            downloadedChapterIds = existing?.downloadedChapterIds.orEmpty(),
-            failedChapters = existing?.failedChapters.orEmpty() - targetChapters.map { it.key.remoteId }.toSet(),
+            volumes = volumes,
+            chapters = directory,
+            downloadedChapterIds = validDownloadedIds,
+            failedChapters = existing?.failedChapters.orEmpty()
+                .filterKeys { id -> directory.any { it.key.remoteId == id && !it.locked } } - validDownloadedIds,
             status = OfflineDownloadStatus.DOWNLOADING,
             updatedAtMillis = now(),
+            completeDirectoryVolumeIds = existing?.completeDirectoryVolumeIds.orEmpty() + allVolumes.map { it.key.remoteId },
+            requestId = existing?.requestId.orEmpty(),
+            unlockedChapterIds = existing?.unlockedChapterIds.orEmpty(),
         )
         record = persist(record)
 
         targetChapters.filterNot(ChapterSummary::locked).forEach { chapter ->
-            if (store.hasChapter(novelKey, chapter.key)) {
-                if (chapter.key.remoteId !in record.downloadedChapterIds) {
-                    record = persist(
-                        record.copy(
-                            downloadedChapterIds = record.downloadedChapterIds + chapter.key.remoteId,
-                            updatedAtMillis = now(),
-                        ),
-                    )
-                }
-                return@forEach
-            }
+            coroutineContext.ensureActive()
+            if (chapter.key.remoteId in record.downloadedChapterIds) return@forEach
             try {
                 val content = readerProvider.getChapter(novelKey, chapter.key)
                 chapterFonts.retainForOffline(content.fontUrl)
+                coroutineContext.ensureActive()
                 store.writeChapter(novelKey, content)
                 record = persist(
                     record.copy(
@@ -88,8 +105,8 @@ internal class OfflineDownloader(
 
         return persist(
             record.copy(
-                status = OfflineDownloadStatus.COMPLETE,
-                error = null,
+                status = if (record.failedChapters.isEmpty()) OfflineDownloadStatus.COMPLETE else OfflineDownloadStatus.FAILED,
+                error = record.failedChapters.values.firstOrNull(),
                 updatedAtMillis = now(),
             ),
         )
@@ -129,6 +146,7 @@ internal class OfflineDownloader(
     }
 
     private suspend fun persist(record: OfflineBookRecord): OfflineBookRecord {
+        coroutineContext.ensureActive()
         store.writeBook(record)
         onUpdated(record)
         return record

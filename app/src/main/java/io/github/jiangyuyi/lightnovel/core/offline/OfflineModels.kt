@@ -24,6 +24,10 @@ enum class OfflineDownloadStatus {
     FAILED,
 }
 
+enum class OfflineChapterStatus(val label: String) {
+    DOWNLOADED("已下载"), NOT_DOWNLOADED("未下载"), FAILED("下载失败"), LOCKED("锁定"),
+}
+
 @Serializable
 data class OfflineBookRecord(
     val novel: NovelSummary,
@@ -35,21 +39,61 @@ data class OfflineBookRecord(
     val status: OfflineDownloadStatus = OfflineDownloadStatus.QUEUED,
     val error: String? = null,
     val updatedAtMillis: Long = 0,
+    val completeDirectoryVolumeIds: Set<String> = emptySet(),
+    val requestId: String = "",
+    val unlockedChapterIds: Set<String> = emptySet(),
 ) {
     val totalChapters: Int
-        get() = chapters.count { !it.locked }
+        get() = chapters.count { !it.locked || it.key.remoteId in downloadedChapterIds || it.key.remoteId in unlockedChapterIds }
 
     val completedChapters: Int
-        get() = downloadedChapterIds.count { remoteId ->
-            chapters.any { chapter -> chapter.key.remoteId == remoteId && !chapter.locked }
-        }
+        get() = chapters.count { it.key.remoteId in downloadedChapterIds }
 
     /** A volume is counted only after every unlocked chapter in that volume is present. */
     val completedVolumes: Int
         get() = knownVolumeKeys.count { volumeKey ->
-            val volumeChapters = chapters.filter { it.volumeKey == volumeKey && !it.locked }
+            val volumeChapters = chapters.filter { it.volumeKey == volumeKey &&
+                (!it.locked || it.key.remoteId in downloadedChapterIds || it.key.remoteId in unlockedChapterIds) }
             volumeChapters.isNotEmpty() && volumeChapters.all { it.key.remoteId in downloadedChapterIds }
         }
+
+    fun chapterStatus(chapter: ChapterSummary): OfflineChapterStatus = when {
+        chapter.novelKey != novel.key -> OfflineChapterStatus.NOT_DOWNLOADED
+        chapter.key.remoteId in downloadedChapterIds -> OfflineChapterStatus.DOWNLOADED
+        chapter.locked && chapter.key.remoteId !in unlockedChapterIds -> OfflineChapterStatus.LOCKED
+        chapter.key.remoteId in failedChapters -> OfflineChapterStatus.FAILED
+        else -> OfflineChapterStatus.NOT_DOWNLOADED
+    }
+
+    fun isVolumeDownloaded(volume: VolumeSummary, knownChapters: List<ChapterSummary> = emptyList()): Boolean {
+        if (volume.novelKey != novel.key) return false
+        val directory = (chapters.filter { it.volumeKey == volume.key } + knownChapters)
+            .associateBy { it.key }.values
+        val knownComplete = volume.key.remoteId in completeDirectoryVolumeIds ||
+            (volume.chapterCount > 0 && directory.size >= volume.chapterCount)
+        val available = directory.filter { !it.locked || it.key.remoteId in downloadedChapterIds || it.key.remoteId in unlockedChapterIds }
+        return knownComplete && directory.size >= volume.chapterCount && available.isNotEmpty() &&
+            available.all { chapterStatus(it) == OfflineChapterStatus.DOWNLOADED }
+    }
+
+    fun isFullyDownloaded(
+        knownVolumes: List<VolumeSummary> = volumes,
+        knownChapters: List<ChapterSummary> = emptyList(),
+    ): Boolean {
+        val directory = (chapters + knownChapters).associateBy { it.key }.values
+        if (knownVolumes.isEmpty() || knownVolumes.size < novel.volumeCount ||
+            directory.size < novel.chapterCount || directory.none {
+                !it.locked || it.key.remoteId in downloadedChapterIds || it.key.remoteId in unlockedChapterIds
+            }
+        ) return false
+        val byVolume = directory.groupBy { it.volumeKey }
+        return knownVolumes.all { volume ->
+            val items = byVolume[volume.key].orEmpty()
+            val scannedNonReadableVolume = volume.key.remoteId in completeDirectoryVolumeIds &&
+                items.size >= volume.chapterCount && items.all { it.locked && it.key.remoteId !in unlockedChapterIds }
+            isVolumeDownloaded(volume, items) || scannedNonReadableVolume
+        }
+    }
 
     val totalVolumes: Int
         get() = knownVolumeKeys.size.coerceAtLeast(novel.volumeCount)
@@ -58,10 +102,19 @@ data class OfflineBookRecord(
         get() = (volumes.map(VolumeSummary::key) + chapters.map(ChapterSummary::volumeKey)).distinct()
 }
 
+internal fun OfflineBookRecord.retryVolumeKey(): VolumeKey? {
+    val selected = selectedVolumeId ?: return null
+    if (status == OfflineDownloadStatus.COMPLETE || failedChapters.keys.any { id ->
+            chapters.none { it.key.remoteId == id && it.volumeKey.remoteId == selected }
+        }) return null
+    return VolumeKey(novel.key.sourceId, selected)
+}
+
 internal data class OfflineWorkSpec(
     val novelKey: NovelKey,
     val selectedVolumeId: String?,
     val wifiOnly: Boolean,
+    val requestId: String = "",
 )
 
 internal fun pendingOfflineWorkAfterNetworkPolicyChange(
@@ -74,6 +127,7 @@ internal fun pendingOfflineWorkAfterNetworkPolicyChange(
             novelKey = record.novel.key,
             selectedVolumeId = record.selectedVolumeId,
             wifiOnly = wifiOnly,
+            requestId = record.requestId,
         )
     }
 
@@ -87,6 +141,7 @@ interface OfflineLibraryAccess {
     fun enqueue(novel: NovelSummary, volumeKey: VolumeKey? = null)
     fun retry(record: OfflineBookRecord)
     fun delete(key: NovelKey)
+    suspend fun markChapterUnlocked(chapter: ChapterSummary) {}
     suspend fun readBook(key: NovelKey): OfflineBookRecord?
     suspend fun readChapter(novelKey: NovelKey, chapterKey: ChapterKey): ChapterContent?
     suspend fun exportEpub(

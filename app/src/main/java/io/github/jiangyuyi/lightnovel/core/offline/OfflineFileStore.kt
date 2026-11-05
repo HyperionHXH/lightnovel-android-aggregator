@@ -55,12 +55,14 @@ class OfflineFileStore(
                 val file = chapterFile(novelKey, chapterKey)
                 if (!file.isFile) return@withLock null
                 runCatching { json.decodeFromString<ChapterContent>(file.readText()) }.getOrNull()
+                    ?.takeIf { it.chapter.key == chapterKey && it.chapter.novelKey == novelKey }
             }
         }
 
     override suspend fun writeChapter(novelKey: NovelKey, content: ChapterContent) = withContext(Dispatchers.IO) {
         mutex.withLock {
             require(content.chapter.key.sourceId == novelKey.sourceId) { "chapter belongs to another source" }
+            require(content.chapter.novelKey == novelKey) { "chapter belongs to another book" }
             atomicWrite(
                 chapterFile(novelKey, content.chapter.key),
                 json.encodeToString(content),
