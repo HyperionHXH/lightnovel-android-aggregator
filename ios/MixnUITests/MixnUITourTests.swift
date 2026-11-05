@@ -227,6 +227,12 @@ final class MixnUITourTests: XCTestCase {
         app.segmentedControls.buttons["章节"].tap()
         open("volume.light_novel_kingdom:v1")
         wait("chapter.light_novel_kingdom:1")
+        for _ in 0..<6 {
+            if element("chapter.light_novel_kingdom:1").isHittable && element("volume.light_novel_kingdom:v1").isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(element("chapter.light_novel_kingdom:1").isHittable, "Downloaded chapter marker must be on the captured surface")
+        XCTAssertTrue(element("volume.light_novel_kingdom:v1").isHittable, "Downloaded volume marker must be on the captured surface")
         XCTAssertEqual(element("chapter.light_novel_kingdom:1").value as? String, "已下载")
         XCTAssertFalse(element("volume.download.light_novel_kingdom:v1").isEnabled)
         try capture("14d_downloaded_catalog")
@@ -237,9 +243,11 @@ final class MixnUITourTests: XCTestCase {
         XCTAssertTrue(element("detail.download").isEnabled, "Deleting must immediately restore the real download action")
         XCTAssertFalse(element("download.delete").exists)
         for _ in 0..<6 {
-            if element("chapter.light_novel_kingdom:1").exists && element("chapter.light_novel_kingdom:1").isHittable { break }
+            if element("chapter.light_novel_kingdom:1").isHittable && element("volume.light_novel_kingdom:v1").isHittable { break }
             app.swipeUp()
         }
+        XCTAssertTrue(element("chapter.light_novel_kingdom:1").isHittable, "Deleted chapter state must be visible in the screenshot")
+        XCTAssertTrue(element("volume.light_novel_kingdom:v1").isHittable, "Restored volume download must be visible in the screenshot")
         XCTAssertEqual(element("chapter.light_novel_kingdom:1").value as? String, "未下载")
         XCTAssertTrue(element("volume.download.light_novel_kingdom:v1").isEnabled)
         try capture("14e_download_deleted")

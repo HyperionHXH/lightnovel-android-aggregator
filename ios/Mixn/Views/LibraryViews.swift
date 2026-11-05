@@ -474,6 +474,8 @@ private struct ShelfContentView: View {
     @State private var downloadTab = false
     @State private var removeTarget: Novel?
     @State private var message: String?
+    @State private var offlineBookKey: ResourceKey?
+    @State private var offlineDetailsKey: ResourceKey?
     var body: some View {
         List {
             if !downloadedOnly { Picker("书架内容", selection: $downloadTab) { Text("在线书架").tag(false); Text("离线下载").tag(true) }.pickerStyle(.segmented) }
@@ -485,9 +487,9 @@ private struct ShelfContentView: View {
                 if library.records.isEmpty { Text("暂无离线书籍。可在书籍详情下载全书或指定分卷。").foregroundColor(.secondary) }
                 ForEach(library.records) { record in
                     Section {
-                        NavigationLink(destination: BookDetailView(key: record.novel.key)) { NovelCardView(novel: record.novel, updated: library.updated.contains(record.novel.id)) }
+                        Button { offlineBookKey = record.novel.key } label: { NovelCardView(novel: record.novel, updated: library.updated.contains(record.novel.id)) }
                             .accessibilityIdentifier("book.\(record.novel.id)")
-                        OfflineControlsView(library: library, key: record.novel.key)
+                        OfflineControlsView(library: library, key: record.novel.key, showDetails: { offlineDetailsKey = record.novel.key })
                     }
                 }
             } else {
@@ -514,6 +516,11 @@ private struct ShelfContentView: View {
             }
             if let message = message { InlineSourceError(message: message) }
         }.listStyle(.insetGrouped).navigationTitle(downloadedOnly ? "离线下载" : "书架")
+            // These links belong to the screen, never to a removable download row.
+            .background(VStack {
+                NavigationLink(destination: Group { if let key = offlineBookKey { BookDetailView(key: key) } }, isActive: Binding(get: { offlineBookKey != nil }, set: { if !$0 { offlineBookKey = nil } })) { EmptyView() }
+                NavigationLink(destination: Group { if let key = offlineDetailsKey { OfflineDownloadDetailView(library: library, key: key) } }, isActive: Binding(get: { offlineDetailsKey != nil }, set: { if !$0 { offlineDetailsKey = nil } })) { EmptyView() }
+            }.hidden())
             .toolbar { if !downloadedOnly { Button("标记更新已读") { do { try library.markAllUpdatesSeen() } catch { message = error.localizedDescription } } } }
             .task {
                 if !downloadedOnly {
@@ -545,6 +552,8 @@ struct OfflineControlsView: View {
     @EnvironmentObject private var app: AppStore
     @ObservedObject var library: LibraryStore
     let key: ResourceKey
+    var showDetails: (() -> Void)? = nil
+    @State private var detailsActive = false
     @State private var busy = false
     @State private var error: String?
     @State private var share: LibraryShareItem?
@@ -552,11 +561,12 @@ struct OfflineControlsView: View {
     @State private var exportConfirmation = false
     private var record: OfflineRecord? { library.records.first { $0.novel.key == key } }
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
         if let record = record {
             VStack(alignment: .leading, spacing: 8) {
                 HStack { Label(record.summary, systemImage: record.bookComplete ? "checkmark.circle" : "arrow.down.circle"); Spacer(); Text("\(record.downloadedCount)/\(record.downloadableChapters.count) 章").monospacedDigit() }.font(.caption)
                 if record.active { ProgressView(value: Double(record.downloadedCount), total: Double(max(record.downloadableChapters.count, 1))) }
-                NavigationLink(destination: OfflineDownloadDetailView(library: library, key: key)) { Label("按卷查看下载章节", systemImage: "list.bullet.rectangle") }.accessibilityIdentifier("download.details.\(key.id)")
+                Button { if let showDetails = showDetails { showDetails() } else { detailsActive = true } } label: { Label("按卷查看下载章节", systemImage: "list.bullet.rectangle") }.accessibilityIdentifier("download.details.\(key.id)")
                 if record.status == "queued" || record.status == "downloading" {
                     Text(library.wifiOnly ? "仅 Wi-Fi 下载：网络不可用时等待连接" : "允许使用移动网络下载").font(.caption).foregroundColor(.secondary)
                     Button("暂停下载（保留已下载章节）") { do { try library.cancel(key) } catch { self.error = error.localizedDescription } }.accessibilityIdentifier("download.cancel")
@@ -584,6 +594,8 @@ struct OfflineControlsView: View {
                 Button("取消", role: .cancel) {}
             }
         }
+        }
+        .background(NavigationLink(destination: OfflineDownloadDetailView(library: library, key: key), isActive: $detailsActive) { EmptyView() }.hidden())
     }
     
     private func run(_ operation: @escaping @MainActor () async throws -> Void) {
@@ -606,6 +618,7 @@ struct OfflineDownloadDetailView: View {
     @ObservedObject var library: LibraryStore
     let key: ResourceKey
     @State private var readerDestination: ReaderDestination?
+    @State private var bookDetailActive = false
     private var record: OfflineRecord? { library.records.first { $0.novel.key == key } }
     var body: some View {
         List {
@@ -614,7 +627,7 @@ struct OfflineDownloadDetailView: View {
                     Text(record.novel.title).font(.headline)
                     Text(record.summary)
                     Text("已下载 \(record.downloadedCount) / 可下载 \(record.downloadableChapters.count) 章；锁定 \(record.chapters.filter { $0.locked && !record.downloadedChapterIDs.contains($0.id) }.count) 章").font(.caption).foregroundColor(.secondary)
-                    NavigationLink("书籍详情 / 补全下载", destination: BookDetailView(key: key)).accessibilityIdentifier("download.bookDetail")
+                    Button("书籍详情 / 补全下载") { bookDetailActive = true }.accessibilityIdentifier("download.bookDetail")
                     if let error = record.error { InlineSourceError(message: error) }
                     if !record.catalogComplete && record.catalogVolumeIDs?.count != record.volumes.count { Text("目录尚未完整，未列出的章节不代表已下载。").font(.caption).foregroundColor(.secondary) }
                 }
@@ -638,9 +651,10 @@ struct OfflineDownloadDetailView: View {
                 }
             } else {
                 Text("离线文件已删除，可重新下载。")
-                NavigationLink("书籍详情 / 下载", destination: BookDetailView(key: key))
+                Button("书籍详情 / 下载") { bookDetailActive = true }.accessibilityIdentifier("download.bookDetail")
             }
         }.navigationTitle("下载章节明细").navigationBarTitleDisplayMode(.inline)
+            .background(NavigationLink(destination: BookDetailView(key: key), isActive: $bookDetailActive) { EmptyView() }.hidden())
             .fullScreenCover(item: $readerDestination) { destination in ReaderView(novel: destination.novel, chapterKey: destination.chapterKey) }
     }
 }
