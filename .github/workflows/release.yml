@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Semantic release tag, for example v1.22.2"
+        description: "Semantic release tag, for example v1.23.0"
         required: true
-        default: "v1.22.2"
+        default: "v1.23.0"
 
 permissions:
   contents: write

@@ -2,15 +2,24 @@
 
 ## 产物是什么
 
-Mixn iOS 使用原生 SwiftUI / UIKit / WebKit，最低 iOS/iPadOS 15.0；应用 ID 为 `io.github.hyperionhxh.mixn`。版本与 Android 的 `1.22.2 / 38` 对齐；这轮不改 Android 版本、不重新发布 APK。
+Mixn iOS 使用原生 SwiftUI / UIKit / WebKit，最低 iOS/iPadOS 15.0；应用 ID 为 `io.github.hyperionhxh.mixn`。版本与 Android 的 `1.23.0 / 39` 对齐，两端使用同一新标签联合发布。
 
-交付文件名为 `Mixn-iOS-1.22.2-Unsigned.ipa`，另附 SHA-256。**Unsigned 是没有 Apple 开发者签名/描述文件，不代表普通 iPhone 可以不签名直接安装。** 它不在 App Store / TestFlight 分发，不带 Apple ID、证书、账号密码或站点会话，不需要 JIT。
+交付文件名为 `Mixn-iOS-1.23.0-Unsigned.ipa`，另附 SHA-256 与构建来源 JSON。**Unsigned 是没有 Apple 开发者签名/描述文件，不代表普通 iPhone 可以不签名直接安装。** 它不在 App Store / TestFlight 分发，不带 Apple ID、证书、账号密码或站点会话，不需要 JIT。
 
 - GitHub Actions 的 artifact ZIP 是运输容器；先解开外层 ZIP，取得里面的 `.ipa`，不要把外层 ZIP 直接导入安装工具。
 - iPhoneOS arm64 Release `.app` 才能打包 IPA；iOS Simulator `.app` 仅能在 Mac 模拟器运行，不能当手机安装包。
 - 模拟器、自动断言、截图和录屏只能证明对应测试场景；不是所有型号/系统/网站账号的保证。每次验收以精确提交、Actions run 和产物摘要为准。
 
-### 当前修复版验收（2026-10-28）
+### 1.23.0 下载功能验收（2026-11-05）
+
+- 下载：[IPA](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.23.0/Mixn-iOS-1.23.0-Unsigned.ipa)、[SHA-256](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.23.0/Mixn-iOS-1.23.0-Unsigned.ipa.sha256)、[构建来源清单](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.23.0/Mixn-iOS-1.23.0-Unsigned.json)。正式文件以该清单和摘要区分，不将候选构建冒充标签产物。
+- 功能候选源码 `93f1b8daca25d61848edc58e2194b553f0fffdcb`，[验收 run 42016202557](https://github.com/HyperionHXH/lightnovel-android-aggregator/actions/runs/42016202557)：Xcode 16.4 / iPhone 16 / iOS 18.5，iPhoneOS arm64 Release、73 项 XCTest / 2 项 XCUITest，均 0 failure。
+- 38 张原生截图已逐张目视，包含下载章节明细、已下载卷章标记，以及删除后导航保留并恢复可下载。录屏 647.368333 秒 / 4853 可解码帧，摘要及完整性通过，不宣称逐帧观看；实际 EPUB 含 4 章、ZIP/XML 校验通过，TXT 完整末段和 UTF-8 中文通过。
+- 修复旧版选卷误判全书完成、购买结果同步、活动下载观察合并、删除后迟到错误和列表删除导致的导航栈退出；保留来源移除/账号重新锁定后的已保存正文与导出入口。
+- 候选 IPA 已核验为 4,833,883 字节，SHA-256 `11e9252984e7d9101b6aa4a65f5db59a2a57e8be1e7d9003120d4ce541f6b586`；正式 Release 会从标签提交重新执行联合门槛，摘要以正式附件为准。
+- UI 账号和正文为 DEBUG 隔离夹具。未验证实体 iPhone/iPad 签名安装、真实账号付费/签到写入、所有最低系统和设备组合、真机权限拒绝、后台调度与硬件；不称作全部真机验收通过。已有用户先导出备份、使用原签名方式覆盖升级，不要先卸载。
+
+### 历史：1.22.2 修复版验收（2026-10-28）
 
 - 下载：[阅读器修复版 IPA](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.ipa?revision=49e9731)、[SHA-256](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.ipa.sha256?revision=49e9731)、[构建来源清单](https://github.com/HyperionHXH/lightnovel-android-aggregator/releases/download/v1.22.2/Mixn-iOS-1.22.2-Unsigned.json?revision=49e9731)。
 - 修复新书不先点“开始阅读”、直接点章节时空白全屏且无法返回；同时修复历史继续阅读误跳详情、社区子页导航、下载取消/重试和退出阅读时的进度同步。WebKit 就绪不依赖动画帧，页面挂载且尺寸有效后才开始加载与排版计时。
@@ -74,7 +83,7 @@ xcodebuild -project ios/Mixn.xcodeproj -scheme Mixn -configuration Release \
   -derivedDataPath build/ios/device CODE_SIGNING_ALLOWED=NO build
 python3 scripts/ios/package_ipa.py \
   --app build/ios/device/Build/Products/Release-iphoneos/Mixn.app \
-  --output build/ios/ipa/Mixn-iOS-1.22.2-Unsigned.ipa
+  --output build/ios/ipa/Mixn-iOS-1.23.0-Unsigned.ipa
 ```
 
 不要使用模拟器编译产物代替上述 device build。Windows 仅能运行 Android 和只读产物检查；原生 iOS 类型检查、构建、XCTest/XCUITest 要在 Mac 上实际执行。
@@ -87,7 +96,7 @@ Xcode 16.4 的 iOS 18.5 模拟器有 [WebKit 官方缺陷 293831](https://bugs.w
 
 CI 还显式开启 `RUN_MIXN_LIVE_SMOKE=1` 原生匿名联网检查：LK 的公开列表/详情/目录资源一致性，以及 LNS 真实握手后服务器要求搜索认证的边界。不能由此宣称 LNS 登录后作者、付费阅读、注册邮件、签到或私信的真实账号验收已通过；这些由脱敏协议回归覆盖，并需使用者在自己的设备/账号确认。默认本地 XCTest 不联网。
 
-下载成功 run 的 `mixn-ios-unsigned` 和 `mixn-ios-acceptance` 到独立的 `release_ios/<RUN_ID>/`，核对 SHA-256、IPA 元数据和每张图；不要用别的提交的截图作为证据。平台独有修复须在明确发布授权后，仅更新对应平台附件和校验/来源清单，同步默认分支 README 与安装文档，并从公开下载入口重新下载验证；不得只停留在 Actions 临时附件。本次替换 iOS 附件，不移动 `v1.22.2` 标签、不替换 Android APK、不提升其他端版本。
+下载成功 run 的 `mixn-ios-unsigned` 和 `mixn-ios-acceptance` 到独立的 `release_ios/<RUN_ID>/`，核对 SHA-256、IPA 元数据和每张图；不要用别的提交的截图作为证据。双端功能更新创建新标签及 Release；平台独有同版本修复须获明确授权、同步默认分支文档与对应附件/摘要/来源，不能只停留在 Actions 临时附件。公开下载后再次核验摘要，不移动历史标签或覆盖无关平台附件。
 
 以后的新版本 `v*` 统一发布由双端门槛约束：iOS 验收成功后才构建、验证 Android 签名 APK；两者都通过才发布 APK 与 unsigned IPA。普通功能/bug 在同一分支和 PR 中维护，见 [`双端功能对照`](PLATFORM_PARITY.md)。
 
