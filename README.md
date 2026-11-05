@@ -120,6 +120,8 @@ Android Release APK 使用 Android Keystore 签名。首次配置可运行：
 
 `1.23.0 / 39` 功能候选 `93f1b8d` 通过 [原生验收 run 42016202557](https://github.com/HyperionHXH/lightnovel-android-aggregator/actions/runs/42016202557)：73 项 XCTest、2 项生产路径 XCUITest，均 0 failure；38 张原生截图已目视，647.37 秒录屏 / 4853 可解码帧及实际 EPUB/TXT 导出完整性通过。下载明细、已下载卷章、删除后留在详情并恢复下载均实际执行。Android 本机 API 35 模拟器通过 8 项生产下载路径与 10 张原生截图，219 项单元回归中 0 失败、1 项显式联网烟测跳过，Lint 和构建通过。正式安装包以 Release 的来源清单及摘要为准；模拟器不等于实体侧载或真实账号付费权限验收。
 
+正式 [联合发布 run 42021077247](https://github.com/HyperionHXH/lightnovel-android-aggregator/actions/runs/42021077247) 从标签源码 `104676c` 重新通过全部门槛；公开下载已复核两端 SHA-256、APK 签名与版本、IPA 来源清单，正式 38 张原生截图已目视。APK SHA-256：`f73ccae6f71c1bf7acc538f2ce142b1e02403d95f5c288df47ae52bede35121d`；IPA SHA-256：`c3a1f63d08b0a0faa77af63e698093eea1331f01a45e089e36ced9840a0aa388`。
+
 ## 测试
 
 默认测试使用固定响应，不访问真实账号或外网。完整本地回归命令：

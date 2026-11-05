@@ -16,7 +16,7 @@ Mixn iOS 使用原生 SwiftUI / UIKit / WebKit，最低 iOS/iPadOS 15.0；应用
 - 功能候选源码 `93f1b8daca25d61848edc58e2194b553f0fffdcb`，[验收 run 42016202557](https://github.com/HyperionHXH/lightnovel-android-aggregator/actions/runs/42016202557)：Xcode 16.4 / iPhone 16 / iOS 18.5，iPhoneOS arm64 Release、73 项 XCTest / 2 项 XCUITest，均 0 failure。
 - 38 张原生截图已逐张目视，包含下载章节明细、已下载卷章标记，以及删除后导航保留并恢复可下载。录屏 647.368333 秒 / 4853 可解码帧，摘要及完整性通过，不宣称逐帧观看；实际 EPUB 含 4 章、ZIP/XML 校验通过，TXT 完整末段和 UTF-8 中文通过。
 - 修复旧版选卷误判全书完成、购买结果同步、活动下载观察合并、删除后迟到错误和列表删除导致的导航栈退出；保留来源移除/账号重新锁定后的已保存正文与导出入口。
-- 候选 IPA 已核验为 4,833,883 字节，SHA-256 `11e9252984e7d9101b6aa4a65f5db59a2a57e8be1e7d9003120d4ce541f6b586`；正式 Release 会从标签提交重新执行联合门槛，摘要以正式附件为准。
+- 正式标签源码 `104676ce22629019f19303dd6e9fc6d7a82445f4` 的[联合发布 run 42021077247](https://github.com/HyperionHXH/lightnovel-android-aggregator/actions/runs/42021077247) 已重新通过 73 项 XCTest / 2 项 XCUITest 与 Android 测试、Lint、签名构建；正式 38 张原生截图已核验摘要并目视。公开入口重新下载的 IPA 为 4,833,883 字节，SHA-256 `c3a1f63d08b0a0faa77af63e698093eea1331f01a45e089e36ced9840a0aa388`，与正式摘要及来源清单一致。APK 为 32,677,717 字节，SHA-256 `f73ccae6f71c1bf7acc538f2ce142b1e02403d95f5c288df47ae52bede35121d`，版本 `1.23.0 / 39`、APK 签名校验通过。
 - UI 账号和正文为 DEBUG 隔离夹具。未验证实体 iPhone/iPad 签名安装、真实账号付费/签到写入、所有最低系统和设备组合、真机权限拒绝、后台调度与硬件；不称作全部真机验收通过。已有用户先导出备份、使用原签名方式覆盖升级，不要先卸载。
 
 ### 历史：1.22.2 修复版验收（2026-10-28）
